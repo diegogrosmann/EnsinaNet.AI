@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Orientação de Acesso à API</title>
+</head>
+<body>
+    <h1>Bem-vindo à API do ComparadorIA</h1>
+    <p>Esta API permite que você compare configurações de redes de computadores de forma automatizada utilizando inteligência artificial.</p>
+
+    <h2>Documentação da API</h2>
+    <ul>
+        <li><strong>Endpoint de Comparação:</strong> <code>/api/compare/</code></li>
+        <li><strong>Método:</strong> POST</li>
+        <li><strong>Autenticação:</strong> Token (via header Authorization: Token &lt;seu_token&gt;)</li>
+        <li><strong>Formato do JSON:</strong>
+            <pre>
+{
+    "instruction": { ... },
+    "instructor_config": { ... },
+    "instructor_network": { ... },
+    "student_config": { ... },
+    "student_network": { ... }
+}
+            </pre>
+        </li>
+    </ul>
+
+    <h2>Ações Disponíveis</h2>
+    <ul>
+        <li><a href="{% url 'login' %}">Login</a></li>
+        <li><a href="{% url 'register' %}">Criar Conta</a></li>
+    </ul>
+</body>
+</html>

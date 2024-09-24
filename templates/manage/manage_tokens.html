@@ -1,0 +1,62 @@
+<!-- templates/manage/manage_tokens.html -->
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        <h2>Gerenciar Tokens</h2>
+        {% if is_approved %}
+            <h3>Criar Novo Token</h3>
+            <form method="post" class="mb-4">
+                {% csrf_token %}
+                <div class="form-group">
+                    {{ form.name.label_tag }}
+                    {{ form.name }}
+                    {% for error in form.name.errors %}
+                        <small class="text-danger">{{ error }}</small>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-success">Criar Token</button>
+            </form>
+        {% else %}
+            <div class="alert alert-warning" role="alert">
+                Sua conta ainda não foi aprovada pelo administrador. Você não pode gerar novos tokens até que sua conta seja aprovada.
+            </div>
+        {% endif %}
+    </div>
+    <div class="col-md-6">
+        <h3>Tokens Existentes</h3>
+        {% if tokens %}
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Chave</th>
+                        <th>Data de Criação</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for token in tokens %}
+                        <tr>
+                            <td>{{ token.name }}</td>
+                            <td>{{ token.key }}</td>
+                            <td>{{ token.created|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                <form method="post" action="{% url 'delete_token' token.id %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Tem certeza que deseja deletar este token?');">Excluir</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <div class="alert alert-info" role="alert">
+                Você não possui tokens.
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
