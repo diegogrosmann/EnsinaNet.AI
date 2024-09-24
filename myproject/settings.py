@@ -2,7 +2,6 @@
 
 import os
 from pathlib import Path
-from datetime import timedelta
 from dotenv import load_dotenv
 
 load_dotenv()  # Carrega as variáveis de ambiente do arquivo .env
@@ -25,11 +24,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',
 
     # Aplicações de terceiros
     'rest_framework',
     'rest_framework.authtoken',
-    'django.contrib.sites',  # Necessário para django-allauth
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
@@ -117,6 +116,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',  # Necessário para django-allauth
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'myapp.context_processors.site_info', 
             ],
         },
     },

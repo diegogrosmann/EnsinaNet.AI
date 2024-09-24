@@ -1,13 +1,12 @@
 # myapp/signals.py
 
+import logging
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth.models import User
 from .models import Profile
 from django.core.mail import send_mail
 from django.conf import settings
-import logging
-from allauth.account.signals import email_confirmed
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +23,6 @@ def handle_user_approval(sender, instance, created, **kwargs):
             user = instance.user
             user.is_active = True  # Ativa a conta após aprovação
             user.save()
-            
-            # Envia notificação ao usuário sobre a aprovação
             subject = 'Sua conta foi aprovada!'
             message = 'Olá, sua conta foi aprovada pelo administrador e agora você pode fazer login.'
             from_email = settings.DEFAULT_FROM_EMAIL
@@ -36,13 +33,11 @@ def handle_user_approval(sender, instance, created, **kwargs):
             except Exception as e:
                 logger.error(f"Erro ao enviar e-mail de aprovação para o usuário {user.email}: {e}")
         else:
-            # Envia e-mail para o administrador notificando um novo registro pendente
-            admin_email = settings.ADMIN_EMAIL  # Certifique-se de definir esta variável no seu .env
+            admin_email = settings.ADMIN_EMAIL
             subject = 'Novo Usuário Registrado para Aprovação'
             message = f'O usuário "{instance.user.email}" se registrou e está aguardando aprovação.'
             from_email = settings.DEFAULT_FROM_EMAIL
             recipient_list = [admin_email]
-
             try:
                 send_mail(subject, message, from_email, recipient_list)
                 logger.info(f"Notificação enviada ao admin sobre o novo usuário: {instance.user.email}")

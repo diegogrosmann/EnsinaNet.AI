@@ -20,6 +20,7 @@ from .models import UserToken
 from .forms import CustomUserCreationForm, TokenForm
 from .forms import EmailAuthenticationForm
 from django.contrib.auth import views as auth_views
+from django.contrib.sites.shortcuts import get_current_site
 from allauth.account.utils import send_email_confirmation
 from django.core.mail import send_mail
 from django.conf import settings
@@ -194,6 +195,26 @@ def compare(request):
     logger.info("Operação compare finalizada.")
     return JsonResponse(response_data, status=status.HTTP_200_OK)
 
+class CustomPasswordResetView(auth_views.PasswordResetView):
+    email_template_name = 'registration/password_reset_email.html'
+    template_name = 'registration/password_reset_form.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        current_site = get_current_site(self.request)
+        context['domain'] = current_site.domain
+        context['site_name'] = current_site.name
+        context['protocol'] = 'https' if self.request.is_secure() else 'http'
+        return context
+
+    def send_mail(self, *args, **kwargs):
+        current_site = get_current_site(self.request)
+        context = kwargs.get('context')
+        context['domain'] = current_site.domain
+        context['site_name'] = current_site.name
+        context['protocol'] = 'https' if self.request.is_secure() else 'http'
+        super().send_mail(*args, **kwargs)
+
 def password_reset_view(request):
     return auth_views.PasswordResetView.as_view(template_name='registration/password_reset_form.html')(request)
 
@@ -213,6 +234,7 @@ class CustomConfirmEmailView(ConfirmEmailView):
         # Confirma o email e ativa o usuário
         confirmation.confirm(request)
 
+        current_site = get_current_site(request)
         user = confirmation.email_address.user
         user.is_active = True  # Ativa o usuário
         user.save()
