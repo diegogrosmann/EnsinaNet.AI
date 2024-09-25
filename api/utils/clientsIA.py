@@ -10,8 +10,10 @@ import logging
 from dotenv import load_dotenv
 from openai import OpenAI
 from django.conf import settings
-from myapp.exceptions import FileProcessingError, APICommunicationError
+from api.exceptions import FileProcessingError, APICommunicationError
 from bs4 import BeautifulSoup
+
+from google.cloud import documentai_v1 as documentai
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -97,31 +99,8 @@ class APIClient:
         """
         raise NotImplementedError("Este método deve ser sobrescrito nas subclasses")
     
-    def _prepare_basic_system_messages(self) -> str:
-        """
-        Método abstrato para preparar mensagens básicas do sistema.
-        Deve ser implementado nas subclasses.
-        """
-        raise NotImplementedError("Este método deve ser sobrescrito nas subclasses")
-
-    def _prepare_answer_format(self) -> str:
-        """
-        Prepara o formato da resposta carregando um arquivo HTML.
-        
-        :return: Conteúdo do arquivo de formato de resposta.
-        :raises FileProcessingError: Se ocorrer um erro ao ler o arquivo.
-        """
-        file_path = os.path.join(settings.BASE_DIR, 'myapp', 'templates', 'resposta.html')
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                content = file.read()
-            logger.debug("Formato de resposta carregado com sucesso.")
-        except Exception as e:
-            logger.error(f"Erro ao ler o arquivo de formato de resposta: {e}")
-            raise FileProcessingError(f"Erro ao ler o arquivo de formato de resposta: {e}")
-        return content
-
     def extract_file(self, instruction_data: dict) -> str: 
+            
         """
         Extrai o arquivo de instruções enviado pelo usuário e o salva em um arquivo temporário.
 
@@ -163,34 +142,32 @@ class APIClient:
             # Armazena o caminho do arquivo temporário para posterior limpeza
             self.temp_file_paths.append(temp_file_path)
 
-        return temp_file_path
+        return temp_file_path   
 
-    @staticmethod
-    def parsearHTML(html: str) -> str:
+    def _prepare_basic_system_messages(self) -> str:
         """
-        Parseia o HTML fornecido e retorna a div mais externa.
+        Método abstrato para preparar mensagens básicas do sistema.
+        Deve ser implementado nas subclasses.
+        """
+        raise NotImplementedError("Este método deve ser sobrescrito nas subclasses")
+
+    def _prepare_answer_format(self) -> str:
+        """
+        Prepara o formato da resposta carregando um arquivo HTML.
         
-        :param html: String contendo o HTML a ser parseado.
-        :return: String da div mais externa encontrada ou o HTML original se nenhuma div for encontrada.
-        :raises ValueError: Se o HTML fornecido for inválido.
+        :return: Conteúdo do arquivo de formato de resposta.
+        :raises FileProcessingError: Se ocorrer um erro ao ler o arquivo.
         """
+        file_path = os.path.join(settings.BASE_DIR, 'api', 'templates', 'resposta.html')
         try:
-            logger.debug("Iniciando o parseamento do HTML.")
-            # Parsear o HTML com o BeautifulSoup
-            soup = BeautifulSoup(html, 'html.parser')
-
-            # Encontrar a div mais externa
-            outer_div = soup.find('div')
-
-            if outer_div:
-                logger.debug("Div externa encontrada no HTML.")
-                return str(outer_div)
-            else:
-                logger.warning("Nenhuma div encontrada no HTML. Retornando o HTML original.")
-                return html
+            with open(file_path, 'r', encoding='utf-8') as file:
+                content = file.read()
+            logger.debug("Formato de resposta carregado com sucesso.")
         except Exception as e:
-            logger.error(f"Erro ao parsear o HTML: {e}")
-            raise ValueError(f"Erro ao parsear o HTML: {e}")
+            logger.error(f"Erro ao ler o arquivo de formato de resposta: {e}")
+            raise FileProcessingError(f"Erro ao ler o arquivo de formato de resposta: {e}")
+        return content
+
 
 @register_ai_client
 class ChatGPTClient(APIClient):
@@ -249,22 +226,22 @@ class ChatGPTClient(APIClient):
 
         return [
             {
-                "role": "assistant",
+                "role": "system",
                 "content": "Você deve atuar como um professor de Redes de Computadores.",
             },
             {
-                "role": "assistant",
+                "role": "system",
                 "content": "Você deve ter uma linguagem técnica e objetiva.",
             },
             {
-                "role": "assistant",
+                "role": "system",
                 "content": f"""A resposta pode ser estruturada da seguinte forma:
                     
                     {answer_format}
                     """,
             },
             {
-                "role": "assistant",
+                "role": "system",
                 "content": "A resposta deve ser formatada em HTML. Toda a resposta deve estar dentro da tag <div>.",
             },
         ]
@@ -280,34 +257,21 @@ class ChatGPTClient(APIClient):
         try:
             logger.debug("Iniciando comparação com ChatGPT.")
             
-            #assistant = self.client.beta.assistants.create(
-            #    name="Assistente de correção de atividade",
-            #    model="gpt-4o",
-            #    tools=[{"type": "file_search"}],
-            #)
-
-            assistant = self.client.beta.assistants.retrieve("asst_kxXv5KceBgLYoW95WNtJiKxH")
-            logger.debug("Assistente criado com sucesso.")
-
-            thread = self.client.beta.threads.create(
-                messages=system_messages
+            response = self.client.chat.completions.create(            
+                model="gpt-4o",
+                messages=system_messages,
+                temperature=0.1,
             )
-            logger.debug("Thread criada com sucesso.")
+        
+            logger.debug("Chat criado e concluído com sucesso.")
 
-            run = self.client.beta.threads.runs.create_and_poll(
-                thread_id=thread.id, assistant_id=assistant.id
-            )
-            logger.debug("Run criado e concluído com sucesso.")
-
-            messages = list(self.client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
-
-            if not messages:
+            if not response:
                 logger.error("Nenhuma mensagem retornada pelo ChatGPT.")
                 raise APICommunicationError("Nenhuma mensagem retornada pelo ChatGPT.")
             
             logger.debug("Mensagens recuperadas com sucesso.")
             # Utiliza o método estático parsearHTML
-            return self.parsearHTML(messages[0].content[0].text.value)
+            return parsearHTML(response.choices[0].message.content)
 
         except Exception as e:
             logger.error(f"Erro ao comunicar com a API ChatGPT: {e}")
@@ -336,11 +300,11 @@ class ChatGPTClient(APIClient):
 
         system_messages = self._prepare_basic_system_messages() + [
             {
-                "role": "assistant",
+                "role": "system",
                 "content": "Você vai receber quatro informações: as configurações corretas dos equipamentos, as conexões da rede, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.",
             },
             {
-                "role": "assistant",
+                "role": "system",
                 "content": "Você deve comparar as configurações corretas com as que eu fiz. Com base nos erros que cometi, você deve propor conteúdos para serem estudados.",
             },
             {
@@ -396,35 +360,27 @@ class ChatGPTClient(APIClient):
             raise APICommunicationError(f"Erro ao extrair o arquivo de instruções: {e}")
 
         try:
-            # Faz o upload do arquivo de instruções para a API do OpenAI
-            with open(instruction_file_path, "rb") as f:
-                instructions = self.client.files.create(
-                    file=f, purpose="assistants"
-                )
-            self.uploaded_file_ids.append(instructions.id)
-            logger.info(f"Arquivo de instruções carregado com sucesso. ID: {instructions.id}")
+            # Extrai o texto do documento
+
+            instruction_text = processar_documento(instruction_file_path)
+
+            logger.info(f"Intruções obtidas com sucesso!")
         except Exception as e:
-            logger.error(f"Erro ao fazer upload do arquivo de instruções: {e}")
-            raise APICommunicationError(f"Erro ao fazer upload do arquivo de instruções: {e}")
+            logger.error(f"Erro ao obter texto de instruções: {e}")
+            raise APICommunicationError(f"Erro ao obter texto de instruções: {e}")
 
         system_messages = self._prepare_basic_system_messages() + [
             {
-                "role": "assistant",
+                "role": "system",
                 "content": "Você vai receber três informações: as instruções de configuração, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.",
             },
             {
-                "role": "assistant",
+                "role": "system",
                 "content": "Você deve comparar as instruções com as configurações que eu fiz. Você deve analisar as minhas configurações, identificar erros e propor conteúdos para serem estudados.",
             },
             {
                 "role": "user",
-                "content": "Instruções: \n",
-                "attachments": [
-                    { 
-                        "file_id": instructions.id, 
-                        "tools": [{"type": "file_search"}] 
-                    }
-                ],
+                "content": "Instruções: \n" + instruction_text
             },
             {
                 "role": "user",
@@ -474,35 +430,25 @@ class ChatGPTClient(APIClient):
             raise APICommunicationError(f"Erro ao extrair o arquivo de instruções: {e}")
 
         try:
-            # Faz o upload do arquivo de instruções para a API do OpenAI
-            with open(instruction_file_path, "rb") as f:
-                instructions = self.client.files.create(
-                    file=f, purpose="assistants"
-                )
-            self.uploaded_file_ids.append(instructions.id)
-            logger.info(f"Arquivo de instruções carregado com sucesso. ID: {instructions.id}")
+            # Extrai o texto do documento
+            instruction_text = processar_documento(instruction_file_path)
+            logger.info(f"Intruções obtidas com sucesso!")
         except Exception as e:
-            logger.error(f"Erro ao fazer upload do arquivo de instruções: {e}")
-            raise APICommunicationError(f"Erro ao fazer upload do arquivo de instruções: {e}")
+            logger.error(f"Erro ao obter texto de instruções: {e}")
+            raise APICommunicationError(f"Erro ao obter texto de instruções: {e}")
 
         system_messages = self._prepare_basic_system_messages() + [
             {
-                "role": "assistant",
+                "role": "system",
                 "content": "Você vai receber cinco informações: as instruções de configuração, as configurações corretas dos equipamentos, as conexões corretas da rede, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.",
             },
             {
-                "role": "assistant",
+                "role": "system",
                 "content": "Você deve comparar todas as informações fornecidas. Analise as instruções, as configurações corretas e as configurações realizadas, identifique erros, e proponha conteúdos para serem estudados.",
             },
             {
                 "role": "user",
-                "content": "Instruções: \n",
-                "attachments": [
-                    { 
-                        "file_id": instructions.id,  # Ajustado para refletir a estrutura esperada
-                        "tools": [{"type": "file_search"}] 
-                    }
-                ],
+                "content": "Instruções: \n" + instruction_text
             },
             {
                 "role": "user",
@@ -529,6 +475,7 @@ class ChatGPTClient(APIClient):
 
         comparison_result = self.compare(system_messages)
         return {"response": comparison_result}
+
 
 @register_ai_client
 class GeminiClient(APIClient):
@@ -637,7 +584,7 @@ class GeminiClient(APIClient):
             logger.debug("Conteúdo gerado com sucesso.")
 
             # Utiliza o método estático parsearHTML
-            return self.parsearHTML(m.text)
+            return parsearHTML(m.text)
         except Exception as e:
             logger.error(f"Erro ao comunicar com a API Gemini: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API Gemini: {e}")
@@ -813,3 +760,74 @@ class GeminiClient(APIClient):
 
         comparison_result = self.compare(instruction, prompt=system_messages, instruction_file_path=instruction_file_path)
         return {"response": comparison_result}
+
+def processar_documento(caminho_documento):
+    """
+    Processa o documento usando o Google Cloud Document AI e retorna o texto extraído.
+    """
+    # Configurações do Document AI
+    project_id = 'doutorado-400019'  # Substitua pelo seu Project ID
+    location = 'us'  # ou 'eu', dependendo da localização do processador
+    processor_id = '6903f54add67ec8f'  # Substitua pelo seu Processor ID
+
+    # Instanciar o cliente
+    client = documentai.DocumentProcessorServiceClient()
+
+    # Construir o caminho do processador
+    nome_processador = client.processor_path(project_id, location, processor_id)
+
+    # Ler o conteúdo do documento
+    with open(caminho_documento, "rb") as f:
+        conteudo_documento = f.read()
+
+    # Definir o tipo MIME com base na extensão do arquivo
+    _, ext = os.path.splitext(caminho_documento)
+    ext = ext.lower()
+    if ext == '.pdf':
+        mime_type = 'application/pdf'
+    elif ext in ['.png', '.jpg', '.jpeg']:
+        mime_type = f'image/{ext[1:]}'
+    else:
+        mime_type = 'application/octet-stream'  # Tipo genérico
+
+    # Criar a solicitação de processamento
+    request = documentai.ProcessRequest(
+        name=nome_processador,
+        raw_document=documentai.RawDocument(content=conteudo_documento, mime_type=mime_type)
+    )
+
+    # Processar o documento
+    try:
+        resposta = client.process_document(request=request)
+        texto_extraido = resposta.document.text
+    except Exception as e:
+        print(f'Erro ao processar o documento: {e}')
+        texto_extraido = "Erro ao extrair o texto."
+
+    return texto_extraido
+
+def parsearHTML(html: str) -> str:
+        """
+        Parseia o HTML fornecido e retorna a div mais externa.
+        
+        :param html: String contendo o HTML a ser parseado.
+        :return: String da div mais externa encontrada ou o HTML original se nenhuma div for encontrada.
+        :raises ValueError: Se o HTML fornecido for inválido.
+        """
+        try:
+            logger.debug("Iniciando o parseamento do HTML.")
+            # Parsear o HTML com o BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
+
+            # Encontrar a div mais externa
+            outer_div = soup.find('div')
+
+            if outer_div:
+                logger.debug("Div externa encontrada no HTML.")
+                return str(outer_div)
+            else:
+                logger.warning("Nenhuma div encontrada no HTML. Retornando o HTML original.")
+                return html
+        except Exception as e:
+            logger.error(f"Erro ao parsear o HTML: {e}")
+            raise ValueError(f"Erro ao parsear o HTML: {e}")

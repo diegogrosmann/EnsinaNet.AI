@@ -1,5 +1,3 @@
-# myapp/exceptions.py
-
 class APIClientError(Exception):
     """Erro genérico do APIClient."""
     pass

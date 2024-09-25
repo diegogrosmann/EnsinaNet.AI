@@ -1,2 +1,11 @@
+.git
+.gitignore
 .env
-/logs/
+.gcloudignore
+logs/
+db.sqlite3
+doutorado.json
+*/__init__.py
+*/migrations
+*/__pycache__
+*/*/__pycache__

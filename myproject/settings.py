@@ -11,6 +11,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'fallback-secret-key')
 
+#Recupere o path completo do GOOGLE_APPLICATION_CREDENTIALS
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(BASE_DIR / os.getenv('GOOGLE_APPLICATION_CREDENTIALS'))
+
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
@@ -36,13 +39,15 @@ INSTALLED_APPS = [
     'dj_rest_auth.registration',
 
     # Aplicações locais
-    'myapp',
+    'accounts',
+    'api',
+    'public',
 ]
 
 SITE_ID = 1
 
 AUTHENTICATION_BACKENDS = (
-    'myapp.backends.EmailBackend',  # Seu backend personalizado
+    'accounts.backends.EmailBackend',  # Seu backend personalizado
     'django.contrib.auth.backends.ModelBackend',
     'allauth.account.auth_backends.AuthenticationBackend',
 )
@@ -57,18 +62,18 @@ ACCOUNT_USERNAME_REQUIRED = False
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'myapp.authentication.CustomTokenAuthentication',
+        'accounts.authentication.CustomTokenAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
-    'EXCEPTION_HANDLER': 'myapp.exception_handlers.custom_exception_handler',
+    'EXCEPTION_HANDLER': 'api.exception_handlers.custom_exception_handler',
 }
 
 LOGIN_REDIRECT_URL = '/manage-tokens/'
 LOGOUT_REDIRECT_URL = '/login/'
-LOGIN_URL = 'login'  # Nome da URL definida em myapp/urls.py
-LOGOUT_URL = 'logout'  # Nome da URL definida em myapp/urls.py
+LOGIN_URL = 'login'  # Nome da URL definida em accounts/urls.py
+LOGOUT_URL = 'logout'  # Nome da URL definida em accounts/urls.py
 
 # URLs de redirecionamento após confirmação de email
 ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = '/login/'
@@ -100,7 +105,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'myapp.middleware.GlobalExceptionMiddleware',
+    'api.middleware.GlobalExceptionMiddleware',
 ]
 
 ROOT_URLCONF = 'myproject.urls'
@@ -116,7 +121,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',  # Necessário para django-allauth
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                'myapp.context_processors.site_info', 
+                'accounts.context_processors.site_info', 
             ],
         },
     },
@@ -212,11 +217,27 @@ LOGGING = {
             'maxBytes': 1024*1024*5,  # 5 MB
             'backupCount': 5,
         },
-        'app_file': {
+        'accounts_file': {
             'level': 'DEBUG' if DEBUG else 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
             'formatter': 'standard',
-            'filename': os.path.join(LOG_DIR, 'app.log'),
+            'filename': os.path.join(LOG_DIR, 'accounts.log'),
+            'maxBytes': 1024*1024*5,  # 5 MB
+            'backupCount': 5,
+        },
+        'api_file': {
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'formatter': 'standard',
+            'filename': os.path.join(LOG_DIR, 'api.log'),
+            'maxBytes': 1024*1024*5,  # 5 MB
+            'backupCount': 5,
+        },
+        'public_file': {
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'formatter': 'standard',
+            'filename': os.path.join(LOG_DIR, 'public.log'),
             'maxBytes': 1024*1024*5,  # 5 MB
             'backupCount': 5,
         },
@@ -253,8 +274,18 @@ LOGGING = {
             'level': 'ERROR',
             'propagate': False,
         },
-        'myapp': {
-            'handlers': ['app_file'],
+        'accounts': {
+            'handlers': ['accounts_file'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+        'api': {
+            'handlers': ['api_file'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+        'public': {
+            'handlers': ['public_file'],
             'level': 'DEBUG' if DEBUG else 'INFO',
             'propagate': False,
         },

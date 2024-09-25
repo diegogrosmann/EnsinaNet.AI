@@ -1,5 +1,3 @@
-# myapp/middleware.py
-
 import logging
 from django.http import JsonResponse
 from .exceptions import APIClientError, FileProcessingError
