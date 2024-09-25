@@ -34,3 +34,14 @@ class UserToken(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.key}"
+
+class TokenConfiguration(models.Model):
+    token = models.ForeignKey(UserToken, related_name='configurations', on_delete=models.CASCADE)
+    api_client_class = models.CharField(max_length=255)
+    configurations = models.JSONField(default=dict)
+
+    class Meta:
+        unique_together = ('token', 'api_client_class')  # Cada combinação de token e classe deve ser única
+
+    def __str__(self):
+        return f"Configuração para {self.api_client_class} do Token {self.token.name}"

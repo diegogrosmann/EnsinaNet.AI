@@ -1,11 +1,14 @@
-# myapp/forms.py
+import json
+import ast
 
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
-from .models import UserToken
 from django.contrib.auth import get_user_model
 from django.contrib.auth import authenticate
 from allauth.account.models import EmailAddress
+
+from .models import UserToken
+from .models import TokenConfiguration
 
 User = get_user_model()
 
@@ -93,3 +96,66 @@ class EmailAuthenticationForm(forms.Form):
     
     def get_user(self):
         return self.user
+
+class TokenConfigurationForm(forms.ModelForm):
+    configurations = forms.CharField(
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'placeholder': 'Exemplo:\nmodel=gemini-1.5-pro\ntemperature=0.2\ntop_k=10',
+            'title': 'Digite as configurações no formato key=value, uma por linha.'
+        }),
+        help_text='Insira as configurações no formato key=value, uma por linha.',
+        required=False
+    )
+    api_client_class = forms.CharField(
+        widget=forms.HiddenInput()
+    )
+
+    class Meta:
+        model = TokenConfiguration
+        fields = ['api_client_class', 'configurations']
+
+    def __init__(self, *args, **kwargs):
+        super(TokenConfigurationForm, self).__init__(*args, **kwargs)
+        # Definir o valor inicial do campo configurations se existir
+        if self.initial.get('configurations'):
+            configurations_dict = self.initial['configurations']
+            # Verificar se configurations_dict é um dicionário
+            if isinstance(configurations_dict, str):
+                try:
+                    # Tentar converter usando JSON
+                    configurations_dict = json.loads(configurations_dict)
+                except json.JSONDecodeError:
+                    try:
+                        # Se falhar, usar ast.literal_eval
+                        configurations_dict = ast.literal_eval(configurations_dict)
+                    except Exception as e:
+                        configurations_dict = {}
+            configurations_text = '\n'.join(f"{key}={value}" for key, value in configurations_dict.items())
+            self.fields['configurations'].initial = configurations_text
+
+    def clean_configurations(self):
+        configurations_text = self.cleaned_data['configurations']
+        configurations_dict = {}
+        if configurations_text.strip() == '':
+            return configurations_dict
+        try:
+            for line in configurations_text.strip().splitlines():
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    # Tentar converter value para número se possível
+                    try:
+                        if '.' in value:
+                            value = float(value)
+                        else:
+                            value = int(value)
+                    except ValueError:
+                        pass  # Mantém como string se não for número
+                    configurations_dict[key] = value
+                else:
+                    raise forms.ValidationError('Cada linha deve estar no formato key=value.')
+        except Exception as e:
+            raise forms.ValidationError('Erro ao processar as configurações: {}'.format(e))
+        return configurations_dict

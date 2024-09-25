@@ -37,16 +37,18 @@ class APIClient:
     Fornece métodos comuns para interação com APIs de IA.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str = None, configurations: dict = None):
         """
-        Inicializa o cliente de API com a chave fornecida.
+        Inicializa o cliente de API com a chave fornecida e configurações.
         
         :param api_key: Chave de API para autenticação.
+        :param configurations: Dicionário de configurações específicas.
         """
         self.api_key = api_key
+        self.configurations = configurations or {}
         self.temp_file_paths = []
         self.uploaded_file_ids = []
-        logger.debug(f"{self.__class__.__name__} inicializado com API key.")
+        logger.debug(f"{self.__class__.__name__} inicializado com API key e configurações: {self.configurations}")
 
     def __enter__(self):
         """
@@ -176,17 +178,17 @@ class ChatGPTClient(APIClient):
     """
     name = "ChatGPT"  # Atributo para padronizar o nome na resposta
 
-    def __init__(self):
+    def __init__(self, configurations=None):
         """
-        Inicializa o cliente do ChatGPT com a chave de API.
+        Inicializa o cliente do ChatGPT com a chave de API e configurações.
         """
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key:
             logger.error("OPENAI_API_KEY não está definido nas variáveis de ambiente.")
             raise APICommunicationError("OPENAI_API_KEY não está definido nas variáveis de ambiente.")
-        super().__init__(api_key)
+        super().__init__(api_key, configurations)
         self.client = OpenAI(api_key=self.api_key)
-        logger.debug("ChatGPTClient inicializado.")
+        logger.debug("ChatGPTClient inicializado com configurações: {}".format(self.configurations))
 
     def __enter__(self):
         """
@@ -256,11 +258,12 @@ class ChatGPTClient(APIClient):
         """
         try:
             logger.debug("Iniciando comparação com ChatGPT.")
+
+            self.configurations['model'] = self.configurations.get('model', 'gpt-4')
+            self.configurations['messages'] = system_messages
             
-            response = self.client.chat.completions.create(            
-                model="gpt-4o",
-                messages=system_messages,
-                temperature=0.1,
+            response = self.client.chat.completions.create(
+                self.configurations
             )
         
             logger.debug("Chat criado e concluído com sucesso.")
@@ -484,17 +487,17 @@ class GeminiClient(APIClient):
     """
     name = "Gemini"  # Atributo para padronizar o nome na resposta
 
-    def __init__(self):
+    def __init__(self, configurations=None):
         """
-        Inicializa o cliente do Gemini com a chave de API.
+        Inicializa o cliente do Gemini com a chave de API e configurações.
         """
         api_key = os.getenv('GEMINI_API_KEY')
         if not api_key:
             logger.error("GEMINI_API_KEY não está definido nas variáveis de ambiente.")
             raise APICommunicationError("GEMINI_API_KEY não está definido nas variáveis de ambiente.")
-        super().__init__(api_key)
+        super().__init__(api_key, configurations)
         genai.configure(api_key=self.api_key)
-        logger.debug("GeminiClient inicializado.")
+        logger.debug("GeminiClient inicializado com configurações: {}".format(self.configurations))
     
     def __enter__(self):
         """
@@ -554,17 +557,20 @@ class GeminiClient(APIClient):
         :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do Gemini.
         """
         try:
+
+            model = self.configurations.get('model', 'gemini-1.5-pro')
+
             logger.debug("Iniciando comparação com Gemini.")
             model = genai.GenerativeModel(
-                model_name="gemini-1.5-pro", 
+                model_name=model, 
                 system_instruction=instruction
             )
             logger.debug("Modelo Gemini configurado.")
 
             gemini_config = genai.types.GenerationConfig(
-                temperature=0.2,
-                top_k=10
+                self.configurations
             )
+            
             logger.debug("Configuração de geração definida.")
 
             inputs = [prompt]

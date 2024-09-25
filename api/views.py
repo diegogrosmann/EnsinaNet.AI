@@ -1,18 +1,21 @@
-# api/views.py
+import logging
+
+from django.http import JsonResponse
 
 from rest_framework.decorators import api_view
 from rest_framework import status
-from django.http import JsonResponse
-import logging
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from accounts.models import UserToken
 from api.exceptions import APIClientError, FileProcessingError
 from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
 
+from accounts.models import UserToken, TokenConfiguration
+
+logger = logging.getLogger(__name__)
+
 @api_view(['POST'])
 def compare(request):
-    logger = logging.getLogger(__name__)
     logger.info("Iniciando a operação compare.")
     response_data = {}
     response_ias = {}
@@ -35,7 +38,7 @@ def compare(request):
         logger.error(f"Erro ao processar a requisição: {e}")
         response_data["error"] = "Erro interno ao processar a requisição."
         return JsonResponse(response_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+    
     # Definição das configurações para cada tipo de comparação
     comparison_types = {
         'lab': {
@@ -73,33 +76,10 @@ def compare(request):
     config = comparison_types[comparison_type]
     logger.info(f"Tipo de comparação detectado: {comparison_type}")
 
-    # Função auxiliar para processar cada cliente de IA
-    def process_client(AIClientClass, method_name, data):
-        ai_client_name = AIClientClass.name
-        try:
-            with AIClientClass() as ai_client:
-                compare_method = getattr(ai_client, method_name, None)
-                if not compare_method:
-                    logger.warning(f"O método '{method_name}' não está implementado para {ai_client_name}.")
-                    return ai_client_name, {"error": f"Método '{method_name}' não implementado."}
-
-                result = compare_method(data)
-                logger.info(f"Comparação de '{comparison_type}' com {ai_client_name} realizada com sucesso.")
-                return ai_client_name, result
-        except APIClientError as e:
-            logger.error(f"Erro na comparação de '{comparison_type}' com {ai_client_name}: {e}")
-            return ai_client_name, {"error": str(e)}
-        except FileProcessingError as e:
-            logger.error(f"Erro no processamento de arquivos para {ai_client_name}: {e}")
-            return ai_client_name, {"error": str(e)}
-        except Exception as e:
-            logger.error(f"Erro inesperado ao utilizar {ai_client_name}: {e}")
-            return ai_client_name, {"error": "Erro interno ao processar a requisição com " + ai_client_name}
-
     # Utilizar ThreadPoolExecutor para executar as comparações em paralelo
     with ThreadPoolExecutor(max_workers=5) as executor:
         # Submeter todas as tarefas ao executor
-        futures = [executor.submit(process_client, AIClientClass, config['method_name'], data) for AIClientClass in AVAILABLE_AI_CLIENTS]
+        futures = [executor.submit(process_client, AIClientClass, config['method_name'], data, user_token) for AIClientClass in AVAILABLE_AI_CLIENTS]
         
         # Coletar os resultados conforme são completados
         for future in as_completed(futures):
@@ -114,3 +94,32 @@ def compare(request):
 
     logger.info("Operação compare finalizada.")
     return JsonResponse(response_data, status=status.HTTP_200_OK)
+
+def process_client(AIClientClass, method_name, data, user_token):
+    ai_client_name = AIClientClass.name
+    # Recuperar as configurações para este token e classe de cliente de API
+    try:
+        token_config = user_token.configurations.get(api_client_class=ai_client_name)
+        configurations = token_config.configurations
+    except TokenConfiguration.DoesNotExist:
+        configurations = {}
+
+    try:
+        with AIClientClass(configurations=configurations) as ai_client:
+            compare_method = getattr(ai_client, method_name, None)
+            if not compare_method:
+                logger.warning(f"O método '{method_name}' não está implementado para {ai_client_name}.")
+                return ai_client_name, {"error": f"Método '{method_name}' não implementado."}
+
+            result = compare_method(data)
+            logger.info(f"Comparação de '{method_name}' com {ai_client_name} realizada com sucesso.")
+            return ai_client_name, result
+    except APIClientError as e:
+        logger.error(f"Erro na comparação de '{method_name}' com {ai_client_name}: {e}")
+        return ai_client_name, {"error": str(e)}
+    except FileProcessingError as e:
+        logger.error(f"Erro no processamento de arquivos para {ai_client_name}: {e}")
+        return ai_client_name, {"error": str(e)}
+    except Exception as e:
+        logger.error(f"Erro inesperado ao utilizar {ai_client_name}: {e}")
+        return ai_client_name, {"error": "Erro interno ao processar a requisição com " + ai_client_name}

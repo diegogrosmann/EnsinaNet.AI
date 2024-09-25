@@ -1,3 +1,4 @@
+<!-- templates/manage/manage_tokens.html -->
 {% extends 'base.html' %}
 
 {% block content %}
@@ -38,7 +39,9 @@
                 <tbody>
                     {% for token in tokens %}
                         <tr>
-                            <td>{{ token.name }}</td>
+                            <td>
+                                <a href="{% url 'manage_configurations' token.id %}">{{ token.name }}</a>
+                            </td>
                             <td>{{ token.key }}</td>
                             <td>{{ token.created|date:"d/m/Y H:i" }}</td>
                             <td>

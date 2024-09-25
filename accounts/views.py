@@ -1,25 +1,32 @@
 import logging
+import json
+
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import login, authenticate, logout
 from django.contrib import messages
+from django.contrib.auth import login, authenticate, logout
+from django.contrib.auth import views as auth_views
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.decorators import login_required
+from django.contrib.sites.shortcuts import get_current_site
 from django.http import JsonResponse, HttpResponse
+from django.core.mail import send_mail
+from django.conf import settings
+from django.forms import modelformset_factory
+
 from allauth.account.views import ConfirmEmailView
-from django.shortcuts import redirect
-from django.contrib import messages
+from allauth.account.utils import send_email_confirmation
+
 from dj_rest_auth.registration.views import VerifyEmailView
+
 from rest_framework import status
 from rest_framework.decorators import api_view
 
+from .forms import CustomUserCreationForm, TokenForm, EmailAuthenticationForm, TokenConfigurationForm
+
 from .models import UserToken
-from .forms import CustomUserCreationForm, TokenForm
-from .forms import EmailAuthenticationForm
-from django.contrib.auth import views as auth_views
-from django.contrib.sites.shortcuts import get_current_site
-from allauth.account.utils import send_email_confirmation
-from django.core.mail import send_mail
-from django.conf import settings
+from .models import TokenConfiguration
+
+from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -88,6 +95,55 @@ def delete_token(request, token_id):
         messages.success(request, 'Token deletado com sucesso!')
         return redirect('manage_tokens')
     return render(request, 'manage/delete_token.html', {'token': token})
+
+@login_required
+def manage_configurations(request, token_id):
+    user = request.user
+    token = get_object_or_404(UserToken, id=token_id, user=user)
+
+    forms = []
+
+    if request.method == 'POST':
+        forms = []
+        is_valid = True
+        for client_class in AVAILABLE_AI_CLIENTS:
+            api_name = client_class.name
+            form = TokenConfigurationForm(request.POST, prefix=api_name)
+            if not form.is_valid():
+                is_valid = False
+            forms.append(form)
+        if is_valid:
+            for form in forms:
+                api_name = form.cleaned_data['api_client_class']
+                configurations = form.cleaned_data['configurations']
+                config_instance, _ = TokenConfiguration.objects.get_or_create(
+                    token=token,
+                    api_client_class=api_name
+                )
+                config_instance.configurations = configurations
+                config_instance.save()
+            messages.success(request, 'Configurações atualizadas com sucesso!')
+            return redirect('manage_configurations', token_id=token.id)
+        else:
+            messages.error(request, 'Por favor, corrija os erros abaixo.')
+    else:
+        forms = []
+        for client_class in AVAILABLE_AI_CLIENTS:
+            api_name = client_class.name
+            try:
+                config_instance = TokenConfiguration.objects.get(token=token, api_client_class=api_name)
+                initial_data = {
+                    'api_client_class': api_name,
+                    'configurations': config_instance.configurations,
+                }
+            except TokenConfiguration.DoesNotExist:
+                initial_data = {
+                    'api_client_class': api_name,
+                }
+            form = TokenConfigurationForm(initial=initial_data, prefix=api_name)
+            forms.append(form)
+    context = {'token': token, 'forms': forms}
+    return render(request, 'manage/manage_configurations.html', context)
 
 class CustomPasswordResetView(auth_views.PasswordResetView):
     email_template_name = 'registration/password_reset_email.html'

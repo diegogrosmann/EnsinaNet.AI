@@ -9,6 +9,7 @@ urlpatterns = [
     path('logout/', views.logout_view, name='logout'),
     path('manage-tokens/', views.manage_tokens, name='manage_tokens'),
     path('manage-tokens/delete/<uuid:token_id>/', views.delete_token, name='delete_token'),
+    path('manage-tokens/<uuid:token_id>/configurations/', views.manage_configurations, name='manage_configurations'),
 
     # Rotas de redefinição de senha
     path('password_reset/', views.CustomPasswordResetView.as_view(), name='password_reset'),
