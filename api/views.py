@@ -14,6 +14,35 @@ from accounts.models import UserToken, TokenConfiguration
 
 logger = logging.getLogger(__name__)
 
+def process_client(AIClientClass, method_name, data, user_token):
+        ai_client_name = AIClientClass.name
+        # Recuperar as configurações para este token e classe de cliente de API
+        try:
+            token_config = user_token.configurations.get(api_client_class=ai_client_name)
+            configurations = token_config.configurations
+        except TokenConfiguration.DoesNotExist:
+            configurations = {}
+
+        try:
+            with AIClientClass(configurations=configurations) as ai_client:
+                compare_method = getattr(ai_client, method_name, None)
+                if not compare_method:
+                    logger.warning(f"O método '{method_name}' não está implementado para {ai_client_name}.")
+                    return ai_client_name, {"error": f"Método '{method_name}' não implementado."}
+
+                result = compare_method(data)
+                logger.info(f"Comparação de '{method_name}' com {ai_client_name} realizada com sucesso.")
+                return ai_client_name, result
+        except APIClientError as e:
+            logger.error(f"Erro na comparação de '{method_name}' com {ai_client_name}: {e}")
+            return ai_client_name, {"error": str(e)}
+        except FileProcessingError as e:
+            logger.error(f"Erro no processamento de arquivos para {ai_client_name}: {e}")
+            return ai_client_name, {"error": str(e)}
+        except Exception as e:
+            logger.error(f"Erro inesperado ao utilizar {ai_client_name}: {e}")
+            return ai_client_name, {"error": "Erro interno ao processar a requisição com " + ai_client_name}
+
 @api_view(['POST'])
 def compare(request):
     logger.info("Iniciando a operação compare.")
@@ -41,45 +70,58 @@ def compare(request):
     
     # Definição das configurações para cada tipo de comparação
     comparison_types = {
+        'complete_comparison': {
+            'required_keys': {'instruction', 'instructor_config', 'instructor_network', 'student_config', 'student_network'},
+            'method_name': 'compare_complete'
+        },
         'lab': {
-            'required_keys': ['instructor_config', 'instructor_network', 'student_config', 'student_network'],
+            'required_keys': {'instructor_config', 'instructor_network', 'student_config', 'student_network'},
             'method_name': 'compare_labs'
         },
         'instruction': {
-            'required_keys': ['instruction', 'student_config', 'student_network'],
+            'required_keys': {'instruction', 'student_config', 'student_network'},
             'method_name': 'compare_instruction'
         },
-        'complete_comparison': {
-            'required_keys': ['instruction', 'instructor_config', 'instructor_network', 'student_config', 'student_network'],
-            'method_name': 'compare_complete'
-        },
-        # Você pode adicionar novos tipos de comparação aqui
+        # Adicione novos tipos de comparação aqui
     }
 
     # Identificação do tipo de comparação com base nas chaves presentes
-    detected_types = []
+    detected_type = None
     for comp_type, config in comparison_types.items():
-        if all(key in data for key in config['required_keys']):
-            detected_types.append(comp_type)
+        if config['required_keys'].issubset(data.keys()):
+            # Verifica se o conjunto de chaves é exatamente igual ao requerido
+            if config['required_keys'] == set(data.keys()):
+                detected_type = comp_type
+                break
+            # Alternativamente, se você quiser permitir chaves adicionais, mas evitar sobreposição:
+            elif detected_type is None:
+                detected_type = comp_type
 
-    if not detected_types:
+    if not detected_type:
         logger.error("Nenhum tipo de comparação detectado. Verifique as chaves do JSON.")
         response_data["error"] = "Tipo de comparação não detectado ou chaves ausentes."
         return JsonResponse(response_data, status=status.HTTP_400_BAD_REQUEST)
 
-    if len(detected_types) > 1:
-        logger.error("Múltiplos tipos de comparação detectados. Por favor, envie apenas um tipo por requisição.")
-        response_data["error"] = "Múltiplos tipos de comparação detectados. Envie apenas um tipo por requisição."
-        return JsonResponse(response_data, status=status.HTTP_400_BAD_REQUEST)
+    # Verifica se há múltiplos tipos detectados
+    matched_types = []
+    for comp_type, config in comparison_types.items():
+        if config['required_keys'].issubset(data.keys()):
+            matched_types.append(comp_type)
+    
+    # Priorizar tipos de comparação com mais chaves
+    if len(matched_types) > 1:
+        # Ordena os tipos por número de chaves descendente
+        matched_types.sort(key=lambda x: len(comparison_types[x]['required_keys']), reverse=True)
+        detected_type = matched_types[0]
+        logger.warning("Múltiplos tipos de comparação detectados. Selecionando o mais específico.")
 
-    comparison_type = detected_types[0]
-    config = comparison_types[comparison_type]
+    comparison_type = detected_type
     logger.info(f"Tipo de comparação detectado: {comparison_type}")
 
     # Utilizar ThreadPoolExecutor para executar as comparações em paralelo
     with ThreadPoolExecutor(max_workers=5) as executor:
         # Submeter todas as tarefas ao executor
-        futures = [executor.submit(process_client, AIClientClass, config['method_name'], data, user_token) for AIClientClass in AVAILABLE_AI_CLIENTS]
+        futures = [executor.submit(process_client, AIClientClass, comparison_types[comparison_type]['method_name'], data, user_token) for AIClientClass in AVAILABLE_AI_CLIENTS]
         
         # Coletar os resultados conforme são completados
         for future in as_completed(futures):
@@ -95,31 +137,3 @@ def compare(request):
     logger.info("Operação compare finalizada.")
     return JsonResponse(response_data, status=status.HTTP_200_OK)
 
-def process_client(AIClientClass, method_name, data, user_token):
-    ai_client_name = AIClientClass.name
-    # Recuperar as configurações para este token e classe de cliente de API
-    try:
-        token_config = user_token.configurations.get(api_client_class=ai_client_name)
-        configurations = token_config.configurations
-    except TokenConfiguration.DoesNotExist:
-        configurations = {}
-
-    try:
-        with AIClientClass(configurations=configurations) as ai_client:
-            compare_method = getattr(ai_client, method_name, None)
-            if not compare_method:
-                logger.warning(f"O método '{method_name}' não está implementado para {ai_client_name}.")
-                return ai_client_name, {"error": f"Método '{method_name}' não implementado."}
-
-            result = compare_method(data)
-            logger.info(f"Comparação de '{method_name}' com {ai_client_name} realizada com sucesso.")
-            return ai_client_name, result
-    except APIClientError as e:
-        logger.error(f"Erro na comparação de '{method_name}' com {ai_client_name}: {e}")
-        return ai_client_name, {"error": str(e)}
-    except FileProcessingError as e:
-        logger.error(f"Erro no processamento de arquivos para {ai_client_name}: {e}")
-        return ai_client_name, {"error": str(e)}
-    except Exception as e:
-        logger.error(f"Erro inesperado ao utilizar {ai_client_name}: {e}")
-        return ai_client_name, {"error": "Erro interno ao processar a requisição com " + ai_client_name}

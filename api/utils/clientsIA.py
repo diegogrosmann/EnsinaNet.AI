@@ -31,6 +31,77 @@ def register_ai_client(cls):
     AVAILABLE_AI_CLIENTS.append(cls)
     return cls
 
+def processar_documento(caminho_documento):
+    """
+    Processa o documento usando o Google Cloud Document AI e retorna o texto extraído.
+    """
+    # Configurações do Document AI
+    project_id = 'doutorado-400019'  # Substitua pelo seu Project ID
+    location = 'us'  # ou 'eu', dependendo da localização do processador
+    processor_id = '6903f54add67ec8f'  # Substitua pelo seu Processor ID
+
+    # Instanciar o cliente
+    client = documentai.DocumentProcessorServiceClient()
+
+    # Construir o caminho do processador
+    nome_processador = client.processor_path(project_id, location, processor_id)
+
+    # Ler o conteúdo do documento
+    with open(caminho_documento, "rb") as f:
+        conteudo_documento = f.read()
+
+    # Definir o tipo MIME com base na extensão do arquivo
+    _, ext = os.path.splitext(caminho_documento)
+    ext = ext.lower()
+    if ext == '.pdf':
+        mime_type = 'application/pdf'
+    elif ext in ['.png', '.jpg', '.jpeg']:
+        mime_type = f'image/{ext[1:]}'
+    else:
+        mime_type = 'application/octet-stream'  # Tipo genérico
+
+    # Criar a solicitação de processamento
+    request = documentai.ProcessRequest(
+        name=nome_processador,
+        raw_document=documentai.RawDocument(content=conteudo_documento, mime_type=mime_type)
+    )
+
+    # Processar o documento
+    try:
+        resposta = client.process_document(request=request)
+        texto_extraido = resposta.document.text
+    except Exception as e:
+        print(f'Erro ao processar o documento: {e}')
+        texto_extraido = "Erro ao extrair o texto."
+
+    return texto_extraido
+
+def parsearHTML(html: str) -> str:
+        """
+        Parseia o HTML fornecido e retorna a div mais externa.
+        
+        :param html: String contendo o HTML a ser parseado.
+        :return: String da div mais externa encontrada ou o HTML original se nenhuma div for encontrada.
+        :raises ValueError: Se o HTML fornecido for inválido.
+        """
+        try:
+            logger.debug("Iniciando o parseamento do HTML.")
+            # Parsear o HTML com o BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
+
+            # Encontrar a div mais externa
+            outer_div = soup.find('div')
+
+            if outer_div:
+                logger.debug("Div externa encontrada no HTML.")
+                return str(outer_div)
+            else:
+                logger.warning("Nenhuma div encontrada no HTML. Retornando o HTML original.")
+                return html
+        except Exception as e:
+            logger.error(f"Erro ao parsear o HTML: {e}")
+            raise ValueError(f"Erro ao parsear o HTML: {e}")
+
 class APIClient:
     """
     Classe base para clientes de API.
@@ -263,7 +334,7 @@ class ChatGPTClient(APIClient):
             self.configurations['messages'] = system_messages
             
             response = self.client.chat.completions.create(
-                self.configurations
+                **self.configurations
             )
         
             logger.debug("Chat criado e concluído com sucesso.")
@@ -558,19 +629,30 @@ class GeminiClient(APIClient):
         """
         try:
 
-            model = self.configurations.get('model', 'gemini-1.5-pro')
+            if 'model_name' in self.configurations:
+                _model_name = self.configurations.get('model_name')
+                self.configurations.pop('model_name')
+            else:
+                _model_name = "gemini-1.5-pro"
 
             logger.debug("Iniciando comparação com Gemini.")
+            
             model = genai.GenerativeModel(
-                model_name=model, 
+                model_name=_model_name, 
                 system_instruction=instruction
-            )
+            )   
+
             logger.debug("Modelo Gemini configurado.")
 
+            
             gemini_config = genai.types.GenerationConfig(
-                self.configurations
+                **self.configurations
             )
             
+            #gemini_config = genai.types.GenerationConfig(
+            #    temperature=0.2,
+            #    top_k=10
+            #)
             logger.debug("Configuração de geração definida.")
 
             inputs = [prompt]
@@ -693,8 +775,15 @@ class GeminiClient(APIClient):
         :raises FileProcessingError: Se ocorrer um erro na serialização dos dados ou no processamento do arquivo.
         :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do Gemini.
         """
+
         try:
-            instruction = data['instruction']
+            instruction_file_path = self.extract_file(data['instruction'])
+            logger.debug("Arquivo de instruções extraído com sucesso.")
+        except FileProcessingError as e:
+            logger.error(f"Erro ao extrair o arquivo de instruções: {e}")
+            raise APICommunicationError(f"Erro ao extrair o arquivo de instruções: {e}")
+    
+        try:
             instructor_config = json.dumps(data['instructor_config'], indent=4)
             instructor_network = json.dumps(data['instructor_network'], indent=4)
             student_config = json.dumps(data['student_config'], indent=4)
@@ -706,134 +795,26 @@ class GeminiClient(APIClient):
             logger.error(f"Erro ao processar dados de entrada: {e}")
             raise FileProcessingError(f"Erro ao processar dados de entrada: {e}")
 
-        try:
-            instruction_file_path = self.extract_file(instruction)
-            logger.debug("Arquivo de instruções extraído com sucesso.")
-        except FileProcessingError as e:
-            logger.error(f"Erro ao extrair o arquivo de instruções: {e}")
-            raise APICommunicationError(f"Erro ao extrair o arquivo de instruções: {e}")
+        instruction = self._prepare_basic_system_messages()
+        logger.debug("Instruções básicas preparadas.")
 
-        try:
-            # Faz o upload do arquivo de instruções para a API do Gemini
-            instructions = genai.upload_file(path=instruction_file_path, display_name='Instruções de Configuração')
-            self.uploaded_file_ids.append(instructions)
-            logger.info(f"Arquivo de instruções carregado com sucesso. ID: {instructions.name}")
-        except Exception as e:
-            logger.error(f"Erro ao fazer upload do arquivo de instruções: {e}")
-            raise APICommunicationError(f"Erro ao fazer upload do arquivo de instruções: {e}")
+        prompt = f'''
+                Você vai receber cinco informações: as instruções de configuração, as configurações corretas dos equipamentos, as conexões corretas da rede, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.
+                Você deve comparar todas as informações fornecidas. Analise as instruções, as configurações corretas e as configurações realizadas, identifique erros, e proponha conteúdos para serem estudados.
+                
+                Minha Configuração:
+                {student_config}
 
-        system_messages = self._prepare_basic_system_messages() + [
-            {
-                "role": "assistant",
-                "content": "Você vai receber cinco informações: as instruções de configuração, as configurações corretas dos equipamentos, as conexões corretas da rede, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.",
-            },
-            {
-                "role": "assistant",
-                "content": "Você deve comparar todas as informações fornecidas. Analise as instruções, as configurações corretas e as configurações realizadas, identifique erros, e proponha conteúdos para serem estudados.",
-            },
-            {
-                "role": "user",
-                "content": "Instruções: \n",
-                "attachments": [
-                    { 
-                        "file_id": instructions.name,  # Ajustado para refletir a estrutura esperada
-                        "tools": [{"type": "file_search"}] 
-                    }
-                ],
-            },
-            {
-                "role": "user",
-                "content": "Configuração Correta: \n" + instructor_config,
-            },
-            {
-                "role": "user",
-                "content": "Rede Correta: \n" + instructor_network,
-            },
-            {
-                "role": "user",
-                "content": "Minha Configuração: \n" + student_config,
-            },
-            {
-                "role": "user",
-                "content": "Minha Rede: \n" + student_network,
-            },
-            {
-                "role": "user",
-                "content": "Analise todas as informações, identifique os erros e proponha conteúdos para estudar.",
-            },
-        ]
-        logger.debug("System messages preparadas para compare_complete.")
+                Minha Rede: 
+                {student_network}  
 
-        comparison_result = self.compare(instruction, prompt=system_messages, instruction_file_path=instruction_file_path)
+                Configuração Correta: 
+                {instructor_config}
+
+                Rede Correta:
+                {instructor_network}
+                ''' 
+        logger.debug("Prompt preparado para compare_instruction.")
+                
+        comparison_result = self.compare(instruction, prompt, instruction_file_path)
         return {"response": comparison_result}
-
-def processar_documento(caminho_documento):
-    """
-    Processa o documento usando o Google Cloud Document AI e retorna o texto extraído.
-    """
-    # Configurações do Document AI
-    project_id = 'doutorado-400019'  # Substitua pelo seu Project ID
-    location = 'us'  # ou 'eu', dependendo da localização do processador
-    processor_id = '6903f54add67ec8f'  # Substitua pelo seu Processor ID
-
-    # Instanciar o cliente
-    client = documentai.DocumentProcessorServiceClient()
-
-    # Construir o caminho do processador
-    nome_processador = client.processor_path(project_id, location, processor_id)
-
-    # Ler o conteúdo do documento
-    with open(caminho_documento, "rb") as f:
-        conteudo_documento = f.read()
-
-    # Definir o tipo MIME com base na extensão do arquivo
-    _, ext = os.path.splitext(caminho_documento)
-    ext = ext.lower()
-    if ext == '.pdf':
-        mime_type = 'application/pdf'
-    elif ext in ['.png', '.jpg', '.jpeg']:
-        mime_type = f'image/{ext[1:]}'
-    else:
-        mime_type = 'application/octet-stream'  # Tipo genérico
-
-    # Criar a solicitação de processamento
-    request = documentai.ProcessRequest(
-        name=nome_processador,
-        raw_document=documentai.RawDocument(content=conteudo_documento, mime_type=mime_type)
-    )
-
-    # Processar o documento
-    try:
-        resposta = client.process_document(request=request)
-        texto_extraido = resposta.document.text
-    except Exception as e:
-        print(f'Erro ao processar o documento: {e}')
-        texto_extraido = "Erro ao extrair o texto."
-
-    return texto_extraido
-
-def parsearHTML(html: str) -> str:
-        """
-        Parseia o HTML fornecido e retorna a div mais externa.
-        
-        :param html: String contendo o HTML a ser parseado.
-        :return: String da div mais externa encontrada ou o HTML original se nenhuma div for encontrada.
-        :raises ValueError: Se o HTML fornecido for inválido.
-        """
-        try:
-            logger.debug("Iniciando o parseamento do HTML.")
-            # Parsear o HTML com o BeautifulSoup
-            soup = BeautifulSoup(html, 'html.parser')
-
-            # Encontrar a div mais externa
-            outer_div = soup.find('div')
-
-            if outer_div:
-                logger.debug("Div externa encontrada no HTML.")
-                return str(outer_div)
-            else:
-                logger.warning("Nenhuma div encontrada no HTML. Retornando o HTML original.")
-                return html
-        except Exception as e:
-            logger.error(f"Erro ao parsear o HTML: {e}")
-            raise ValueError(f"Erro ao parsear o HTML: {e}")

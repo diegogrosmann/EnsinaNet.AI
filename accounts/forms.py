@@ -99,9 +99,10 @@ class EmailAuthenticationForm(forms.Form):
 
 class TokenConfigurationForm(forms.ModelForm):
     configurations = forms.CharField(
+        label='Configurações da IA:',
         widget=forms.Textarea(attrs={
             'class': 'form-control',
-            'placeholder': 'Exemplo:\nmodel=gemini-1.5-pro\ntemperature=0.2\ntop_k=10',
+            'placeholder': 'Exemplo:\nmodel-name=gemini-1.5-pro\ntemperature=0.2\ntop_k=10',
             'title': 'Digite as configurações no formato key=value, uma por linha.'
         }),
         help_text='Insira as configurações no formato key=value, uma por linha.',
@@ -117,22 +118,11 @@ class TokenConfigurationForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super(TokenConfigurationForm, self).__init__(*args, **kwargs)
-        # Definir o valor inicial do campo configurations se existir
-        if self.initial.get('configurations'):
-            configurations_dict = self.initial['configurations']
-            # Verificar se configurations_dict é um dicionário
-            if isinstance(configurations_dict, str):
-                try:
-                    # Tentar converter usando JSON
-                    configurations_dict = json.loads(configurations_dict)
-                except json.JSONDecodeError:
-                    try:
-                        # Se falhar, usar ast.literal_eval
-                        configurations_dict = ast.literal_eval(configurations_dict)
-                    except Exception as e:
-                        configurations_dict = {}
-            configurations_text = '\n'.join(f"{key}={value}" for key, value in configurations_dict.items())
-            self.fields['configurations'].initial = configurations_text
+        if self.instance and self.instance.configurations:
+            #configurations_dict = self.instance.configurations
+            lines = [f"{key}={value}" for key, value in self.instance.configurations.items()]
+            configurations_dict = '\n'.join(lines)
+            self.initial['configurations'] = configurations_dict
 
     def clean_configurations(self):
         configurations_text = self.cleaned_data['configurations']
@@ -158,4 +148,5 @@ class TokenConfigurationForm(forms.ModelForm):
                     raise forms.ValidationError('Cada linha deve estar no formato key=value.')
         except Exception as e:
             raise forms.ValidationError('Erro ao processar as configurações: {}'.format(e))
+        self.cleaned_data['configurations'] = configurations_dict
         return configurations_dict

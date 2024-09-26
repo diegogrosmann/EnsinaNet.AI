@@ -101,27 +101,22 @@ def manage_configurations(request, token_id):
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
 
-    forms = []
-
     if request.method == 'POST':
         forms = []
         is_valid = True
         for client_class in AVAILABLE_AI_CLIENTS:
             api_name = client_class.name
-            form = TokenConfigurationForm(request.POST, prefix=api_name)
+            config_instance, _ = TokenConfiguration.objects.get_or_create(
+                token=token,
+                api_client_class=api_name
+            )
+            form = TokenConfigurationForm(request.POST, instance=config_instance, prefix=api_name)
             if not form.is_valid():
                 is_valid = False
             forms.append(form)
         if is_valid:
             for form in forms:
-                api_name = form.cleaned_data['api_client_class']
-                configurations = form.cleaned_data['configurations']
-                config_instance, _ = TokenConfiguration.objects.get_or_create(
-                    token=token,
-                    api_client_class=api_name
-                )
-                config_instance.configurations = configurations
-                config_instance.save()
+                form.save()
             messages.success(request, 'Configurações atualizadas com sucesso!')
             return redirect('manage_configurations', token_id=token.id)
         else:
@@ -132,15 +127,9 @@ def manage_configurations(request, token_id):
             api_name = client_class.name
             try:
                 config_instance = TokenConfiguration.objects.get(token=token, api_client_class=api_name)
-                initial_data = {
-                    'api_client_class': api_name,
-                    'configurations': config_instance.configurations,
-                }
             except TokenConfiguration.DoesNotExist:
-                initial_data = {
-                    'api_client_class': api_name,
-                }
-            form = TokenConfigurationForm(initial=initial_data, prefix=api_name)
+                config_instance = TokenConfiguration(token=token, api_client_class=api_name)
+            form = TokenConfigurationForm(instance=config_instance, prefix=api_name)
             forms.append(form)
     context = {'token': token, 'forms': forms}
     return render(request, 'manage/manage_configurations.html', context)
