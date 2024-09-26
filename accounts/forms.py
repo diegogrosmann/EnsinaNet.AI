@@ -118,10 +118,12 @@ class TokenConfigurationForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super(TokenConfigurationForm, self).__init__(*args, **kwargs)
-        if self.instance and self.instance.configurations:
-            #configurations_dict = self.instance.configurations
-            lines = [f"{key}={value}" for key, value in self.instance.configurations.items()]
-            configurations_dict = '\n'.join(lines)
+        if self.instance:
+            if self.instance.configurations:
+                lines = [f"{key}={value}" for key, value in self.instance.configurations.items()]
+                configurations_dict = '\n'.join(lines)
+            else:
+                configurations_dict = ''
             self.initial['configurations'] = configurations_dict
 
     def clean_configurations(self):
