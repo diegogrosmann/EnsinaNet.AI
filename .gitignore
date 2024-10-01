@@ -2,6 +2,9 @@
 .gitignore
 .env
 .gcloudignore
-logs/
 db.sqlite3
+app.yaml
 doutorado.json
+logs/
+static/
+*/__pycache__/

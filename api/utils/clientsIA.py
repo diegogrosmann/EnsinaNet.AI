@@ -352,8 +352,204 @@ class ChatGPTClient(APIClient):
             logger.error(f"Erro ao comunicar com a API ChatGPT: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API ChatGPT: {e}")
 
-    # Os métodos compare_labs, compare_instruction e compare_complete permanecem inalterados
-    # ...
+    def compare_labs(self, data: dict) -> dict:
+            """
+            Compara as configurações do laboratório com as configurações do aluno usando o ChatGPT.
+
+            :param data: Dicionário com os dados de configuração.
+            :return: Dicionário contendo a resposta gerada pelo ChatGPT.
+            :raises FileProcessingError: Se ocorrer um erro na serialização dos dados.
+            :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do ChatGPT.
+            """
+            try:
+                instructor_config = json.dumps(data['instructor_config'], indent=4)
+                instructor_network = json.dumps(data['instructor_network'], indent=4)
+                student_config = json.dumps(data['student_config'], indent=4)
+                student_network = json.dumps(data['student_network'], indent=4)
+            except KeyError as e:
+                logger.error(f"Chave ausente nos dados de entrada: {e}")
+                raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
+            except Exception as e:
+                logger.error(f"Erro ao serializar dados de configuração: {e}")
+                raise FileProcessingError(f"Erro ao serializar dados de configuração: {e}")
+
+            system_messages = self._prepare_basic_system_messages() + [
+                {
+                    "role": "system",
+                    "content": "Você vai receber quatro informações: as configurações corretas dos equipamentos, as conexões da rede, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.",
+                },
+                {
+                    "role": "system",
+                    "content": "Você deve comparar as configurações corretas com as que eu fiz. Com base nos erros que cometi, você deve propor conteúdos para serem estudados.",
+                },
+                {
+                    "role": "user",
+                    "content": "Configuração Correta: \n" + instructor_config,
+                },
+                {
+                    "role": "user",
+                    "content": "Rede Correta: \n" + instructor_network,
+                },
+                {
+                    "role": "user",
+                    "content": "Minha Configuração: \n" + student_config,
+                },
+                {
+                    "role": "user",
+                    "content": "Minha Rede: \n" + student_network,
+                },
+                {
+                    "role": "user",
+                    "content": "Analise as configurações, identifique os erros e proponha conteúdos para estudar.",
+                },
+            ]
+            logger.debug("System messages preparadas para compare_labs.")
+                
+            comparison_result = self.compare(system_messages)
+            return {"response": comparison_result}
+
+    def compare_instruction(self, data: dict) -> dict:
+        """
+        Compara as instruções fornecidas com as configurações realizadas pelo aluno usando o ChatGPT.
+
+        :param data: Dicionário com os dados de configuração e instruções.
+        :return: Dicionário contendo a resposta gerada pelo ChatGPT.
+        :raises FileProcessingError: Se ocorrer um erro na serialização dos dados.
+        :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do ChatGPT.
+        """
+        try:
+            student_config = json.dumps(data['student_config'], indent=4)
+            student_network = json.dumps(data['student_network'], indent=4)
+        except KeyError as e:
+            logger.error(f"Chave ausente nos dados de entrada: {e}")
+            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
+        except Exception as e:
+            logger.error(f"Erro ao serializar dados de configuração: {e}")
+            raise FileProcessingError(f"Erro ao serializar dados de configuração: {e}")
+
+        try:
+            instruction_file_path = self.extract_file(data['instruction'])
+            logger.debug("Arquivo de instruções extraído com sucesso.")
+        except FileProcessingError as e:
+            logger.error(f"Erro ao extrair o arquivo de instruções: {e}")
+            raise APICommunicationError(f"Erro ao extrair o arquivo de instruções: {e}")
+
+        try:
+            # Extrai o texto do documento
+
+            instruction_text = processar_documento(instruction_file_path)
+
+            logger.info(f"Intruções obtidas com sucesso!")
+        except Exception as e:
+            logger.error(f"Erro ao obter texto de instruções: {e}")
+            raise APICommunicationError(f"Erro ao obter texto de instruções: {e}")
+
+        system_messages = self._prepare_basic_system_messages() + [
+            {
+                "role": "system",
+                "content": "Você vai receber três informações: as instruções de configuração, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.",
+            },
+            {
+                "role": "system",
+                "content": "Você deve comparar as instruções com as configurações que eu fiz. Você deve analisar as minhas configurações, identificar erros e propor conteúdos para serem estudados.",
+            },
+            {
+                "role": "user",
+                "content": "Instruções: \n" + instruction_text
+            },
+            {
+                "role": "user",
+                "content": "Minha Configuração: \n" + student_config,
+            },
+            {
+                "role": "user",
+                "content": "Minha Rede: \n" + student_network,
+            },
+            {
+                "role": "user",
+                "content": "Analise as configurações, identifique os erros e proponha conteúdos para estudar.",
+            },
+        ]
+        logger.debug("System messages preparadas para compare_instruction.")
+
+        comparison_result = self.compare(system_messages)
+        return {"response": comparison_result}
+    
+    def compare_complete(self, data: dict) -> dict:
+        """
+        Compara as instruções, configurações do instrutor e do aluno, e redes usando o ChatGPT.
+
+        :param data: Dicionário com 'instruction', 'instructor_config', 'instructor_network', 'student_config', 'student_network'.
+        :return: Dicionário contendo a resposta gerada pelo ChatGPT.
+        :raises FileProcessingError: Se ocorrer um erro na serialização dos dados ou no processamento do arquivo.
+        :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do ChatGPT.
+        """
+        try:
+            instruction = data['instruction']
+            instructor_config = json.dumps(data['instructor_config'], indent=4)
+            instructor_network = json.dumps(data['instructor_network'], indent=4)
+            student_config = json.dumps(data['student_config'], indent=4)
+            student_network = json.dumps(data['student_network'], indent=4)
+        except KeyError as e:
+            logger.error(f"Chave ausente nos dados de entrada: {e}")
+            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
+        except Exception as e:
+            logger.error(f"Erro ao processar dados de entrada: {e}")
+            raise FileProcessingError(f"Erro ao processar dados de entrada: {e}")
+
+        try:
+            instruction_file_path = self.extract_file(instruction)
+            logger.debug("Arquivo de instruções extraído com sucesso.")
+        except FileProcessingError as e:
+            logger.error(f"Erro ao extrair o arquivo de instruções: {e}")
+            raise APICommunicationError(f"Erro ao extrair o arquivo de instruções: {e}")
+
+        try:
+            # Extrai o texto do documento
+            instruction_text = processar_documento(instruction_file_path)
+            logger.info(f"Intruções obtidas com sucesso!")
+        except Exception as e:
+            logger.error(f"Erro ao obter texto de instruções: {e}")
+            raise APICommunicationError(f"Erro ao obter texto de instruções: {e}")
+
+        system_messages = self._prepare_basic_system_messages() + [
+            {
+                "role": "system",
+                "content": "Você vai receber cinco informações: as instruções de configuração, as configurações corretas dos equipamentos, as conexões corretas da rede, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.",
+            },
+            {
+                "role": "system",
+                "content": "Você deve comparar todas as informações fornecidas. Analise as instruções, as configurações corretas e as configurações realizadas, identifique erros, e proponha conteúdos para serem estudados.",
+            },
+            {
+                "role": "user",
+                "content": "Instruções: \n" + instruction_text
+            },
+            {
+                "role": "user",
+                "content": "Configuração Correta: \n" + instructor_config,
+            },
+            {
+                "role": "user",
+                "content": "Rede Correta: \n" + instructor_network,
+            },
+            {
+                "role": "user",
+                "content": "Minha Configuração: \n" + student_config,
+            },
+            {
+                "role": "user",
+                "content": "Minha Rede: \n" + student_network,
+            },
+            {
+                "role": "user",
+                "content": "Analise todas as informações, identifique os erros e proponha conteúdos para estudar.",
+            },
+        ]
+        logger.debug("System messages preparadas para compare_complete.")
+
+        comparison_result = self.compare(system_messages)
+        return {"response": comparison_result}
 
 @register_ai_client
 class GeminiClient(APIClient):
@@ -474,5 +670,144 @@ class GeminiClient(APIClient):
             logger.error(f"Erro ao comunicar com a API Gemini: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API Gemini: {e}")
 
-    # Os métodos compare_labs, compare_instruction e compare_complete permanecem inalterados
-    # ...
+    def compare_labs(self, data: dict) -> dict:
+        """
+        Compara as configurações do laboratório com as configurações do aluno usando o Gemini.
+
+        :param data: Dicionário com os dados de configuração.
+        :return: Dicionário contendo a resposta gerada pelo Gemini.
+        :raises FileProcessingError: Se ocorrer um erro na serialização dos dados.
+        :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do Gemini.
+        """
+        try:
+            instructor_config = json.dumps(data['instructor_config'], indent=4)
+            instructor_network = json.dumps(data['instructor_network'], indent=4)
+            student_config = json.dumps(data['student_config'], indent=4)
+            student_network = json.dumps(data['student_network'], indent=4)
+        except KeyError as e:
+            logger.error(f"Chave ausente nos dados de entrada: {e}")
+            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
+        except Exception as e:
+            logger.error(f"Erro ao serializar dados de configuração: {e}")
+            raise FileProcessingError(f"Erro ao serializar dados de configuração: {e}")
+
+        instruction = self._prepare_basic_system_messages()
+        logger.debug("Instruções básicas preparadas.")
+                
+        prompt = f'''
+        Você vai receber quatro informações: as configurações corretas dos equipamentos, as conexões corretas da rede, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.
+        Você deve comparar as configurações corretas com as que eu fiz.
+
+        Configuração Correta: 
+        {instructor_config}
+
+        Rede Correta:
+        {instructor_network}
+
+        Minha Configuração:
+        {student_config}
+
+        Minha Rede: 
+        {student_network} 
+        ''' 
+        logger.debug("Prompt preparado para compare_labs.")
+
+        comparison_result = self.compare(instruction, prompt)
+        return {"response": comparison_result}
+        
+    def compare_instruction(self, data: dict) -> dict:
+        """
+        Compara as instruções fornecidas com as configurações realizadas pelo aluno usando o Gemini.
+
+        :param data: Dicionário com os dados de configuração e instruções.
+        :return: Dicionário contendo a resposta gerada pelo Gemini.
+        :raises FileProcessingError: Se ocorrer um erro na serialização dos dados ou no processamento do arquivo.
+        :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do Gemini.
+        """
+        try:
+            instruction_file_path = self.extract_file(data['instruction'])
+            logger.debug("Arquivo de instruções extraído com sucesso.")
+        except FileProcessingError as e:
+            logger.error(f"Erro ao extrair o arquivo de instruções: {e}")
+            raise APICommunicationError(f"Erro ao extrair o arquivo de instruções: {e}")
+
+        try:
+            student_config = json.dumps(data['student_config'], indent=4)
+            student_network = json.dumps(data['student_network'], indent=4)
+        except KeyError as e:
+            logger.error(f"Chave ausente nos dados de entrada: {e}")
+            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
+        except Exception as e:
+            logger.error(f"Erro ao serializar dados de configuração: {e}")
+            raise FileProcessingError(f"Erro ao serializar dados de configuração: {e}")
+
+        instruction = self._prepare_basic_system_messages()
+        logger.debug("Instruções básicas preparadas.")
+                
+        prompt = f'''
+        Você vai receber três informações: um arquivo com as instruções de configuração, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.
+        Você deve comparar as instruções com as configurações que eu fiz.
+        
+        Minha Configuração:
+        {student_config}
+
+        Minha Rede: 
+        {student_network}  
+        ''' 
+        logger.debug("Prompt preparado para compare_instruction.")
+        
+        comparison_result = self.compare(instruction, prompt, instruction_file_path)
+        return {"response": comparison_result}
+    
+    def compare_complete(self, data: dict) -> dict:
+        """
+        Compara as instruções, configurações do instrutor e do aluno, e redes usando o Gemini.
+
+        :param data: Dicionário com 'instruction', 'instructor_config', 'instructor_network', 'student_config', 'student_network'.
+        :return: Dicionário contendo a resposta gerada pelo Gemini.
+        :raises FileProcessingError: Se ocorrer um erro na serialização dos dados ou no processamento do arquivo.
+        :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do Gemini.
+        """
+
+        try:
+            instruction_file_path = self.extract_file(data['instruction'])
+            logger.debug("Arquivo de instruções extraído com sucesso.")
+        except FileProcessingError as e:
+            logger.error(f"Erro ao extrair o arquivo de instruções: {e}")
+            raise APICommunicationError(f"Erro ao extrair o arquivo de instruções: {e}")
+    
+        try:
+            instructor_config = json.dumps(data['instructor_config'], indent=4)
+            instructor_network = json.dumps(data['instructor_network'], indent=4)
+            student_config = json.dumps(data['student_config'], indent=4)
+            student_network = json.dumps(data['student_network'], indent=4)
+        except KeyError as e:
+            logger.error(f"Chave ausente nos dados de entrada: {e}")
+            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
+        except Exception as e:
+            logger.error(f"Erro ao processar dados de entrada: {e}")
+            raise FileProcessingError(f"Erro ao processar dados de entrada: {e}")
+
+        instruction = self._prepare_basic_system_messages()
+        logger.debug("Instruções básicas preparadas.")
+
+        prompt = f'''
+                Você vai receber cinco informações: as instruções de configuração, as configurações corretas dos equipamentos, as conexões corretas da rede, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.
+                Você deve comparar todas as informações fornecidas. Analise as instruções, as configurações corretas e as configurações realizadas, identifique erros, e proponha conteúdos para serem estudados.
+                
+                Minha Configuração:
+                {student_config}
+
+                Minha Rede: 
+                {student_network}  
+
+                Configuração Correta: 
+                {instructor_config}
+
+                Rede Correta:
+                {instructor_network}
+                ''' 
+        logger.debug("Prompt preparado para compare_instruction.")
+                
+        comparison_result = self.compare(instruction, prompt, instruction_file_path)
+        return {"response": comparison_result}
