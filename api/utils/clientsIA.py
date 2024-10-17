@@ -362,10 +362,10 @@ class ChatGPTClient(APIClient):
             :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do ChatGPT.
             """
             try:
-                instructor_config = json.dumps(data['instructor_config'], indent=4)
-                instructor_network = json.dumps(data['instructor_network'], indent=4)
-                student_config = json.dumps(data['student_config'], indent=4)
-                student_network = json.dumps(data['student_network'], indent=4)
+                instructor_config = json.dumps(data['instructor']['config'], indent=4)
+                instructor_network = json.dumps(data['instructor']['network'], indent=4)
+                student_config = json.dumps(data['student']['config'], indent=4)
+                student_network = json.dumps(data['student']['network'], indent=4)
             except KeyError as e:
                 logger.error(f"Chave ausente nos dados de entrada: {e}")
                 raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
@@ -418,8 +418,8 @@ class ChatGPTClient(APIClient):
         :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do ChatGPT.
         """
         try:
-            student_config = json.dumps(data['student_config'], indent=4)
-            student_network = json.dumps(data['student_network'], indent=4)
+            student_config = json.dumps(data['student']['config'], indent=4)
+            student_network = json.dumps(data['student']['network'], indent=4)
         except KeyError as e:
             logger.error(f"Chave ausente nos dados de entrada: {e}")
             raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
@@ -486,10 +486,10 @@ class ChatGPTClient(APIClient):
         """
         try:
             instruction = data['instruction']
-            instructor_config = json.dumps(data['instructor_config'], indent=4)
-            instructor_network = json.dumps(data['instructor_network'], indent=4)
-            student_config = json.dumps(data['student_config'], indent=4)
-            student_network = json.dumps(data['student_network'], indent=4)
+            instructor_config = json.dumps(data['instructor']['config'], indent=4)
+            instructor_network = json.dumps(data['instructor']['network'], indent=4)
+            student_config = json.dumps(data['student']['config'], indent=4)
+            student_network = json.dumps(data['student']['network'], indent=4)
         except KeyError as e:
             logger.error(f"Chave ausente nos dados de entrada: {e}")
             raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
@@ -680,10 +680,10 @@ class GeminiClient(APIClient):
         :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do Gemini.
         """
         try:
-            instructor_config = json.dumps(data['instructor_config'], indent=4)
-            instructor_network = json.dumps(data['instructor_network'], indent=4)
-            student_config = json.dumps(data['student_config'], indent=4)
-            student_network = json.dumps(data['student_network'], indent=4)
+            instructor_config = json.dumps(data['instructor']['config'], indent=4)
+            instructor_network = json.dumps(data['instructor']['network'], indent=4)
+            student_config = json.dumps(data['student']['config'], indent=4)
+            student_network = json.dumps(data['student']['network'], indent=4)
         except KeyError as e:
             logger.error(f"Chave ausente nos dados de entrada: {e}")
             raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
@@ -732,8 +732,8 @@ class GeminiClient(APIClient):
             raise APICommunicationError(f"Erro ao extrair o arquivo de instruções: {e}")
 
         try:
-            student_config = json.dumps(data['student_config'], indent=4)
-            student_network = json.dumps(data['student_network'], indent=4)
+            student_config = json.dumps(data['student']['config'], indent=4)
+            student_network = json.dumps(data['student']['network'], indent=4)
         except KeyError as e:
             logger.error(f"Chave ausente nos dados de entrada: {e}")
             raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
@@ -777,10 +777,10 @@ class GeminiClient(APIClient):
             raise APICommunicationError(f"Erro ao extrair o arquivo de instruções: {e}")
     
         try:
-            instructor_config = json.dumps(data['instructor_config'], indent=4)
-            instructor_network = json.dumps(data['instructor_network'], indent=4)
-            student_config = json.dumps(data['student_config'], indent=4)
-            student_network = json.dumps(data['student_network'], indent=4)
+            instructor_config = json.dumps(data['instructor']['config'], indent=4)
+            instructor_network = json.dumps(data['instructor']['network'], indent=4)
+            student_config = json.dumps(data['student']['config'], indent=4)
+            student_network = json.dumps(data['student']['network'], indent=4)
         except KeyError as e:
             logger.error(f"Chave ausente nos dados de entrada: {e}")
             raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")

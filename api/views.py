@@ -71,15 +71,15 @@ def compare(request):
     # Definição das configurações para cada tipo de comparação
     comparison_types = {
         'complete_comparison': {
-            'required_keys': {'instruction', 'instructor_config', 'instructor_network', 'student_config', 'student_network'},
+            'required_keys': {'student', 'instruction', 'instructor'},
             'method_name': 'compare_complete'
         },
         'lab': {
-            'required_keys': {'instructor_config', 'instructor_network', 'student_config', 'student_network'},
+            'required_keys': {'student', 'instructor'},
             'method_name': 'compare_labs'
         },
         'instruction': {
-            'required_keys': {'instruction', 'student_config', 'student_network'},
+            'required_keys': {'student', 'instruction'},
             'method_name': 'compare_instruction'
         },
         # Adicione novos tipos de comparação aqui
