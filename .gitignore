@@ -7,5 +7,4 @@ app.yaml
 doutorado.json
 logs/
 __pycache__/
-api/utils/__pycache__/
-
+.vscode/
