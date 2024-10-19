@@ -9,3 +9,7 @@ class FileProcessingError(APIClientError):
 class APICommunicationError(APIClientError):
     """Erro na comunicação com a API externa."""
     pass
+
+class MissingAPIKeyError(APIClientError):
+    """Erro quando a chave de API não está configurada."""
+    pass

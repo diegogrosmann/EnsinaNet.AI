@@ -1,0 +1,16 @@
+Você vai receber quatro informações: as configurações corretas dos equipamentos, as conexões da rede, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.
+Você deve comparar as configurações corretas com as que eu fiz. Com base nos erros que cometi, você deve propor conteúdos para serem estudados.
+
+Configuração Correta:
+{{ instructor_config }}
+
+Rede Correta:
+{{ instructor_network }}
+
+Minha Configuração:
+{{ student_config }}
+
+Minha Rede:
+{{ student_network }}
+
+Analise as configurações, identifique os erros e proponha conteúdos para estudar.

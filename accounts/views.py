@@ -1,30 +1,18 @@
 import logging
-import json
-
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth import login, authenticate, logout
 from django.contrib.auth import views as auth_views
-from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.decorators import login_required
 from django.contrib.sites.shortcuts import get_current_site
-from django.http import JsonResponse, HttpResponse
 from django.core.mail import send_mail
 from django.conf import settings
-from django.forms import modelformset_factory
 
 from allauth.account.views import ConfirmEmailView
 from allauth.account.utils import send_email_confirmation
 
-from dj_rest_auth.registration.views import VerifyEmailView
-
-from rest_framework import status
-from rest_framework.decorators import api_view
-
 from .forms import CustomUserCreationForm, TokenForm, EmailAuthenticationForm, TokenConfigurationForm
-
-from .models import UserToken
-from .models import TokenConfiguration
+from .models import UserToken, TokenConfiguration
 
 from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
 
@@ -57,7 +45,7 @@ def login_view(request):
         form = EmailAuthenticationForm(request, data=request.POST)
         if form.is_valid():
             user = form.get_user()
-            login(request, user)  # Não precisa especificar o backend
+            login(request, user)
             logger.info(f"Usuário {user.email} logado com sucesso.")
             messages.success(request, f'Bem-vindo, {user.email}!')
             return redirect('manage_tokens')
@@ -91,7 +79,7 @@ def manage_tokens(request):
                 token.save()
                 logger.info(f"Token '{token.name}' criado para o usuário {user.email}.")
                 messages.success(request, 'Token criado com sucesso!')
-                return redirect('manage_tokens')
+                return redirect('manage_configurations', token_id=token.id)  # Redireciona para configurações
             except Exception as e:
                 logger.error(f"Erro ao salvar token para o usuário {user.email}: {e}")
                 messages.error(request, 'Erro ao criar o token. Por favor, tente novamente.')
@@ -124,6 +112,7 @@ def manage_configurations(request, token_id):
 
     if request.method == 'POST':
         forms = []
+        errors = {}
         is_valid = True
         for client_class in AVAILABLE_AI_CLIENTS:
             api_name = client_class.name
@@ -134,12 +123,21 @@ def manage_configurations(request, token_id):
             form = TokenConfigurationForm(request.POST, instance=config_instance, prefix=api_name)
             if not form.is_valid():
                 is_valid = False
+                errors[api_name] = form.errors
                 logger.warning(f"Formulário de configuração inválido para {api_name}: {form.errors}")
             forms.append(form)
         if is_valid:
             try:
                 for form in forms:
-                    form.save()
+                    config_instance = form.save(commit=False)
+                    # Atualiza apenas se o campo foi alterado
+                    if 'api_key' in form.changed_data:
+                        config_instance.api_key = form.cleaned_data['api_key']
+                    if 'model_name' in form.changed_data:
+                        config_instance.model_name = form.cleaned_data['model_name']
+                    config_instance.enabled = form.cleaned_data['enabled']
+                    config_instance.configurations = form.cleaned_data['configurations']
+                    config_instance.save()
                 logger.info(f"Configurações atualizadas para o token '{token.name}' pelo usuário {user.email}.")
                 messages.success(request, 'Configurações atualizadas com sucesso!')
                 return redirect('manage_configurations', token_id=token.id)
@@ -147,7 +145,8 @@ def manage_configurations(request, token_id):
                 logger.error(f"Erro ao salvar configurações para o token '{token.name}': {e}")
                 messages.error(request, 'Erro ao salvar as configurações. Por favor, tente novamente.')
         else:
-            messages.error(request, 'Por favor, corrija os erros abaixo.')
+            error_ias = ', '.join(errors.keys())
+            messages.error(request, f"Por favor, corrija os erros nas seguintes IAs: {error_ias}.")
     else:
         forms = []
         for client_class in AVAILABLE_AI_CLIENTS:
@@ -203,12 +202,11 @@ class CustomConfirmEmailView(ConfirmEmailView):
         self.kwargs['key'] = key
         try:
             confirmation = self.get_object()
-            # Confirma o email e ativa o usuário
             confirmation.confirm(request)
 
             current_site = get_current_site(request)
             user = confirmation.email_address.user
-            user.is_active = True  # Ativa o usuário
+            user.is_active = True
             user.save()
             logger.info(f"Usuário {user.email} ativado após confirmação de email.")
 

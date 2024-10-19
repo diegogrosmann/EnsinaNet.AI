@@ -1,5 +1,3 @@
-# myapp/models.py
-
 from django.db import models
 from django.contrib.auth.models import User
 import uuid
@@ -38,7 +36,10 @@ class UserToken(models.Model):
 class TokenConfiguration(models.Model):
     token = models.ForeignKey(UserToken, related_name='configurations', on_delete=models.CASCADE)
     api_client_class = models.CharField(max_length=255)
-    configurations = models.JSONField(default=dict)
+    enabled = models.BooleanField(default=False)  # Alterado para False
+    api_key = models.CharField(max_length=255, blank=True, null=True)
+    model_name = models.CharField(max_length=255, blank=True, null=True)
+    configurations = models.JSONField(default=dict, blank=True)
 
     class Meta:
         unique_together = ('token', 'api_client_class')  # Cada combinação de token e classe deve ser única

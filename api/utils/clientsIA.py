@@ -7,11 +7,13 @@ import tempfile
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
+# Importações atualizadas
 from openai import OpenAI
 import google.generativeai as genai
+import anthropic
 
 from django.conf import settings
-from api.exceptions import FileProcessingError, APICommunicationError
+from api.exceptions import FileProcessingError, APICommunicationError, MissingAPIKeyError
 
 # Importando o client do Document AI
 from google.cloud import documentai_v1 as documentai
@@ -118,8 +120,9 @@ class APIClient:
     """
     Classe base para clientes de API.
     """
-    def __init__(self, api_key: str = None, configurations: dict = None):
+    def __init__(self, api_key: str = None, model_name: str = None, configurations: dict = None):
         self.api_key = api_key
+        self.model_name = model_name
         self.configurations = configurations or {}
         logger.debug(f"{self.__class__.__name__} inicializado com configurações: {self.configurations}")
 
@@ -170,106 +173,22 @@ class APIClient:
             raise FileProcessingError(f"Erro ao ler o arquivo de formato de resposta: {e}")
         return content
 
+    def _load_prompt(self, prompt_name, context=None):
+        """
+        Carrega o prompt de um arquivo de template e renderiza com o contexto fornecido.
+        """
+        from django.template.loader import render_to_string
+        template_name = f'api/prompts/{prompt_name}.txt'
+        return render_to_string(template_name, context or {})
+
     def _prepare_prompts(self, prompt_type: str, **kwargs) -> dict:
         """
         Prepara os prompts para as IAs com base no tipo de comparação.
         """
         answer_format = self._prepare_answer_format()
-        base_instruction = f"""
-            Você deve atuar como um professor de Redes de Computadores.
-            Você deve ter uma linguagem técnica e objetiva.
-            A resposta deve ser estruturada da seguinte forma:
-            {answer_format}
-            A resposta deve ser formatada em HTML. Toda a resposta deve estar dentro da tag <div>.
-        """
+        base_instruction = self._load_prompt('base_instruction', {'answer_format': answer_format})
 
-        if prompt_type == 'compare_labs':
-            instructor_config = kwargs.get('instructor_config')
-            instructor_network = kwargs.get('instructor_network')
-            student_config = kwargs.get('student_config')
-            student_network = kwargs.get('student_network')
-
-            user_prompt = f"""
-                Você vai receber quatro informações: as configurações corretas dos equipamentos, as conexões da rede, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.
-                Você deve comparar as configurações corretas com as que eu fiz. Com base nos erros que cometi, você deve propor conteúdos para serem estudados.
-
-                Configuração Correta:
-                {instructor_config}
-
-                Rede Correta:
-                {instructor_network}
-
-                Minha Configuração:
-                {student_config}
-
-                Minha Rede:
-                {student_network}
-
-                Analise as configurações, identifique os erros e proponha conteúdos para estudar.
-            """
-        elif prompt_type == 'compare_instruction':
-            instruction_text = kwargs.get('instruction_text')
-            student_config = kwargs.get('student_config')
-            student_network = kwargs.get('student_network')
-
-            user_prompt = f"""
-                Você vai receber três informações: as instruções de configuração, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.
-                Você deve comparar as instruções com as configurações que eu fiz. Você deve analisar as minhas configurações, identificar erros e propor conteúdos para serem estudados.
-
-                Instruções:
-                {instruction_text}
-
-                Minha Configuração:
-                {student_config}
-
-                Minha Rede:
-                {student_network}
-
-                Analise as configurações, identifique os erros e proponha conteúdos para estudar.
-            """
-        elif prompt_type == 'compare_instruction_only':
-            instruction_text = kwargs.get('instruction_text')
-
-            user_prompt = f"""
-                Você vai receber uma informação: as instruções de configuração com minhas respostas.
-                Você deve analisar minhas respostas, identificar erros e propor conteúdos para serem estudados.
-
-                Instruções com Respostas:
-                {instruction_text}
-
-                Analise as respostas, identifique os erros e proponha conteúdos para estudar.
-            """
-        elif prompt_type == 'compare_complete':
-            instruction_text = kwargs.get('instruction_text')
-            instructor_config = kwargs.get('instructor_config')
-            instructor_network = kwargs.get('instructor_network')
-            student_config = kwargs.get('student_config')
-            student_network = kwargs.get('student_network')
-
-            user_prompt = f"""
-                Você vai receber cinco informações: as instruções de configuração, as configurações corretas dos equipamentos, as conexões corretas da rede, as configurações que eu fiz nos equipamentos e as conexões que eu fiz na rede.
-                Você deve comparar todas as informações fornecidas. Analise as instruções, as configurações corretas e as configurações realizadas, identifique erros, e proponha conteúdos para serem estudados.
-
-                Instruções:
-                {instruction_text}
-
-                Configuração Correta:
-                {instructor_config}
-
-                Rede Correta:
-                {instructor_network}
-
-                Minha Configuração:
-                {student_config}
-
-                Minha Rede:
-                {student_network}
-
-                Analise todas as informações, identifique os erros e proponha conteúdos para estudar.
-            """
-        else:
-            logger.error(f"Tipo de prompt desconhecido: {prompt_type}")
-            raise ValueError(f"Tipo de prompt desconhecido: {prompt_type}")
+        user_prompt = self._load_prompt(prompt_type, kwargs)
 
         return {
             'base_instruction': base_instruction,
@@ -284,12 +203,11 @@ class ChatGPTClient(APIClient):
     """
     name = "ChatGPT"
 
-    def __init__(self, configurations=None):
-        api_key = os.getenv('OPENAI_API_KEY')
+    def __init__(self, api_key=None, model_name=None, configurations=None):
         if not api_key:
-            logger.error("OPENAI_API_KEY não está definido nas variáveis de ambiente.")
-            raise APICommunicationError("OPENAI_API_KEY não está definido nas variáveis de ambiente.")
-        super().__init__(api_key, configurations)
+            logger.error("Chave de API para ChatGPT não configurada.")
+            raise MissingAPIKeyError("Chave de API para ChatGPT não configurada.")
+        super().__init__(api_key, model_name, configurations)
         self.client = OpenAI(api_key=self.api_key)
         logger.debug("ChatGPTClient inicializado.")
 
@@ -299,11 +217,27 @@ class ChatGPTClient(APIClient):
         """
         try:
             system_messages = [
-                {"role": "system", "content": prompt_data['base_instruction']},
-                {"role": "user", "content": prompt_data['user_prompt']}
+                {
+                    "role": "system", 
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt_data['base_instruction']
+                        }
+                    ]
+                },
+                {
+                    "role": "user", 
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt_data['user_prompt']
+                        }
+                    ]
+                }
             ]
 
-            self.configurations['model'] = self.configurations.get('model-name', 'gpt-4')
+            self.configurations['model'] = self.model_name
             self.configurations['messages'] = system_messages
 
             response = self.client.chat.completions.create(**self.configurations)
@@ -419,12 +353,11 @@ class GeminiClient(APIClient):
     """
     name = "Gemini"
 
-    def __init__(self, configurations=None):
-        api_key = os.getenv('GEMINI_API_KEY')
+    def __init__(self, api_key=None, model_name=None, configurations=None):
         if not api_key:
-            logger.error("GEMINI_API_KEY não está definido nas variáveis de ambiente.")
-            raise APICommunicationError("GEMINI_API_KEY não está definido nas variáveis de ambiente.")
-        super().__init__(api_key, configurations)
+            logger.error("Chave de API para Gemini não configurada.")
+            raise MissingAPIKeyError("Chave de API para Gemini não configurada.")
+        super().__init__(api_key, model_name, configurations)
         genai.configure(api_key=self.api_key)
         logger.debug("GeminiClient inicializado.")
 
@@ -439,30 +372,21 @@ class GeminiClient(APIClient):
         :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do Gemini.
         """
         try:
-            prompt=prompt_data['user_prompt'],
-            system=prompt_data['base_instruction']
-
-            if 'model-name' in self.configurations:
-                _model_name = self.configurations.get('model-name')
-                self.configurations.pop('model-name')
-            else:
-                _model_name = "gemini-1.5-pro"
+            prompt = prompt_data['user_prompt']
+            system = prompt_data['base_instruction']
 
             logger.debug("Iniciando comparação com Gemini.")
-            
-            model = genai.GenerativeModel(
-                model_name=_model_name, 
-                system_instruction=system
-            )   
-
-            logger.debug("Modelo Gemini configurado.")
 
             gemini_config = genai.types.GenerationConfig(
                 **self.configurations
             )
-            logger.debug("Configuração de geração definida.")
+            logger.debug("Modelo Gemini configurado.")
 
-            inputs = [prompt]
+            model = genai.GenerativeModel(
+                model_name=self.model_name, 
+                system_instruction=system
+            )
+            logger.debug("Configuração de geração definida.")
 
             m = model.generate_content(prompt, generation_config=gemini_config)
             logger.debug("Conteúdo gerado com sucesso.")
@@ -563,3 +487,148 @@ class GeminiClient(APIClient):
 
         comparison_result = self.compare(prompt_data)
         return {"response":comparison_result}
+
+@register_ai_client
+class Claude3Client(APIClient):
+    """
+    Cliente para interação com a API do Claude 3.
+    """
+    name = "Claude3"
+
+    def __init__(self, api_key=None, model_name=None, configurations=None):
+        if not api_key:
+            logger.error("Chave de API para Claude 3 não configurada.")
+            raise MissingAPIKeyError("Chave de API para Claude 3 não configurada.")
+        super().__init__(api_key, model_name, configurations)
+        self.client = anthropic.Anthropic(api_key=self.api_key)
+        logger.debug("Claude3Client inicializado.")
+
+    def compare(self, prompt_data: dict) -> str:
+        """
+        Realiza a comparação usando o Claude 3.
+        """
+        try:
+            system = prompt_data['base_instruction']
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt_data['user_prompt']
+                        }
+                    ]
+                }
+            ]
+
+            self.configurations['model'] = self.model_name
+            self.configurations['system'] = system
+            self.configurations['messages'] = messages
+            self.configurations['max_tokens'] = self.configurations.get('max_tokens', 1024)
+
+            response = self.client.messages.create(
+                **self.configurations
+            )
+
+            logger.debug("Mensagem enviada e resposta recebida com sucesso.")
+
+            if not response or not response.content or not response.content[0].text:
+                logger.error("Nenhuma mensagem retornada pelo Claude 3.")
+                raise APICommunicationError("Nenhuma mensagem retornada pelo Claude 3.")
+
+            return parsearHTML(response.content[0].text)
+
+        except Exception as e:
+            logger.error(f"Erro ao comunicar com a API do Claude 3: {e}")
+            raise APICommunicationError(f"Erro ao comunicar com a API do Claude 3: {e}")
+
+    def compare_labs(self, data: dict) -> dict:
+        """
+        Implementação do método compare_labs para o Claude3Client.
+        """
+        try:
+            instructor_config = json.dumps(data['instructor']['config'], indent=4)
+            instructor_network = json.dumps(data['instructor']['network'], indent=4)
+            student_config = json.dumps(data['student']['config'], indent=4)
+            student_network = json.dumps(data['student']['network'], indent=4)
+        except KeyError as e:
+            logger.error(f"Chave ausente nos dados de entrada: {e}")
+            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
+        except Exception as e:
+            logger.error(f"Erro ao serializar dados de configuração: {e}")
+            raise FileProcessingError(f"Erro ao serializar dados de configuração: {e}")
+
+        prompt_data = self._prepare_prompts(
+            'compare_labs',
+            instructor_config=instructor_config,
+            instructor_network=instructor_network,
+            student_config=student_config,
+            student_network=student_network
+        )
+
+        comparison_result = self.compare(prompt_data)
+        return {"response": comparison_result}
+
+    def compare_instruction(self, data: dict) -> dict:
+        """
+        Implementação do método compare_instruction para o Claude3Client.
+        """
+        try:
+            instruction_text = self.extract_instruction_text(data['instruction'])
+            has_answers = data['instruction'].get('has_answers', False)
+
+            if 'student' in data:
+                student_config = json.dumps(data['student']['config'], indent=4)
+                student_network = json.dumps(data['student']['network'], indent=4)
+                prompt_type = 'compare_instruction'
+                prompt_data = self._prepare_prompts(
+                    prompt_type,
+                    instruction_text=instruction_text,
+                    student_config=student_config,
+                    student_network=student_network
+                )
+            elif has_answers:
+                prompt_type = 'compare_instruction_only'
+                prompt_data = self._prepare_prompts(
+                    prompt_type,
+                    instruction_text=instruction_text
+                )
+            else:
+                logger.error("Dados insuficientes para comparação.")
+                raise FileProcessingError("Dados insuficientes para comparação.")
+
+            comparison_result = self.compare(prompt_data)
+            return {"response": comparison_result}
+
+        except Exception as e:
+            logger.error(f"Erro em compare_instruction: {e}")
+            raise
+
+    def compare_complete(self, data: dict) -> dict:
+        """
+        Implementação do método compare_complete para o Claude3Client.
+        """
+        try:
+            instruction_text = self.extract_instruction_text(data['instruction'])
+            instructor_config = json.dumps(data['instructor']['config'], indent=4)
+            instructor_network = json.dumps(data['instructor']['network'], indent=4)
+            student_config = json.dumps(data['student']['config'], indent=4)
+            student_network = json.dumps(data['student']['network'], indent=4)
+        except KeyError as e:
+            logger.error(f"Chave ausente nos dados de entrada: {e}")
+            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
+        except Exception as e:
+            logger.error(f"Erro ao processar dados de entrada: {e}")
+            raise FileProcessingError(f"Erro ao processar dados de entrada: {e}")
+
+        prompt_data = self._prepare_prompts(
+            'compare_complete',
+            instruction_text=instruction_text,
+            instructor_config=instructor_config,
+            instructor_network=instructor_network,
+            student_config=student_config,
+            student_network=student_network
+        )
+
+        comparison_result = self.compare(prompt_data)
+        return {"response": comparison_result}

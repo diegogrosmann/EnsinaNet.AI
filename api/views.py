@@ -7,24 +7,37 @@ from rest_framework import status
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from api.exceptions import APIClientError, FileProcessingError
+from api.exceptions import APIClientError, FileProcessingError, MissingAPIKeyError
 from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
 
 from accounts.models import UserToken, TokenConfiguration
 
 logger = logging.getLogger(__name__)
 
-
 def process_client(AIClientClass, method_name, data, user_token):
     ai_client_name = AIClientClass.name
     try:
-        token_config = user_token.configurations.get(api_client_class=ai_client_name)
-        configurations = token_config.configurations
-    except TokenConfiguration.DoesNotExist:
-        configurations = {}
+        try:
+            token_config = user_token.configurations.get(api_client_class=ai_client_name)
+            if not token_config.enabled:
+                logger.info(f"{ai_client_name} está desabilitado para este token.")
+                return ai_client_name, {"message": "Esta IA está desabilitada."}
+            configurations = token_config.configurations
+            api_key = token_config.api_key
+            model_name = token_config.model_name
+        except TokenConfiguration.DoesNotExist:
+            configurations = {}
+            api_key = None
+            model_name = None
+            logger.info(f"{ai_client_name} não tem configuração para este token.")
+            return ai_client_name, {"message": "Esta IA está desabilitada."}
+        except Exception as e:
+            logger.error(f"Erro ao obter configurações para {ai_client_name}: {e}")
+            configurations = {}
+            api_key = None
+            model_name = None
 
-    try:
-        ai_client = AIClientClass(configurations=configurations)
+        ai_client = AIClientClass(api_key=api_key, model_name=model_name, configurations=configurations)
         compare_method = getattr(ai_client, method_name, None)
         if not compare_method:
             logger.warning(f"O método '{method_name}' não está implementado para {ai_client_name}.")
@@ -33,6 +46,9 @@ def process_client(AIClientClass, method_name, data, user_token):
         result = compare_method(data)
         logger.info(f"Comparação de '{method_name}' com {ai_client_name} realizada com sucesso.")
         return ai_client_name, result
+    except MissingAPIKeyError as e:
+        logger.error(f"Chave de API ausente para {ai_client_name}: {e}")
+        return ai_client_name, {"error": "Chave de API não configurada para esta IA."}
     except APIClientError as e:
         logger.error(f"Erro na comparação de '{method_name}' com {ai_client_name}: {e}")
         return ai_client_name, {"error": str(e)}
@@ -42,7 +58,6 @@ def process_client(AIClientClass, method_name, data, user_token):
     except Exception as e:
         logger.error(f"Erro inesperado ao utilizar {ai_client_name}: {e}")
         return ai_client_name, {"error": "Erro interno ao processar a requisição com " + ai_client_name}
-
 
 @api_view(['POST'])
 def compare(request):
