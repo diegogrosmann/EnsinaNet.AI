@@ -1,3 +1,5 @@
+<!-- accounts/templates/accounts/manage/manage_configurations.html -->
+
 {% extends 'base.html' %}
 
 {% block content %}
@@ -34,18 +36,12 @@
                                     {% endfor %}
                                 </div>
                                 <div class="form-group">
-                                    {{ form.api_key.label_tag }}
-                                    {{ form.api_key }}
-                                    {% for error in form.api_key.errors %}
-                                        <small class="text-danger">{{ error }}</small>
-                                    {% endfor %}
-                                </div>
-                                <div class="form-group">
                                     {{ form.model_name.label_tag }}
                                     {{ form.model_name }}
                                     {% for error in form.model_name.errors %}
                                         <small class="text-danger">{{ error }}</small>
                                     {% endfor %}
+                                    <small class="form-text text-muted">Deixe vazio para usar o modelo padrão.</small>
                                 </div>
                                 <div class="form-group">
                                     {{ form.configurations.label_tag }}

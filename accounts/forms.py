@@ -1,3 +1,5 @@
+# accounts/forms.py
+
 import json
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
@@ -6,6 +8,9 @@ from django.contrib.auth import authenticate
 from allauth.account.models import EmailAddress
 
 from .models import UserToken, TokenConfiguration
+
+from .models import AIClientConfiguration
+from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
 
 User = get_user_model()
 
@@ -102,12 +107,6 @@ class TokenConfigurationForm(forms.ModelForm):
         widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         help_text='Marque esta opção para habilitar esta IA.'
     )
-    api_key = forms.CharField(
-        label='Chave da API',
-        widget=forms.TextInput(attrs={'class': 'form-control'}),
-        required=False,
-        help_text='Insira a chave de API para esta IA.'
-    )
     model_name = forms.CharField(
         label='Nome do Modelo',
         widget=forms.TextInput(attrs={'class': 'form-control'}),
@@ -130,7 +129,7 @@ class TokenConfigurationForm(forms.ModelForm):
 
     class Meta:
         model = TokenConfiguration
-        fields = ['api_client_class', 'enabled', 'api_key', 'model_name', 'configurations']
+        fields = ['api_client_class', 'enabled', 'model_name', 'configurations']
 
     def __init__(self, *args, **kwargs):
         super(TokenConfigurationForm, self).__init__(*args, **kwargs)
@@ -140,31 +139,10 @@ class TokenConfigurationForm(forms.ModelForm):
             self.initial['configurations'] = '\n'.join(lines)
             self.initial['enabled'] = self.instance.enabled
 
-            # Máscara da chave da API
-            if self.instance.api_key:
-                masked_key = f"{self.instance.api_key[:4]}****{self.instance.api_key[-4:]}"
-                self.initial['api_key'] = masked_key
-
             self.initial['model_name'] = self.instance.model_name
-
-    def clean_api_key(self):
-        api_key = self.cleaned_data.get('api_key')
-        if api_key and '****' in api_key:
-            # O usuário não alterou a chave da API
-            return self.instance.api_key
-        return api_key
 
     def clean(self):
         cleaned_data = super().clean()
-        enabled = cleaned_data.get('enabled')
-        api_key = cleaned_data.get('api_key')
-        model_name = cleaned_data.get('model_name')
-
-        if enabled:
-            if not api_key:
-                self.add_error('api_key', 'A chave da API é obrigatória quando a IA está habilitada.')
-            if not model_name:
-                self.add_error('model_name', 'O nome do modelo é obrigatório quando a IA está habilitada.')
 
         configurations_text = cleaned_data.get('configurations')
         configurations_dict = {}
@@ -184,5 +162,98 @@ class TokenConfigurationForm(forms.ModelForm):
                     configurations_dict[key] = value
                 else:
                     raise forms.ValidationError('Cada linha deve estar no formato key=value.')
-        cleaned_data['configurations'] = configurations_dict
+            cleaned_data['configurations'] = configurations_dict
+        else:
+            cleaned_data['configurations'] = configurations_dict
         return cleaned_data
+
+class AIClientConfigurationForm(forms.ModelForm):
+    # Cria uma lista de escolhas para api_client_class a partir de AVAILABLE_AI_CLIENTS
+    API_CLIENT_CHOICES = [(client.name, client.name) for client in AVAILABLE_AI_CLIENTS]
+    original_api_key = forms.CharField(widget=forms.HiddenInput(), required=False)
+
+    api_client_class = forms.ChoiceField(
+        choices=API_CLIENT_CHOICES,
+        label='Classe do Cliente de API',
+        widget=forms.Select(attrs={'class': 'form-control'}),
+        help_text='Selecione a classe do cliente de API.'
+    )
+    configurations = forms.CharField(
+        label='Configurações da IA',
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'placeholder': 'Exemplo:\ntemperature=0.2\ntop_k=10',
+            'title': 'Digite as configurações no formato chave=valor, uma por linha.'
+        }),
+        help_text='Insira as configurações no formato chave=valor, uma por linha.',
+        required=False
+    )
+
+    class Meta:
+        model = AIClientConfiguration
+        fields = ['api_client_class', 'api_key', 'model_name', 'configurations']
+        widgets = {
+            'api_key': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Chave da API'}),
+            'model_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Nome do Modelo'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super(AIClientConfigurationForm, self).__init__(*args, **kwargs)
+        if self.instance and self.instance.api_key:
+            masked_key = self.mask_api_key(self.instance.api_key)
+            self.initial['api_key'] = masked_key
+            self.initial['original_api_key'] = self.instance.api_key
+        if self.instance and self.instance.configurations:
+            # Converte o dicionário de configurações em linhas chave=valor
+            configs = self.instance.configurations
+            lines = [f"{key}={value}" for key, value in configs.items()]
+            self.initial['configurations'] = '\n'.join(lines)
+        else:
+            self.initial['configurations'] = ''
+
+    def mask_api_key(self, api_key):
+        if len(api_key) > 8:
+            return f"{api_key[:4]}****{api_key[-4:]}"
+        else:
+            return '*' * len(api_key)
+
+    def clean_api_key(self):
+        api_key = self.cleaned_data.get('api_key')
+        original_api_key = self.initial['original_api_key']
+        masked_key = self.mask_api_key(original_api_key) if original_api_key else ''
+        
+        if api_key == masked_key:
+            # API Key não foi alterada
+            return original_api_key
+        else:
+            # API Key foi alterada; validar conforme necessário
+            return api_key
+
+    def clean_configurations(self):
+        configurations_text = self.cleaned_data.get('configurations', '')
+        configurations_dict = {}
+        if configurations_text.strip():
+            for line in configurations_text.strip().splitlines():
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    # Tenta converter para float ou int, senão mantém como string
+                    try:
+                        if '.' in value:
+                            value = float(value)
+                        else:
+                            value = int(value)
+                    except ValueError:
+                        pass
+                    configurations_dict[key] = value
+                else:
+                    raise forms.ValidationError('Cada linha deve estar no formato chave=valor.')
+            return configurations_dict
+        return {}
+    
+    def clean_api_client_class(self):
+        api_client_class = self.cleaned_data.get('api_client_class')
+        if AIClientConfiguration.objects.filter(api_client_class=api_client_class).exclude(pk=self.instance.pk).exists():
+            raise forms.ValidationError('Já existe uma configuração para esta classe de cliente de API.')
+        return api_client_class

@@ -130,9 +130,6 @@ def manage_configurations(request, token_id):
             try:
                 for form in forms:
                     config_instance = form.save(commit=False)
-                    # Atualiza apenas se o campo foi alterado
-                    if 'api_key' in form.changed_data:
-                        config_instance.api_key = form.cleaned_data['api_key']
                     if 'model_name' in form.changed_data:
                         config_instance.model_name = form.cleaned_data['model_name']
                     config_instance.enabled = form.cleaned_data['enabled']

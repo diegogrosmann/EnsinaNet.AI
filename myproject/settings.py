@@ -71,7 +71,7 @@ REST_FRAMEWORK = {
 }
 
 LOGIN_REDIRECT_URL = '/manage-tokens/'
-LOGOUT_REDIRECT_URL = '/login/'
+LOGOUT_REDIRECT_URL = '/accounts/login/'
 LOGIN_URL = 'login'  # Nome da URL definida em accounts/urls.py
 LOGOUT_URL = 'logout'  # Nome da URL definida em accounts/urls.py
 

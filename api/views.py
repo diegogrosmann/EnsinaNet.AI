@@ -1,3 +1,5 @@
+# api/views.py
+
 import logging
 
 from django.http import JsonResponse
@@ -10,32 +12,40 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from api.exceptions import APIClientError, FileProcessingError, MissingAPIKeyError
 from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
 
-from accounts.models import UserToken, TokenConfiguration
+from accounts.models import UserToken, TokenConfiguration, AIClientConfiguration
 
 logger = logging.getLogger(__name__)
 
 def process_client(AIClientClass, method_name, data, user_token):
     ai_client_name = AIClientClass.name
     try:
+        # Obter a configuração padrão do ADM
+        try:
+            default_config = AIClientConfiguration.objects.get(api_client_class=ai_client_name)
+            api_key = default_config.api_key
+            model_name = default_config.model_name
+            configurations = default_config.configurations.copy()
+        except AIClientConfiguration.DoesNotExist:
+            logger.error(f"Configuração padrão para {ai_client_name} não encontrada.")
+            raise MissingAPIKeyError(f"Configuração padrão para {ai_client_name} não encontrada.")
+
+        # Obter configurações específicas do usuário, se houver
         try:
             token_config = user_token.configurations.get(api_client_class=ai_client_name)
             if not token_config.enabled:
                 logger.info(f"{ai_client_name} está desabilitado para este token.")
                 return ai_client_name, {"message": "Esta IA está desabilitada."}
-            configurations = token_config.configurations
-            api_key = token_config.api_key
-            model_name = token_config.model_name
+            # Sobrescrever model_name e configurations se fornecidos pelo usuário
+            if token_config.model_name:
+                model_name = token_config.model_name
+            if token_config.configurations:
+                configurations.update(token_config.configurations)
         except TokenConfiguration.DoesNotExist:
-            configurations = {}
-            api_key = None
-            model_name = None
-            logger.info(f"{ai_client_name} não tem configuração para este token.")
-            return ai_client_name, {"message": "Esta IA está desabilitada."}
+            logger.info(f"{ai_client_name} não tem configuração específica para este token.")
+            # Manter as configurações padrão
         except Exception as e:
             logger.error(f"Erro ao obter configurações para {ai_client_name}: {e}")
-            configurations = {}
-            api_key = None
-            model_name = None
+            # Manter as configurações padrão
 
         ai_client = AIClientClass(api_key=api_key, model_name=model_name, configurations=configurations)
         compare_method = getattr(ai_client, method_name, None)

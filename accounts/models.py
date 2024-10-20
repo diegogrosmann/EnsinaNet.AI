@@ -1,3 +1,5 @@
+# accounts/models.py
+
 from django.db import models
 from django.contrib.auth.models import User
 import uuid
@@ -33,11 +35,19 @@ class UserToken(models.Model):
     def __str__(self):
         return f"{self.name} - {self.key}"
 
+class AIClientConfiguration(models.Model):
+    api_client_class = models.CharField(max_length=255, unique=True)
+    api_key = models.CharField(max_length=255)
+    model_name = models.CharField(max_length=255)
+    configurations = models.JSONField(default=dict, blank=True)
+
+    def __str__(self):
+        return f"Configuração Padrão para {self.api_client_class}"
+
 class TokenConfiguration(models.Model):
     token = models.ForeignKey(UserToken, related_name='configurations', on_delete=models.CASCADE)
     api_client_class = models.CharField(max_length=255)
-    enabled = models.BooleanField(default=False)  # Alterado para False
-    api_key = models.CharField(max_length=255, blank=True, null=True)
+    enabled = models.BooleanField(default=False)
     model_name = models.CharField(max_length=255, blank=True, null=True)
     configurations = models.JSONField(default=dict, blank=True)
 
