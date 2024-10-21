@@ -61,7 +61,7 @@ def processar_documento(conteudo_documento: bytes, nome_documento: str) -> str:
     """
     logger.debug(f"Iniciando o processamento do documento: {nome_documento}")
 
-     # Configurações do Document AI
+    # Configurações do Document AI
     project_id = 'doutorado2' 
     location = 'us'
     processor_id = 'f336c42ad14e194a'
@@ -115,6 +115,39 @@ def processar_documento(conteudo_documento: bytes, nome_documento: str) -> str:
         logger.error(f"Erro ao processar o documento {nome_documento}: {e}")
         raise FileProcessingError(f"Erro ao processar o documento: {e}")
 
+def extract_text(data: dict) -> str:
+    """
+    Extrai o texto da instrução a partir dos dados fornecidos.
+    """
+    if data is not None:
+        name = data.get('name')
+        content = data.get('content')
+
+        if not name or not content:
+            logger.error("Dados de instrução incompletos.")
+            raise FileProcessingError("Dados de instrução incompletos.")
+
+        try:
+            # Decodifica o conteúdo do arquivo em Base64
+            instruction_decoded = base64.b64decode(content)
+            logger.debug("Conteúdo do arquivo decodificado com sucesso.")
+        except Exception as e:
+            logger.error(f"Erro ao decodificar o conteúdo do arquivo: {e}")
+            raise FileProcessingError(f"Erro ao decodificar o conteúdo do arquivo: {e}")
+
+        try:
+            # Processa o documento e extrai o texto
+            instruction_text = processar_documento(instruction_decoded, name)
+            logger.info("Texto da instrução extraído com sucesso.")
+            return instruction_text
+        except Exception as e:
+            logger.error(f"Erro ao processar o documento: {e}")
+            raise FileProcessingError(f"Erro ao processar o documento: {e}")
+
+    else:
+        logger.error("Nenhum dado de instrução fornecido.")
+        raise FileProcessingError("Nenhum dado de instrução fornecido.")
+
 
 class APIClient:
     """
@@ -125,39 +158,6 @@ class APIClient:
         self.model_name = model_name
         self.configurations = configurations or {}
         logger.debug(f"{self.__class__.__name__} inicializado com configurações: {self.configurations}")
-
-    def extract_instruction_text(self, instruction_data: dict) -> str:
-        """
-        Extrai o texto da instrução a partir dos dados fornecidos.
-        """
-        if instruction_data is not None:
-            name = instruction_data.get('name')
-            content = instruction_data.get('content')
-
-            if not name or not content:
-                logger.error("Dados de instrução incompletos.")
-                raise FileProcessingError("Dados de instrução incompletos.")
-
-            try:
-                # Decodifica o conteúdo do arquivo em Base64
-                instruction_decoded = base64.b64decode(content)
-                logger.debug("Conteúdo do arquivo decodificado com sucesso.")
-            except Exception as e:
-                logger.error(f"Erro ao decodificar o conteúdo do arquivo: {e}")
-                raise FileProcessingError(f"Erro ao decodificar o conteúdo do arquivo: {e}")
-
-            try:
-                # Processa o documento e extrai o texto
-                instruction_text = processar_documento(instruction_decoded, name)
-                logger.info("Texto da instrução extraído com sucesso.")
-                return instruction_text
-            except Exception as e:
-                logger.error(f"Erro ao processar o documento: {e}")
-                raise FileProcessingError(f"Erro ao processar o documento: {e}")
-
-        else:
-            logger.error("Nenhum dado de instrução fornecido.")
-            raise FileProcessingError("Nenhum dado de instrução fornecido.")
 
     def _prepare_answer_format(self) -> str:
         """
@@ -181,19 +181,54 @@ class APIClient:
         template_name = f'api/prompts/{prompt_name}.txt'
         return render_to_string(template_name, context or {})
 
-    def _prepare_prompts(self, prompt_type: str, **kwargs) -> dict:
+    def _prepare_prompts(self, **kwargs) -> dict:
         """
         Prepara os prompts para as IAs com base no tipo de comparação.
         """
         answer_format = self._prepare_answer_format()
         base_instruction = self._load_prompt('base_instruction', {'answer_format': answer_format})
 
-        user_prompt = self._load_prompt(prompt_type, kwargs)
+
+        instructor = kwargs.get('instructor')
+        instruction = instructor.get('instruction')
+        lab = instructor.get('lab')
+
+        prompt = ''
+
+        if instruction:
+            prompt = prompt + self._load_prompt('instructor_instruction', {'instruction': instruction})
+            
+        if lab:
+            prompt = prompt + self._load_prompt('instructor_lab', {'config': lab['config'], 'network' : lab['network']})
+
+        student = kwargs.get('student')
+        answers = student.get('answers')
+        lab = student.get('lab')
+
+        if answers:
+            prompt = prompt + self._load_prompt('student_answers', {'answers': answers})
+        
+        if lab:
+            prompt = prompt + self._load_prompt('student_lab', {'config': lab['config'], 'network' : lab['network']})
 
         return {
             'base_instruction': base_instruction,
-            'user_prompt': user_prompt
+            'user_prompt': prompt
         }
+
+    def compare(self, data: dict) -> str:
+        """
+        Método unificado para realizar comparações com base no tipo fornecido.
+        """
+        prompts = self._prepare_prompts(**data)
+        response = self._call_api(prompts)
+        return response
+
+    def _call_api(self, prompts: dict) -> str:
+        """
+        Método abstrato para chamar a API específica. Deve ser implementado pelas subclasses.
+        """
+        raise NotImplementedError("Subclasses devem implementar o método _call_api.")
 
 
 @register_ai_client
@@ -211,29 +246,19 @@ class ChatGPTClient(APIClient):
         self.client = OpenAI(api_key=self.api_key)
         logger.debug("ChatGPTClient inicializado.")
 
-    def compare(self, prompt_data: dict) -> str:
+    def _call_api(self, prompts: dict) -> str:
         """
-        Realiza a comparação usando o ChatGPT.
+        Implementa a chamada à API do ChatGPT.
         """
         try:
             system_messages = [
                 {
                     "role": "system", 
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompt_data['base_instruction']
-                        }
-                    ]
+                    "content": prompts['base_instruction']
                 },
                 {
                     "role": "user", 
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompt_data['user_prompt']
-                        }
-                    ]
+                    "content": prompts['user_prompt']
                 }
             ]
 
@@ -254,97 +279,6 @@ class ChatGPTClient(APIClient):
             logger.error(f"Erro ao comunicar com a API ChatGPT: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API ChatGPT: {e}")
 
-    def compare_labs(self, data: dict) -> dict:
-        """
-        Implementação do método compare_labs para o ChatGPTClient.
-        """
-        try:
-            instructor_config = json.dumps(data['instructor']['config'], indent=4)
-            instructor_network = json.dumps(data['instructor']['network'], indent=4)
-            student_config = json.dumps(data['student']['config'], indent=4)
-            student_network = json.dumps(data['student']['network'], indent=4)
-        except KeyError as e:
-            logger.error(f"Chave ausente nos dados de entrada: {e}")
-            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
-        except Exception as e:
-            logger.error(f"Erro ao serializar dados de configuração: {e}")
-            raise FileProcessingError(f"Erro ao serializar dados de configuração: {e}")
-
-        prompt_data = self._prepare_prompts(
-            'compare_labs',
-            instructor_config=instructor_config,
-            instructor_network=instructor_network,
-            student_config=student_config,
-            student_network=student_network
-        )
-
-        comparison_result = self.compare(prompt_data)
-        return {"response": comparison_result}
-
-    def compare_instruction(self, data: dict) -> dict:
-        """
-        Implementação do método compare_instruction para o ChatGPTClient.
-        """
-        try:
-            instruction_text = self.extract_instruction_text(data['instruction'])
-            has_answers = data['instruction'].get('has_answers', False)
-
-            if 'student' in data:
-                student_config = json.dumps(data['student']['config'], indent=4)
-                student_network = json.dumps(data['student']['network'], indent=4)
-                prompt_type = 'compare_instruction'
-                prompt_data = self._prepare_prompts(
-                    prompt_type,
-                    instruction_text=instruction_text,
-                    student_config=student_config,
-                    student_network=student_network
-                )
-            elif has_answers:
-                prompt_type = 'compare_instruction_only'
-                prompt_data = self._prepare_prompts(
-                    prompt_type,
-                    instruction_text=instruction_text
-                )
-            else:
-                logger.error("Dados insuficientes para comparação.")
-                raise FileProcessingError("Dados insuficientes para comparação.")
-
-            comparison_result = self.compare(prompt_data)
-            return {"response": comparison_result}
-
-        except Exception as e:
-            logger.error(f"Erro em compare_instruction: {e}")
-            raise
-
-    def compare_complete(self, data: dict) -> dict:
-        """
-        Implementação do método compare_complete para o ChatGPTClient.
-        """
-        try:
-            instruction_text = self.extract_instruction_text(data['instruction'])
-            instructor_config = json.dumps(data['instructor']['config'], indent=4)
-            instructor_network = json.dumps(data['instructor']['network'], indent=4)
-            student_config = json.dumps(data['student']['config'], indent=4)
-            student_network = json.dumps(data['student']['network'], indent=4)
-        except KeyError as e:
-            logger.error(f"Chave ausente nos dados de entrada: {e}")
-            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
-        except Exception as e:
-            logger.error(f"Erro ao processar dados de entrada: {e}")
-            raise FileProcessingError(f"Erro ao processar dados de entrada: {e}")
-
-        prompt_data = self._prepare_prompts(
-            'compare_complete',
-            instruction_text=instruction_text,
-            instructor_config=instructor_config,
-            instructor_network=instructor_network,
-            student_config=student_config,
-            student_network=student_network
-        )
-
-        comparison_result = self.compare(prompt_data)
-        return {"response": comparison_result}
-
 
 @register_ai_client
 class GeminiClient(APIClient):
@@ -361,19 +295,13 @@ class GeminiClient(APIClient):
         genai.configure(api_key=self.api_key)
         logger.debug("GeminiClient inicializado.")
 
-    def compare(self, prompt_data: dict) -> str:
+    def _call_api(self, prompts: dict) -> str:
         """
-        Realiza a comparação usando o Gemini.
-
-        :param instruction: Instruções do sistema.
-        :param prompt: Prompt para geração de conteúdo.
-        :param instruction_file_path: Caminho para o arquivo de instruções (opcional).
-        :return: Resposta gerada pelo Gemini.
-        :raises APICommunicationError: Se ocorrer um erro na comunicação com a API do Gemini.
+        Implementa a chamada à API do Gemini.
         """
         try:
-            prompt = prompt_data['user_prompt']
-            system = prompt_data['base_instruction']
+            prompt = prompts['user_prompt']
+            system = prompts['base_instruction']
 
             logger.debug("Iniciando comparação com Gemini.")
 
@@ -397,96 +325,6 @@ class GeminiClient(APIClient):
             logger.error(f"Erro ao comunicar com a API Gemini: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API Gemini: {e}")
 
-    def compare_labs(self, data: dict) -> dict:
-        """
-        Implementação do método compare_labs para o GeminiClient.
-        """
-        try:
-            instructor_config = json.dumps(data['instructor']['config'], indent=4)
-            instructor_network = json.dumps(data['instructor']['network'], indent=4)
-            student_config = json.dumps(data['student']['config'], indent=4)
-            student_network = json.dumps(data['student']['network'], indent=4)
-        except KeyError as e:
-            logger.error(f"Chave ausente nos dados de entrada: {e}")
-            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
-        except Exception as e:
-            logger.error(f"Erro ao serializar dados de configuração: {e}")
-            raise FileProcessingError(f"Erro ao serializar dados de configuração: {e}")
-
-        prompt_data = self._prepare_prompts(
-            'compare_labs',
-            instructor_config=instructor_config,
-            instructor_network=instructor_network,
-            student_config=student_config,
-            student_network=student_network
-        )
-
-        comparison_result = self.compare(prompt_data)
-        return {"response": comparison_result}
-
-    def compare_instruction(self, data: dict) -> dict:
-        """
-        Implementação do método compare_instruction para o GeminiClient.
-        """
-        try:
-            instruction_text = self.extract_instruction_text(data['instruction'])
-            has_answers = data['instruction'].get('has_answers', False)
-
-            if 'student' in data:
-                student_config = json.dumps(data['student']['config'], indent=4)
-                student_network = json.dumps(data['student']['network'], indent=4)
-                prompt_type = 'compare_instruction'
-                prompt_data = self._prepare_prompts(
-                    prompt_type,
-                    instruction_text=instruction_text,
-                    student_config=student_config,
-                    student_network=student_network
-                )
-            elif has_answers:
-                prompt_type = 'compare_instruction_only'
-                prompt_data = self._prepare_prompts(
-                    prompt_type,
-                    instruction_text=instruction_text
-                )
-            else:
-                logger.error("Dados insuficientes para comparação.")
-                raise FileProcessingError("Dados insuficientes para comparação.")
-
-            comparison_result = self.compare(prompt_data)
-            return {"response": comparison_result}
-
-        except Exception as e:
-            logger.error(f"Erro em compare_instruction: {e}")
-            raise
-
-    def compare_complete(self, data: dict) -> dict:
-        """
-        Implementação do método compare_complete para o GeminiClient.
-        """
-        try:
-            instruction_text = self.extract_instruction_text(data['instruction'])
-            instructor_config = json.dumps(data['instructor']['config'], indent=4)
-            instructor_network = json.dumps(data['instructor']['network'], indent=4)
-            student_config = json.dumps(data['student']['config'], indent=4)
-            student_network = json.dumps(data['student']['network'], indent=4)
-        except KeyError as e:
-            logger.error(f"Chave ausente nos dados de entrada: {e}")
-            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
-        except Exception as e:
-            logger.error(f"Erro ao processar dados de entrada: {e}")
-            raise FileProcessingError(f"Erro ao processar dados de entrada: {e}")
-
-        prompt_data = self._prepare_prompts(
-            'compare_complete',
-            instruction_text=instruction_text,
-            instructor_config=instructor_config,
-            instructor_network=instructor_network,
-            student_config=student_config,
-            student_network=student_network
-        )
-
-        comparison_result = self.compare(prompt_data)
-        return {"response":comparison_result}
 
 @register_ai_client
 class Claude3Client(APIClient):
@@ -503,21 +341,18 @@ class Claude3Client(APIClient):
         self.client = anthropic.Anthropic(api_key=self.api_key)
         logger.debug("Claude3Client inicializado.")
 
-    def compare(self, prompt_data: dict) -> str:
+    def _call_api(self, prompts: dict) -> str:
         """
-        Realiza a comparação usando o Claude 3.
+        Implementa a chamada à API do Claude 3.
         """
         try:
-            system = prompt_data['base_instruction']
-            messages=[
+            system = prompts['base_instruction']
+            user_prompt = prompts['user_prompt']
+
+            messages = [
                 {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompt_data['user_prompt']
-                        }
-                    ]
+                    "content": user_prompt
                 }
             ]
 
@@ -541,94 +376,3 @@ class Claude3Client(APIClient):
         except Exception as e:
             logger.error(f"Erro ao comunicar com a API do Claude 3: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API do Claude 3: {e}")
-
-    def compare_labs(self, data: dict) -> dict:
-        """
-        Implementação do método compare_labs para o Claude3Client.
-        """
-        try:
-            instructor_config = json.dumps(data['instructor']['config'], indent=4)
-            instructor_network = json.dumps(data['instructor']['network'], indent=4)
-            student_config = json.dumps(data['student']['config'], indent=4)
-            student_network = json.dumps(data['student']['network'], indent=4)
-        except KeyError as e:
-            logger.error(f"Chave ausente nos dados de entrada: {e}")
-            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
-        except Exception as e:
-            logger.error(f"Erro ao serializar dados de configuração: {e}")
-            raise FileProcessingError(f"Erro ao serializar dados de configuração: {e}")
-
-        prompt_data = self._prepare_prompts(
-            'compare_labs',
-            instructor_config=instructor_config,
-            instructor_network=instructor_network,
-            student_config=student_config,
-            student_network=student_network
-        )
-
-        comparison_result = self.compare(prompt_data)
-        return {"response": comparison_result}
-
-    def compare_instruction(self, data: dict) -> dict:
-        """
-        Implementação do método compare_instruction para o Claude3Client.
-        """
-        try:
-            instruction_text = self.extract_instruction_text(data['instruction'])
-            has_answers = data['instruction'].get('has_answers', False)
-
-            if 'student' in data:
-                student_config = json.dumps(data['student']['config'], indent=4)
-                student_network = json.dumps(data['student']['network'], indent=4)
-                prompt_type = 'compare_instruction'
-                prompt_data = self._prepare_prompts(
-                    prompt_type,
-                    instruction_text=instruction_text,
-                    student_config=student_config,
-                    student_network=student_network
-                )
-            elif has_answers:
-                prompt_type = 'compare_instruction_only'
-                prompt_data = self._prepare_prompts(
-                    prompt_type,
-                    instruction_text=instruction_text
-                )
-            else:
-                logger.error("Dados insuficientes para comparação.")
-                raise FileProcessingError("Dados insuficientes para comparação.")
-
-            comparison_result = self.compare(prompt_data)
-            return {"response": comparison_result}
-
-        except Exception as e:
-            logger.error(f"Erro em compare_instruction: {e}")
-            raise
-
-    def compare_complete(self, data: dict) -> dict:
-        """
-        Implementação do método compare_complete para o Claude3Client.
-        """
-        try:
-            instruction_text = self.extract_instruction_text(data['instruction'])
-            instructor_config = json.dumps(data['instructor']['config'], indent=4)
-            instructor_network = json.dumps(data['instructor']['network'], indent=4)
-            student_config = json.dumps(data['student']['config'], indent=4)
-            student_network = json.dumps(data['student']['network'], indent=4)
-        except KeyError as e:
-            logger.error(f"Chave ausente nos dados de entrada: {e}")
-            raise FileProcessingError(f"Chave ausente nos dados de entrada: {e}")
-        except Exception as e:
-            logger.error(f"Erro ao processar dados de entrada: {e}")
-            raise FileProcessingError(f"Erro ao processar dados de entrada: {e}")
-
-        prompt_data = self._prepare_prompts(
-            'compare_complete',
-            instruction_text=instruction_text,
-            instructor_config=instructor_config,
-            instructor_network=instructor_network,
-            student_config=student_config,
-            student_network=student_network
-        )
-
-        comparison_result = self.compare(prompt_data)
-        return {"response": comparison_result}

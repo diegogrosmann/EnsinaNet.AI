@@ -85,7 +85,7 @@ As atividades podem ser apresentadas nos seguintes formatos:
 
 ## Formato de Saída
 
-A saída deve ser fornecida em **HTML estruturado**. Utilize o seguinte template, **preenchendo as informações relevantes**. **Certifique-se de substituir todos os `{{placeholders}}` pelas informações correspondentes**, sem deixar nenhum marcador vazio.
+A saída deve ser fornecida em **HTML estruturado**. Utilize o seguinte template, **preenchendo as informações relevantes**. **Certifique-se de substituir todos os placeholders` pelas informações correspondentes**, sem deixar nenhum marcador vazio.
 
 {{ answer_format }}
 

@@ -1,0 +1,7 @@
+Segue o Laboratório do aluno:
+
+Configurações:
+{{ config }}
+
+Conexões:
+{{ network }}

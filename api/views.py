@@ -1,6 +1,5 @@
-# api/views.py
-
 import logging
+import json
 
 from django.http import JsonResponse
 
@@ -10,13 +9,13 @@ from rest_framework import status
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from api.exceptions import APIClientError, FileProcessingError, MissingAPIKeyError
-from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
+from api.utils.clientsIA import AVAILABLE_AI_CLIENTS, extract_text
 
 from accounts.models import UserToken, TokenConfiguration, AIClientConfiguration
 
 logger = logging.getLogger(__name__)
 
-def process_client(AIClientClass, method_name, data, user_token):
+def process_client(AIClientClass, processed_data, user_token):
     ai_client_name = AIClientClass.name
     try:
         # Obter a configuração padrão do ADM
@@ -47,20 +46,21 @@ def process_client(AIClientClass, method_name, data, user_token):
             logger.error(f"Erro ao obter configurações para {ai_client_name}: {e}")
             # Manter as configurações padrão
 
+       
+        # Inicializar o cliente de IA
         ai_client = AIClientClass(api_key=api_key, model_name=model_name, configurations=configurations)
-        compare_method = getattr(ai_client, method_name, None)
-        if not compare_method:
-            logger.warning(f"O método '{method_name}' não está implementado para {ai_client_name}.")
-            return ai_client_name, {"error": f"Método '{method_name}' não implementado."}
 
-        result = compare_method(data)
-        logger.info(f"Comparação de '{method_name}' com {ai_client_name} realizada com sucesso.")
-        return ai_client_name, result
+        # Chamar o método compare com comparison_type e processed_data
+        comparison_result = ai_client.compare(processed_data)
+
+        logger.info(f"Comparação com {ai_client_name} realizada com sucesso.")
+        return ai_client_name, {"response": comparison_result}
+
     except MissingAPIKeyError as e:
         logger.error(f"Chave de API ausente para {ai_client_name}: {e}")
         return ai_client_name, {"error": "Chave de API não configurada para esta IA."}
     except APIClientError as e:
-        logger.error(f"Erro na comparação de '{method_name}' com {ai_client_name}: {e}")
+        logger.error(f"Erro na comparação com {ai_client_name}: {e}")
         return ai_client_name, {"error": str(e)}
     except FileProcessingError as e:
         logger.error(f"Erro no processamento de arquivos para {ai_client_name}: {e}")
@@ -91,48 +91,57 @@ def compare(request):
         response_data["error"] = "Erro interno ao processar a requisição."
         return JsonResponse(response_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    comparison_types = {
-        'complete_comparison': {
-            'required_keys': {'student', 'instruction', 'instructor'},
-            'method_name': 'compare_complete'
-        },
-        'lab': {
-            'required_keys': {'student', 'instructor'},
-            'method_name': 'compare_labs'
-        },
-        'instruction': {
-            'required_keys': {'instruction', 'student'},
-            'method_name': 'compare_instruction'
-        },
-        'instruction_only': {
-            'required_keys': {'instruction'},
-            'method_name': 'compare_instruction'
-        },
-    }
+    processed_data = {}
 
-    detected_type = None
-    for comp_type, config in comparison_types.items():
-        if config['required_keys'].issubset(data.keys()):
-            if detected_type is None or len(config['required_keys']) > len(comparison_types[detected_type]['required_keys']):
-                detected_type = comp_type
+    instructor = data.get('instructor')
+    instruction = instructor.get('instruction')
+    lab = instructor.get('lab')
 
-    if not detected_type:
-        logger.error("Nenhum tipo de comparação detectado. Verifique as chaves do JSON.")
-        response_data["error"] = "Tipo de comparação não detectado ou chaves ausentes."
-        return JsonResponse(response_data, status=status.HTTP_400_BAD_REQUEST)
+    instructor_date = {}
 
-    comparison_type = detected_type
-    logger.info(f"Tipo de comparação detectado: {comparison_type}")
+    if instruction:
+        instructor_date['instruction'] = extract_text(instruction)
+        
+    if lab:
+        lab_date = {}
+        lab_date['config'] = json.dumps(lab['config'], indent=4)
+        lab_date['network'] = json.dumps(lab['network'], indent=4)
+        instructor_date['lab'] = lab_date
+
+    processed_data['instructor'] = instructor_date
+
+    student = data.get('student')
+    answers = student.get('answers')
+    lab = student.get('lab')
+
+    student_data = {}
+    if answers:
+        student_data['answers'] = extract_text(answers)
+    
+    if lab:
+        lab_date = {}
+        lab_date['config'] = json.dumps(lab['config'], indent=4)
+        lab_date['network'] = json.dumps(lab['network'], indent=4)
+        student_data['lab'] = lab_date
+
+    processed_data['student'] = student_data
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(process_client, AIClientClass, comparison_types[comparison_type]['method_name'], data, user_token) for AIClientClass in AVAILABLE_AI_CLIENTS]
+        futures = [
+            executor.submit(
+                process_client, 
+                AIClientClass, 
+                processed_data, 
+                user_token
+            ) 
+            for AIClientClass in AVAILABLE_AI_CLIENTS
+        ]
 
         for future in as_completed(futures):
             client_name, result = future.result()
             response_ias[client_name] = result
 
     response_data['IAs'] = response_ias
-    response_data['comparison_type'] = comparison_type
 
     logger.info("Operação compare finalizada.")
     return JsonResponse(response_data, status=status.HTTP_200_OK)
