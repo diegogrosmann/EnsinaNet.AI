@@ -1,13 +1,9 @@
-<!-- accounts/templates/accounts/manage/manage_configurations.html -->
-
 {% extends 'base.html' %}
 
-{% load static %}
-
 {% block content %}
-<div class="row">
-    <div class="col-md-12">
-        <h2>Gerenciar Configurações para o Token "{{ token.name }}"</h2>
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h2 class="mb-4">Configurações para o Token "{{ token.name }}"</h2>
         <form method="post">
             {% csrf_token %}
             {{ form.as_p }}
