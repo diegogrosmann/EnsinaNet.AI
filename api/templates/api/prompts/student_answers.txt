@@ -1,3 +1,0 @@
-Segue as respostas do aluno:
-
-{{ answers }}

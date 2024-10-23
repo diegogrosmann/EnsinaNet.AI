@@ -1,4 +1,4 @@
-# myapp/urls.py
+# accounts/urls.py
 
 from django.urls import path
 from . import views
@@ -10,6 +10,7 @@ urlpatterns = [
     path('manage-tokens/', views.manage_tokens, name='manage_tokens'),
     path('manage-tokens/delete/<uuid:token_id>/', views.delete_token, name='delete_token'),
     path('manage-tokens/<uuid:token_id>/configurations/', views.manage_configurations, name='manage_configurations'),
+    path('manage-tokens/<uuid:token_id>/ia-configurations/', views.manage_ia_configurations, name='manage_ia_configurations'),
 
     # Rotas de redefinição de senha
     path('password_reset/', views.CustomPasswordResetView.as_view(), name='password_reset'),

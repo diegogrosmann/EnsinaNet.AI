@@ -1,4 +1,4 @@
-<!-- templates/manage/manage_tokens.html -->
+<!-- accounts/templates/accounts/manage/manage_tokens.html -->
 {% extends 'base.html' %}
 
 {% block content %}
@@ -45,6 +45,10 @@
                             <td>{{ token.key }}</td>
                             <td>{{ token.created|date:"d/m/Y H:i" }}</td>
                             <td>
+                                <!-- Botão para Configuração de IA -->
+                                <a href="{% url 'manage_ia_configurations' token.id %}" class="btn btn-info btn-sm">Configurar IA</a>
+                                
+                                <!-- Botão para Deletar Token -->
                                 <form method="post" action="{% url 'delete_token' token.id %}" class="d-inline">
                                     {% csrf_token %}
                                     <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Tem certeza que deseja deletar este token?');">Excluir</button>

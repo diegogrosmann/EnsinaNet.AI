@@ -15,8 +15,11 @@ import anthropic
 from django.conf import settings
 from api.exceptions import FileProcessingError, APICommunicationError, MissingAPIKeyError
 
+from django.template import engines
+
 # Importando o client do Document AI
 from google.cloud import documentai_v1 as documentai
+from accounts.models import DocumentAIConfiguration
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -62,9 +65,16 @@ def processar_documento(conteudo_documento: bytes, nome_documento: str) -> str:
     logger.debug(f"Iniciando o processamento do documento: {nome_documento}")
 
     # Configurações do Document AI
-    project_id = 'doutorado2' 
-    location = 'us'
-    processor_id = 'f336c42ad14e194a'
+    try:
+        doc_ai_config = DocumentAIConfiguration.objects.first()
+        if not doc_ai_config:
+            raise FileProcessingError("Configuração do DocumentAI não encontrada.")
+        project_id = doc_ai_config.project_id
+        location = doc_ai_config.location
+        processor_id = doc_ai_config.processor_id
+    except Exception as e:
+        logger.error(f"Erro ao obter DocumentAIConfiguration: {e}")
+        raise FileProcessingError(f"Erro ao obter DocumentAIConfiguration: {e}")
 
     try:
         # Instanciar o cliente
@@ -153,64 +163,38 @@ class APIClient:
     """
     Classe base para clientes de API.
     """
-    def __init__(self, api_key: str = None, model_name: str = None, configurations: dict = None):
+    name = ''
+    def __init__(self, api_key: str = None, model_name: str = None, configurations: dict = None, base_instruction: str = None, prompt: str = None, responses: str = None):
         self.api_key = api_key
         self.model_name = model_name
         self.configurations = configurations or {}
+        self.base_instruction = base_instruction or ""
+        self.prompt = prompt or ""
+        self.responses = responses or ""
         logger.debug(f"{self.__class__.__name__} inicializado com configurações: {self.configurations}")
 
-    def _prepare_answer_format(self) -> str:
-        """
-        Prepara o formato da resposta carregando um arquivo HTML.
-        """
-        file_path = os.path.join(settings.BASE_DIR, 'api', 'templates', 'resposta.html')
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                content = file.read()
-            logger.debug("Formato de resposta carregado com sucesso.")
-        except Exception as e:
-            logger.error(f"Erro ao ler o arquivo de formato de resposta: {e}")
-            raise FileProcessingError(f"Erro ao ler o arquivo de formato de resposta: {e}")
-        return content
-
-    def _load_prompt(self, prompt_name, context=None):
+    def _render_template(self, template: str, context: dict):
         """
         Carrega o prompt de um arquivo de template e renderiza com o contexto fornecido.
         """
-        from django.template.loader import render_to_string
-        template_name = f'api/prompts/{prompt_name}.txt'
-        return render_to_string(template_name, context or {})
+        # Obtenha a engine de templates padrão do Django
+        django_engine = engines['django']
+
+        # Crie um template a partir da string
+        template_engine = django_engine.from_string(template)
+
+        # Renderize o template com o contexto
+        return template_engine.render(context)
+
 
     def _prepare_prompts(self, **kwargs) -> dict:
         """
         Prepara os prompts para as IAs com base no tipo de comparação.
         """
-        answer_format = self._prepare_answer_format()
-        base_instruction = self._load_prompt('base_instruction', {'answer_format': answer_format})
-
-
-        instructor = kwargs.get('instructor')
-        instruction = instructor.get('instruction')
-        lab = instructor.get('lab')
-
-        prompt = ''
-
-        if instruction:
-            prompt = prompt + self._load_prompt('instructor_instruction', {'instruction': instruction})
-            
-        if lab:
-            prompt = prompt + self._load_prompt('instructor_lab', {'config': lab['config'], 'network' : lab['network']})
-
-        student = kwargs.get('student')
-        answers = student.get('answers')
-        lab = student.get('lab')
-
-        if answers:
-            prompt = prompt + self._load_prompt('student_answers', {'answers': answers})
-        
-        if lab:
-            prompt = prompt + self._load_prompt('student_lab', {'config': lab['config'], 'network' : lab['network']})
-
+        kwargs['ai_name'] = self.name
+        kwargs['answer_format'] = self.responses
+        base_instruction = self._render_template(self.base_instruction, kwargs)
+        prompt = self._render_template(self.prompt, kwargs)
         return {
             'base_instruction': base_instruction,
             'user_prompt': prompt
@@ -229,7 +213,7 @@ class APIClient:
         Método abstrato para chamar a API específica. Deve ser implementado pelas subclasses.
         """
         raise NotImplementedError("Subclasses devem implementar o método _call_api.")
-
+    
 
 @register_ai_client
 class ChatGPTClient(APIClient):
@@ -238,11 +222,11 @@ class ChatGPTClient(APIClient):
     """
     name = "ChatGPT"
 
-    def __init__(self, api_key=None, model_name=None, configurations=None):
+    def __init__(self, api_key=None, model_name=None, configurations=None, base_instruction=None, prompt=None, responses=None):
         if not api_key:
             logger.error("Chave de API para ChatGPT não configurada.")
             raise MissingAPIKeyError("Chave de API para ChatGPT não configurada.")
-        super().__init__(api_key, model_name, configurations)
+        super().__init__(api_key, model_name, configurations, base_instruction, prompt, responses)
         self.client = OpenAI(api_key=self.api_key)
         logger.debug("ChatGPTClient inicializado.")
 
@@ -287,11 +271,11 @@ class GeminiClient(APIClient):
     """
     name = "Gemini"
 
-    def __init__(self, api_key=None, model_name=None, configurations=None):
+    def __init__(self, api_key=None, model_name=None, configurations=None, base_instruction=None, prompt=None, responses=None):
         if not api_key:
             logger.error("Chave de API para Gemini não configurada.")
             raise MissingAPIKeyError("Chave de API para Gemini não configurada.")
-        super().__init__(api_key, model_name, configurations)
+        super().__init__(api_key, model_name, configurations, base_instruction, prompt, responses)
         genai.configure(api_key=self.api_key)
         logger.debug("GeminiClient inicializado.")
 
@@ -333,11 +317,11 @@ class Claude3Client(APIClient):
     """
     name = "Claude3"
 
-    def __init__(self, api_key=None, model_name=None, configurations=None):
+    def __init__(self, api_key=None, model_name=None, configurations=None, base_instruction=None, prompt=None, responses=None):
         if not api_key:
             logger.error("Chave de API para Claude 3 não configurada.")
             raise MissingAPIKeyError("Chave de API para Claude 3 não configurada.")
-        super().__init__(api_key, model_name, configurations)
+        super().__init__(api_key, model_name, configurations, base_instruction, prompt, responses)
         self.client = anthropic.Anthropic(api_key=self.api_key)
         logger.debug("Claude3Client inicializado.")
 

@@ -11,14 +11,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from api.exceptions import APIClientError, FileProcessingError, MissingAPIKeyError
 from api.utils.clientsIA import AVAILABLE_AI_CLIENTS, extract_text
 
-from accounts.models import UserToken, TokenConfiguration, AIClientConfiguration
+from accounts.models import UserToken, TokenConfiguration, AIClientConfiguration, GlobalConfiguration
 
 logger = logging.getLogger(__name__)
 
 def process_client(AIClientClass, processed_data, user_token):
     ai_client_name = AIClientClass.name
     try:
-        # Obter a configuração padrão do ADM
+        # Obter a configuração padrão da API
         try:
             default_config = AIClientConfiguration.objects.get(api_client_class=ai_client_name)
             api_key = default_config.api_key
@@ -28,29 +28,48 @@ def process_client(AIClientClass, processed_data, user_token):
             logger.error(f"Configuração padrão para {ai_client_name} não encontrada.")
             raise MissingAPIKeyError(f"Configuração padrão para {ai_client_name} não encontrada.")
 
-        # Obter configurações específicas do usuário, se houver
+        # Obter configurações globais de Prompt
+        try:
+            global_config = GlobalConfiguration.objects.first()
+            base_instruction_global = global_config.base_instruction if global_config else ""
+            prompt_global = global_config.prompt if global_config else ""
+            responses_global = global_config.responses if global_config else ""
+        except GlobalConfiguration.DoesNotExist:
+            base_instruction_global = ""
+            prompt_global = ""
+            responses_global = ""
+
+        # Obter configurações específicas da API, se houver
         try:
             token_config = user_token.configurations.get(api_client_class=ai_client_name)
             if not token_config.enabled:
                 logger.info(f"{ai_client_name} está desabilitado para este token.")
                 return ai_client_name, {"message": "Esta IA está desabilitada."}
+            
             # Sobrescrever model_name e configurations se fornecidos pelo usuário
             if token_config.model_name:
                 model_name = token_config.model_name
             if token_config.configurations:
                 configurations.update(token_config.configurations)
         except TokenConfiguration.DoesNotExist:
-            logger.info(f"{ai_client_name} não tem configuração específica para este token.")
-            # Manter as configurações padrão
-        except Exception as e:
-            logger.error(f"Erro ao obter configurações para {ai_client_name}: {e}")
-            # Manter as configurações padrão
+            logger.info(f"{ai_client_name} não tem configuração específica para este token. Usando configurações globais.")
+        
+        # Obter as configurações especificas do Prompt, se houver
+        base_instruction = user_token.base_instruction if user_token.base_instruction else base_instruction_global
+        prompt = user_token.prompt if user_token.prompt else prompt_global
+        responses = user_token.responses if user_token.responses else responses_global
 
-       
-        # Inicializar o cliente de IA
-        ai_client = AIClientClass(api_key=api_key, model_name=model_name, configurations=configurations)
+        # Inicializar o cliente de IA com as configurações apropriadas
+        ai_client = AIClientClass(
+            api_key=api_key, 
+            model_name=model_name, 
+            configurations=configurations, 
+            base_instruction=base_instruction, 
+            prompt=prompt, 
+            responses=responses
+        )
 
-        # Chamar o método compare com comparison_type e processed_data
+        # Chamar o método compare com processed_data
         comparison_result = ai_client.compare(processed_data)
 
         logger.info(f"Comparação com {ai_client_name} realizada com sucesso.")
@@ -91,47 +110,34 @@ def compare(request):
         response_data["error"] = "Erro interno ao processar a requisição."
         return JsonResponse(response_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    processed_data = {}
+    def process_file_content(obj):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if isinstance(value, dict):
+                    # Verifica se o dicionário possui 'type': 'file'
+                    if value.get("type") == "file":
+                        # Processa o conteúdo do arquivo
+                        processed_value = extract_text(value)
+                        # Insere o conteúdo processado diretamente na chave atual
+                        obj[key] = processed_value
+                    else:
+                        # Chama a função recursivamente para outros dicionários
+                        process_file_content(value)
+                elif isinstance(value, list):
+                    # Chama a função recursivamente para cada item da lista
+                    process_file_content(value)
+        elif isinstance(obj, list):
+            for item in obj:
+                process_file_content(item)
 
-    instructor = data.get('instructor')
-    instruction = instructor.get('instruction')
-    lab = instructor.get('lab')
-
-    instructor_date = {}
-
-    if instruction:
-        instructor_date['instruction'] = extract_text(instruction)
-        
-    if lab:
-        lab_date = {}
-        lab_date['config'] = json.dumps(lab['config'], indent=4)
-        lab_date['network'] = json.dumps(lab['network'], indent=4)
-        instructor_date['lab'] = lab_date
-
-    processed_data['instructor'] = instructor_date
-
-    student = data.get('student')
-    answers = student.get('answers')
-    lab = student.get('lab')
-
-    student_data = {}
-    if answers:
-        student_data['answers'] = extract_text(answers)
-    
-    if lab:
-        lab_date = {}
-        lab_date['config'] = json.dumps(lab['config'], indent=4)
-        lab_date['network'] = json.dumps(lab['network'], indent=4)
-        student_data['lab'] = lab_date
-
-    processed_data['student'] = student_data
+    process_file_content(data)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [
             executor.submit(
                 process_client, 
                 AIClientClass, 
-                processed_data, 
+                data, 
                 user_token
             ) 
             for AIClientClass in AVAILABLE_AI_CLIENTS

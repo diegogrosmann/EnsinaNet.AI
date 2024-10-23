@@ -1,7 +1,0 @@
-Segue o Laboratório correto:
-
-Configurações:
-{{ config }}
-
-Conexões:
-{{ network }}

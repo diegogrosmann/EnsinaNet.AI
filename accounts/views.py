@@ -11,8 +11,9 @@ from django.conf import settings
 from allauth.account.views import ConfirmEmailView
 from allauth.account.utils import send_email_confirmation
 
-from .forms import CustomUserCreationForm, TokenForm, EmailAuthenticationForm, TokenConfigurationForm
+from .forms import CustomUserCreationForm, TokenForm, EmailAuthenticationForm, TokenConfigurationForm, UserTokenForm
 from .models import UserToken, TokenConfiguration
+
 
 from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
 
@@ -111,30 +112,10 @@ def manage_configurations(request, token_id):
     token = get_object_or_404(UserToken, id=token_id, user=user)
 
     if request.method == 'POST':
-        forms = []
-        errors = {}
-        is_valid = True
-        for client_class in AVAILABLE_AI_CLIENTS:
-            api_name = client_class.name
-            config_instance, _ = TokenConfiguration.objects.get_or_create(
-                token=token,
-                api_client_class=api_name
-            )
-            form = TokenConfigurationForm(request.POST, instance=config_instance, prefix=api_name)
-            if not form.is_valid():
-                is_valid = False
-                errors[api_name] = form.errors
-                logger.warning(f"Formulário de configuração inválido para {api_name}: {form.errors}")
-            forms.append(form)
-        if is_valid:
+        form = UserTokenForm(request.POST, instance=token)
+        if form.is_valid():
             try:
-                for form in forms:
-                    config_instance = form.save(commit=False)
-                    if 'model_name' in form.changed_data:
-                        config_instance.model_name = form.cleaned_data['model_name']
-                    config_instance.enabled = form.cleaned_data['enabled']
-                    config_instance.configurations = form.cleaned_data['configurations']
-                    config_instance.save()
+                form.save()
                 logger.info(f"Configurações atualizadas para o token '{token.name}' pelo usuário {user.email}.")
                 messages.success(request, 'Configurações atualizadas com sucesso!')
                 return redirect('manage_configurations', token_id=token.id)
@@ -142,19 +123,12 @@ def manage_configurations(request, token_id):
                 logger.error(f"Erro ao salvar configurações para o token '{token.name}': {e}")
                 messages.error(request, 'Erro ao salvar as configurações. Por favor, tente novamente.')
         else:
-            error_ias = ', '.join(errors.keys())
-            messages.error(request, f"Por favor, corrija os erros nas seguintes IAs: {error_ias}.")
+            logger.warning(f"Formulário de configuração inválido para o token '{token.name}': {form.errors}")
+            messages.error(request, 'Por favor, corrija os erros no formulário.')
     else:
-        forms = []
-        for client_class in AVAILABLE_AI_CLIENTS:
-            api_name = client_class.name
-            try:
-                config_instance = TokenConfiguration.objects.get(token=token, api_client_class=api_name)
-            except TokenConfiguration.DoesNotExist:
-                config_instance = TokenConfiguration(token=token, api_client_class=api_name)
-            form = TokenConfigurationForm(instance=config_instance, prefix=api_name)
-            forms.append(form)
-    context = {'token': token, 'forms': forms}
+        form = UserTokenForm(instance=token)
+
+    context = {'token': token, 'form': form}
     return render(request, 'accounts/manage/manage_configurations.html', context)
 
 class CustomPasswordResetView(auth_views.PasswordResetView):
@@ -223,3 +197,56 @@ class CustomConfirmEmailView(ConfirmEmailView):
             logger.error(f"Erro ao confirmar email: {e}")
             messages.error(request, 'Erro ao confirmar o email. Por favor, contate o suporte.')
             return redirect('register')
+
+@login_required
+def manage_ia_configurations(request, token_id):
+    user = request.user
+    token = get_object_or_404(UserToken, id=token_id, user=user)
+
+    # Obter todas as configurações de IA disponíveis para este token
+    existing_configs = TokenConfiguration.objects.filter(token=token)
+
+    # Mapear API client classes para suas configurações existentes
+    existing_configs_dict = {config.api_client_class: config for config in existing_configs}
+
+    # Criar uma lista de AI client classes para iterar nos formulários
+    ai_clients = AVAILABLE_AI_CLIENTS
+
+    if request.method == 'POST':
+        # Processar cada configuração de IA
+        success = True
+        for ai_client in ai_clients:
+            form_prefix = ai_client.name
+            config_instance = existing_configs_dict.get(ai_client.name, TokenConfiguration(token=token, api_client_class=ai_client.name))
+            form = TokenConfigurationForm(request.POST, prefix=form_prefix, instance=config_instance)
+            if form.is_valid():
+                try:
+                    config = form.save(commit=False)
+                    config.token = token
+                    config.api_client_class = ai_client.name  # Assegura que a classe do cliente é correta
+                    config.save()
+                    success = success and True
+                except Exception as e:
+                    logger.error(f"Erro ao salvar configuração para {ai_client.name}: {e}")
+                    messages.error(request, f"Erro ao salvar configuração para {ai_client.name}. Por favor, tente novamente.")
+                    success = False
+            else:
+                logger.warning(f"Formulário inválido para {ai_client.name}: {form.errors}")
+                messages.error(request, f"Erros na configuração para {ai_client.name}. Por favor, corrija os erros.")
+                success = False
+        if success:
+            messages.success(request, 'Configurações de IA atualizadas com sucesso!')
+            return redirect('manage_tokens')
+    else:
+        # Inicializar formulários para cada AI client
+        forms = []
+        for ai_client in ai_clients:
+            config = existing_configs_dict.get(ai_client.name)
+            form = TokenConfigurationForm(prefix=ai_client.name, instance=config)
+            forms.append({
+                'ai_client': ai_client.name,
+                'form': form,
+            })
+        context = {'token': token, 'forms': forms}
+        return render(request, 'accounts/manage/manage_ia_configurations.html', context)
+

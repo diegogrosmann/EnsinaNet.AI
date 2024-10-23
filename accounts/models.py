@@ -1,5 +1,3 @@
-# accounts/models.py
-
 from django.db import models
 from django.contrib.auth.models import User
 import uuid
@@ -17,6 +15,23 @@ class UserToken(models.Model):
     name = models.CharField(max_length=100)
     key = models.CharField(max_length=40, unique=True)
     created = models.DateTimeField(auto_now_add=True)
+
+    # Novos campos adicionados
+    base_instruction = models.TextField(
+        blank=True,
+        null=True,
+        help_text='Instrução base personalizada para este token. Deixe vazio para usar a configuração global.'
+    )
+    prompt = models.TextField(
+        blank=True,
+        null=True,
+        help_text='Prompt personalizado para este token. Deixe vazio para usar a configuração global.'
+    )
+    responses = models.TextField(
+        blank=True,
+        null=True,
+        help_text='Respostas personalizadas para este token. Deixe vazio para usar a configuração global.'
+    )
 
     class Meta:
         unique_together = ('user', 'name')  # Garantir que o nome do token seja único por usuário
@@ -56,3 +71,31 @@ class TokenConfiguration(models.Model):
 
     def __str__(self):
         return f"Configuração para {self.api_client_class} do Token {self.token.name}"
+
+class DocumentAIConfiguration(models.Model):
+    project_id = models.CharField(max_length=100)
+    location = models.CharField(max_length=50)
+    processor_id = models.CharField(max_length=100)
+
+    def __str__(self):
+        return f"DocumentAI Configuração ({self.project_id})"
+
+class GlobalConfiguration(models.Model):
+    base_instruction = models.TextField(
+        blank=True,
+        null=True,
+        help_text='Instrução base padrão para todas as IAs.'
+    )
+    prompt = models.TextField(
+        blank=True,
+        null=True,
+        help_text='Prompt padrão para todas as IAs.'
+    )
+    responses = models.TextField(
+        blank=True,
+        null=True,
+        help_text='Respostas padrão para todas as IAs.'
+    )
+
+    def __str__(self):
+        return "Configuração Global da Aplicação"
