@@ -1,0 +1,67 @@
+%%%%%%%%%%%%%%%%%%%%%% Exemplo 1 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%% Instrução %%%
+Laboratório 0 - Conectividade Básica com PCs e Switch\nObjetivo:\nEste laboratório tem como objetivo configurar dois PCs conectados a um switch, atribuir\nendereços IP estáticos e verificar a conectividade entre os dispositivos utilizando o\ncomando ping. Os alunos devem ser capazes de garantir a comunicação funcional entre os\ndispositivos e explorar possíveis problemas de conectividade.\nCenário:\nVocê foi contratado por uma empresa para configurar a comunicação entre dois\ndepartamentos usando PCs conectados a um switch. Seu trabalho é testar e validar a\nconectividade entre esses PCs antes de implementar a rede em escala maior. Nenhuma\nconfiguração adicional no switch é necessária, pois ele funcionará em modo de comutação\npadrão. Você será responsável por atribuir endereços IP, testar a comunicação e explorar\npossíveis falhas, como desconexões ou IPs conflitantes.\nTópicos Abordados:\n•\n•\n•\n•\nConfiguração de endereços IP estáticos nos PCs.\nVerificação de conectividade entre dispositivos em uma mesma sub-rede.\nTestes de comunicação usando o comando ping.\nDiagnóstico e resolução de problemas de conectividade.\nConhecimentos Adquiridos:\nAo finalizar este laboratório, você será capaz de:\n•\nConfigurar endereços IP em PCs para comunicação em rede local.\n•\n•\n•\nVerificar a conectividade entre dispositivos em uma rede local.\nDiagnosticar e resolver problemas comuns de rede, como desconexões e conflitos de\nIP.\nCompreender o papel de switches em redes locais simples e explorar cenários de\nredes maiores.\nEquipamentos Necessários:\n•\n2 PCs (Virtual PC)\n• 1\nSwitch\nО Nomes: PC-A, PC-B\n(Cisco\nIOL\nL2\nms.SSA.high_iron_20180510.bin)\nо Nomes: S1\ni86bi_linux_12-adventerprisek9-\n○ Obs. Você pode altear o ícone para o ícone de um switch.\nTopologia da Rede:\n•\nConexões:\n- PC-A (eth0) → S1 (e0/0)\n- PC-B (eth0) → S1 (e0/1)\nTabela de Endereçamento IP:\nDispositivo\nPC-A\nPC-B\nInterface\neth0\neth0\nIP\nMáscara\n192.168.1.10\n192.168.1.11\n255.255.255.0\n255.255.255.0\nGateway\nN/A\nN/A\nProcedimento de Configuração no PnetLab:\n1. Adicionar os Dispositivos:\n-\nNo PnetLab, adicione os equipamentos.\ni. Arraste o mouse para a esquerda para abrir o menu.\nii. Clique em “Add an object"\niii. Clique em "Node"\niv. Selecione o dispositivo.\nv. Configure conforme solicitado.\nConecte os PCs nas interfaces conforme a topologia acima.\ni. Posicione o mouse sobre um dos dispositivos a serem conectados.\nIra aparecer um ícone de conector.\nii. Clique no conector e com o botão esquerdo do mouse pressionado\nleve até o outro equipamento, solte o conector sobre ele.\niii. Selecione as interfaces dos dispositivos que deseja usar e salve.\nInicie os dipositivos.\ni. Posicione o mouse sobre o dispositivo que deseja iniciar e clique no\nícone de play que surgiu.\nii. Se desejar iniciar todos de uma vez:\n2. Configuração dos PCs:\nAbra o menu esquerdo.\nClique em “Setup Nodes”.\nClique em "Start All Nodes".\nAcesse os consoles dos PCs e configure os endereços IP:\ni. PC-A:\nip 192.168.1.10/24\nii. PC-B:\nip 192.168.1.11/24\n3. Teste de Conectividade:\n-\nNos PCs, use o comando ping para testar a conectividade:\ni. No PC-A:\nping 192.168.1.11\nii. No PC-B:\nping 192.168.1.10\nOs testes de Conectividade funcionaram? Se não funcionaram explique o\nmotivo.\n4. Diagnóstico de Problemas:\nSituação 1: Desconecte o cabo de PC-A do switch e reconecte-o a uma outra\nporta do switch (por exemplo, e0/2). Verifique se o ping ainda funciona.\nCaso não funcione, reconfigure o endereço IP. Explique o que aconteceu e se\nteve problemas explique a solução.\nSituação 2: Atribua o mesmo endereço IP (192.168.1.10) para ambos os PCs.\nO que acontece quando você tenta usar o ping? Identifique o problema e\nresolva-o atribuindo endereços IP distintos. Explique o que aconteceu e se\nteve problemas explique a solução.\n5. Salvando\nReestabeleça as configurações de antes do diagnostico.\nSalvando as configurações dos Pcs\ni. Execute o comando:\nsave\nSalvando o exercício:\ni. Abra o menu esquerdo;\nii. Clique em “Setup Nodes";\niii. Clique em “Export all CFGs".\nCertifique-se que não ocorreu nenhum erro ao salvar, analisando as\nmensagens na tela.\nCaso tenha ocorrido um erro, refaça as configurações do dispositivo\ncom problema.\nGaranta que o exercício utilize as configurações salvas:\ni. Abra o menu esquerdo;\nii. Clique em “Setup Nodes";\niii. Clique em “Set Nodes Startup-cfg To Exported”\nReflexão:\nObs. Se você não indicar que os nodes devem carregar as\nconfigurações exportadas os nodes iram iniciar sem configuração.\nApós concluir o laboratório, responda às seguintes perguntas de reflexão:\n1. Por que é importante que cada dispositivo tenha um endereço IP único na rede?\n2. Quais foram os desafios enfrentados ao configurar os endereços IP e verificar a\nconectividade? Como você os solucionou?\nDiscussão em Grupo:\nDiscuta com seus colegas os problemas que encontraram durante o teste de conectividade,\ncomo desconexões ou conflitos de IP. Como cada um resolveu esses problemas? O que\npoderia ser feito para prevenir esses erros em uma rede maior?\nAvaliação:\nAo final do laboratório, utilize o seguinte checklist para verificar se todos os objetivos foram\nalcançados:\n1. Configurou os endereços IP nos dois PCs.\n2. Verificou a conectividade entre os PCs utilizando o ping.\n3. Diagnosticou e solucionou problemas de desconexão e conflito de IP.\n4. Refletiu sobre o impacto de diferentes configurações de rede.\nAplicação Futura:\nImagine que essa rede local precisa ser expandida para incluir mais PCs e switches. Como\nvocê configuraria a rede para suportar essa expansão, garantindo que todos os dispositivos\npudessem se comunicar de forma eficiente? Como implementaria um roteador para\ncomunicação entre diferentes sub-redes?
+
+%%% Aluno %%%
+
+'lab': {'config': {'Sw': '', 'PC-A': 'set pcname PC-A\nip 192.168.1.10 24\n', 'PC-B': 'set pcname PC-B\nip 192.168.1.11 24\n'} 
+'network': {'2': {'Sw': 'e0/1', 'PC-B': 'eth0'}, '1': {'Sw': 'e0/2', 'PC-A': 'eth0'}} 
+'answers': '3.Os testes de Conectividade funcionaram? Se não funcionaram explique o motivo.\nSim, os pings funcionaram.\n4. Situação 1:\nAo desconectar o pc-a do sw e conectar em outra porta, o ping não funcionou, mas\napós reconfigurar o ip, o ping funcionou.\nSituação 2:\no pc-b não pegou o ip pois já estava sendo usado pelo pc-a, e o ping não funcionou.\nApós mudar o ip do pc-b o ping voltou a funcionar.\nReflexão:\n1. Por que é importante que cada dispositivo tenha um endereço IP único na rede?\nPara garantir uma boa comunicação, garantir a entrega, a segurança e evitar\nconflitos na rede.\n2.Quais foram os desafios enfrentados ao configurar os endereços IP e verificar a\nconectividade? Como você os solucionou?\nO ping não funcionou quando os dois pcs estavam com o mesmo ip, solucionei\ntrocando o ip de um dos pcs.\n
+
+%%% Resposta Esperada %%%
+
+<div class="feedback-container">
+<h2>Feedback da Atividade de Redes de Computadores</h2>
+<section class="summary">
+<h3>Resumo da Atividade</h3>
+<p>O objetivo deste laboratório era configurar dois PCs conectados a um switch, atribuir endereços IP estáticos e verificar a conectividade entre os dispositivos utilizando o comando ping. Você deveria garantir a comunicação funcional entre os dispositivos e explorar possíveis problemas de conectividade.</p>
+
+</section>
+	<section class="positive-points">
+		<h3>Pontos Positivos</h3>
+		<ul>
+			<li>Você configurou corretamente os endereços IP nos dois PCs, seguindo as instruções e a tabela de endereçamento.</li>
+			<li>Você verificou a conectividade entre os PCs usando o comando ping com sucesso na configuração inicial.</li>
+			<li>Você identificou corretamente o problema de conflito de IP na Situação 2 e o resolveu atribuindo um endereço IP diferente ao PC-B.</li>
+			<li>Suas respostas na seção de Reflexão demonstram um bom entendimento da importância da unicidade dos endereços IP em uma rede.</li>
+		</ul>
+	</section>
+	
+	<section class="areas-for-improvement">
+		<h3>Áreas para Melhoria</h3>
+		<ol>
+			<li>
+				<h4>Situação 1: Reconexão do PC-A</h4>
+				<p>Na Situação 1, ao desconectar e reconectar o PC-A em uma porta diferente do switch, o ping não funcionou, e você mencionou ter reconfigurado o IP.  Em um switch não gerenciado, a mudança de porta não deveria exigir a reconfiguração do IP, pois o switch aprende automaticamente o endereço MAC associado a cada porta.  A falha na conectividade pode ter ocorrido por um curto período enquanto o switch atualizava sua tabela MAC, ou por algum erro na execução do teste.  Não era necessário reconfigurar o IP do PC-A.</p>
+			</li>
+			<li>
+				<h4>Documentação das Configurações</h4>
+				<p>Embora você tenha fornecido as configurações dos PCs, seria benéfico incluir também a configuração do switch (mesmo que seja a padrão).  Isso demonstra um maior cuidado com a documentação e facilita a replicação do cenário.</p>
+			</li>
+		</ol>
+	</section>
+	
+	<section class="suggestions">
+		<h3>Sugestões para Aprimoramento</h3>
+		<ul>
+			<li>Ao responder questões de diagnóstico, tente explicar não apenas o que aconteceu, mas também por que aconteceu. Isso demonstra uma compreensão mais profunda dos conceitos de rede.</li>
+			<li>Pratique a configuração de switches para entender melhor como as portas são ativadas e como isso afeta a conectividade dos dispositivos.</li>
+			<li>Explore cenários mais complexos, como a configuração de VLANs no switch, para expandir seu conhecimento sobre redes locais.</li>
+		</ul>
+			
+	<section class="additional-resources">
+		<h3>Recursos Adicionais para Estudo</h3>
+			<ul>
+				<li><a href="https://pt.wikipedia.org/wiki/Switch_de_rede">Switch de Rede - Wikipedia</a> - Uma visão geral sobre switches de rede.</li>
+				<li><a href="https://pt.wikipedia.org/wiki/Endere%C3%A7o_MAC">Endereço MAC - Wikipedia</a> - Informações sobre endereços MAC.</li>
+				<li><a href="https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst2960/software/release/12-2_55_se/configuration/guide/scg_2960/swipaddr.html">Configuração de Endereços IP em Switches Cisco</a> - Guia detalhado sobre como configurar endereços IP em dispositivos Cisco.</li>
+				<li><a href="https://www.cisco.com/c/en/us/support/docs/switches/catalyst-6500-series-switches/12027-53.html">Configuração Básica de Switches Cisco</a> - Aprofunde seus conhecimentos sobre configuração de switches.</li>
+			</ul>
+	</section>
+	
+	<section class="conclusion">
+		<h3>Conclusão</h3>
+			<p>Parabéns pelo seu progresso neste laboratório! Você demonstrou uma boa compreensão dos conceitos básicos de configuração de rede e resolução de problemas. Continue praticando e explorando diferentes cenários para fortalecer suas habilidades em redes de computadores.</p>		
+	</section>
+</div>

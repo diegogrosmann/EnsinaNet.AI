@@ -4,7 +4,7 @@
 <div class="row justify-content-center">
     <div class="col-md-8">
         <h2 class="mb-4">Configurações para o Token "{{ token.name }}"</h2>
-        <form method="post">
+        <form method="post" enctype="multipart/form-data">  <!-- Adicionado enctype -->
             {% csrf_token %}
             {{ form.as_p }}
             <button type="submit" class="btn btn-primary">Salvar Configurações</button>

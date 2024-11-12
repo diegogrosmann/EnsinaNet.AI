@@ -59,6 +59,28 @@ def process_client(AIClientClass, processed_data, user_token):
         prompt = user_token.prompt if user_token.prompt else prompt_global
         responses = user_token.responses if user_token.responses else responses_global
 
+        # Ler o conteúdo do arquivo de treinamento
+        training_data_content = ''
+        if user_token.training_file:
+            # Ler o arquivo de treinamento do token
+            try:
+                user_token.training_file.open()
+                training_data_content = user_token.training_file.read().decode('utf-8')
+                user_token.training_file.close()
+            except Exception as e:
+                logger.error(f"Erro ao ler o arquivo de treinamento do token: {e}")
+        elif global_config and global_config.training_file:
+            # Ler o arquivo de treinamento global
+            try:
+                global_config.training_file.open()
+                training_data_content = global_config.training_file.read().decode('utf-8')
+                global_config.training_file.close()
+            except Exception as e:
+                logger.error(f"Erro ao ler o arquivo de treinamento global: {e}")
+
+        # Incluir o training_data no processed_data
+        processed_data['training_data'] = training_data_content
+
         # Inicializar o cliente de IA com as configurações apropriadas
         ai_client = AIClientClass(
             api_key=api_key, 
@@ -150,4 +172,7 @@ def compare(request):
     response_data['IAs'] = response_ias
 
     logger.info("Operação compare finalizada.")
+
+    logger.info(data)
+    logger.info(response_data)
     return JsonResponse(response_data, status=status.HTTP_200_OK)

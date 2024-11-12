@@ -300,7 +300,7 @@ class GeminiClient(APIClient):
             )
             logger.debug("Configuração de geração definida.")
 
-            m = model.generate_content(prompt, generation_config=gemini_config)
+            m = model.generate_content(prompt, generation_config=gemini_config, tools='google_search_retrieval')
             logger.debug("Conteúdo gerado com sucesso.")
 
             # Utiliza o método parsearHTML

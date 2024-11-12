@@ -204,6 +204,8 @@ class AIClientConfigurationForm(forms.ModelForm):
             raise forms.ValidationError('Já existe uma configuração para esta classe de cliente de API.')
         return api_client_class
 
+# accounts/forms.py
+
 class UserTokenForm(forms.ModelForm):
     base_instruction = forms.CharField(
         label='Instrução Base',
@@ -235,13 +237,28 @@ class UserTokenForm(forms.ModelForm):
         required=False,
         help_text='Insira as respostas personalizadas para este token. Deixe vazio para usar a configuração global.'
     )
+    training_file = forms.FileField(
+        label='Arquivo de Treinamento',
+        required=False,
+        help_text='Faça upload de um arquivo txt com exemplos para treinar a IA para este token.'
+    )
 
     class Meta:
         model = UserToken
-        fields = ['base_instruction', 'prompt', 'responses']
-    
+        fields = ['base_instruction', 'prompt', 'responses', 'training_file']
+
     def __init__(self, *args, **kwargs):
         super(UserTokenForm, self).__init__(*args, **kwargs)
+
+    def clean_training_file(self):
+        training_file = self.cleaned_data.get('training_file')
+        if training_file:
+            if not training_file.name.endswith('.txt'):
+                raise forms.ValidationError('O arquivo deve ser um arquivo de texto (.txt).')
+            # Limitar o tamanho do arquivo 10MB
+            if training_file.size > 1024 * 1024 * 10:
+                raise forms.ValidationError('O arquivo de treinamento é muito grande (máximo 10MB).')
+        return training_file
 
     def clean_base_instruction(self):
         base_instruction_html = self.cleaned_data.get('base_instruction', '').strip()
@@ -354,13 +371,29 @@ class GlobalConfigurationForm(forms.ModelForm):
         required=False,
         help_text='Insira as respostas globais para todas as comparações. Deixe vazio para usar a configuração padrão.'
     )
+
+    training_file = forms.FileField(
+        label='Arquivo de Treinamento Global',
+        required=False,
+        help_text='Faça upload de um arquivo txt com exemplos para treinar a IA globalmente.'
+    )
     
     class Meta:
         model = GlobalConfiguration
-        fields = ['base_instruction', 'prompt', 'responses']
+        fields = ['base_instruction', 'prompt', 'responses', 'training_file']
     
     def __init__(self, *args, **kwargs):
         super(GlobalConfigurationForm, self).__init__(*args, **kwargs)
+
+    def clean_training_file(self):
+        training_file = self.cleaned_data.get('training_file')
+        if training_file:
+            if not training_file.name.endswith('.txt'):
+                raise forms.ValidationError('O arquivo deve ser um arquivo de texto (.txt).')
+            # Opcional: Limitar o tamanho do arquivo (exemplo: 1MB)
+            if training_file.size > 1024 * 1024:
+                raise forms.ValidationError('O arquivo de treinamento é muito grande (máximo 1MB).')
+        return training_file
 
     def clean_base_instruction(self):
         base_instruction_html = self.cleaned_data.get('base_instruction', '').strip()

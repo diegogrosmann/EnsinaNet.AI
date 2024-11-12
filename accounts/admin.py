@@ -1,6 +1,7 @@
 # accounts/admin.py
 import bleach
 from django import forms
+from django.conf import settings
 from django.contrib import admin
 from .models import Profile, UserToken, AIClientConfiguration, TokenConfiguration, DocumentAIConfiguration, GlobalConfiguration
 from .forms import UserTokenForm, TokenConfigurationForm, AIClientConfigurationForm, GlobalConfigurationForm
@@ -94,10 +95,9 @@ class DocumentAIConfigurationAdmin(admin.ModelAdmin):
 class GlobalConfigurationAdmin(admin.ModelAdmin):
     form = GlobalConfigurationForm
     list_display = ('__str__',)
-    readonly_fields = ()  # Nenhum campo somente leitura
+    readonly_fields = ()
 
     def has_add_permission(self, request):
-        # Permitir apenas uma instância do modelo
         if GlobalConfiguration.objects.exists():
             return False
         return True

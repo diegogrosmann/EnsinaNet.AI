@@ -16,7 +16,6 @@ class UserToken(models.Model):
     key = models.CharField(max_length=40, unique=True)
     created = models.DateTimeField(auto_now_add=True)
 
-    # Novos campos adicionados
     base_instruction = models.TextField(
         blank=True,
         null=True,
@@ -33,8 +32,15 @@ class UserToken(models.Model):
         help_text='Respostas personalizadas para este token. Deixe vazio para usar a configuração global.'
     )
 
+    training_file = models.FileField(
+        upload_to='training_files/',
+        null=True,
+        blank=True,
+        help_text='Arquivo de treinamento para este token.'
+    )
+
     class Meta:
-        unique_together = ('user', 'name')  # Garantir que o nome do token seja único por usuário
+        unique_together = ('user', 'name')
 
     def save(self, *args, **kwargs):
         if not self.key:
@@ -95,6 +101,13 @@ class GlobalConfiguration(models.Model):
         blank=True,
         null=True,
         help_text='Respostas padrão para todas as IAs.'
+    )
+
+    training_file = models.FileField(
+        upload_to='global_training_files/',
+        null=True,
+        blank=True,
+        help_text='Arquivo de treinamento global para todas as IAs.'
     )
 
     def __str__(self):

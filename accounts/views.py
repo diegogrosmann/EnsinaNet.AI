@@ -112,7 +112,7 @@ def manage_configurations(request, token_id):
     token = get_object_or_404(UserToken, id=token_id, user=user)
 
     if request.method == 'POST':
-        form = UserTokenForm(request.POST, instance=token)
+        form = UserTokenForm(request.POST, request.FILES, instance=token)  # Incluído request.FILES
         if form.is_valid():
             try:
                 form.save()
