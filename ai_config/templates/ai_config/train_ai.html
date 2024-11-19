@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h2>Treinar IA para o Token "{{ token.name }}"</h2>
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit" class="btn btn-primary">Iniciar Treinamento</button>
+            <a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary">Cancelar</a>
+        </form>
+        {% if ai_clients_not_trainable %}
+            <h4>IAs que não podem ser treinadas:</h4>
+            <ul>
+                {% for ai_client_name in ai_clients_not_trainable %}
+                    <li>{{ ai_client_name }}</li>
+                {% endfor %}
+            </ul>
+            Estas IAs não suportam o treinamento. Por favor, inclua o arquivo de treinamento no prompt.
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -3,6 +3,7 @@ import json
 import logging
 import base64
 import tempfile
+import time
 
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
@@ -19,7 +20,7 @@ from django.template import engines
 
 # Importando o client do Document AI
 from google.cloud import documentai_v1 as documentai
-from accounts.models import DocumentAIConfiguration
+from ai_config.models import DocumentAIConfiguration
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -164,6 +165,7 @@ class APIClient:
     Classe base para clientes de API.
     """
     name = ''
+    can_train = False 
     def __init__(self, api_key: str = None, model_name: str = None, configurations: dict = None, base_instruction: str = None, prompt: str = None, responses: str = None):
         self.api_key = api_key
         self.model_name = model_name
@@ -213,7 +215,6 @@ class APIClient:
         Método abstrato para chamar a API específica. Deve ser implementado pelas subclasses.
         """
         raise NotImplementedError("Subclasses devem implementar o método _call_api.")
-    
 
 @register_ai_client
 class ChatGPTClient(APIClient):
@@ -221,7 +222,7 @@ class ChatGPTClient(APIClient):
     Cliente para interação com a API do ChatGPT.
     """
     name = "ChatGPT"
-
+    can_train = True
     def __init__(self, api_key=None, model_name=None, configurations=None, base_instruction=None, prompt=None, responses=None):
         if not api_key:
             logger.error("Chave de API para ChatGPT não configurada.")
@@ -263,6 +264,69 @@ class ChatGPTClient(APIClient):
             logger.error(f"Erro ao comunicar com a API ChatGPT: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API ChatGPT: {e}")
 
+    def train(self, training_file, parameters={}):
+        """
+        Implementa o treinamento para o ChatGPT.
+        """        
+        temp_file_path = None  # Inicializa a variável para garantir que exista no finally
+        try:
+            # Ler o conteúdo JSON do arquivo de treinamento
+            with training_file.open('r') as f:
+                training_data = json.load(f)
+            
+            # Certifique-se de que training_data é uma lista de exemplos
+            if not isinstance(training_data, list):
+                raise ValueError("O arquivo de treinamento deve conter uma lista de exemplos.")
+            
+            # Converter para JSONL no formato desejado
+            jsonl_content = "\n".join([
+                json.dumps({
+                    "messages": [
+                        {"role": "system", "content": example.get("system_message", "")},
+                        {"role": "user", "content": example.get("user_message", "")},
+                        {"role": "assistant", "content": example.get("response", "")}
+                    ]
+                }) 
+                for example in training_data
+            ])
+            
+            # Salvar o conteúdo JSONL em um arquivo temporário
+            with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.jsonl') as temp_file:
+                temp_file.write(jsonl_content)
+                temp_file_path = temp_file.name
+            
+            # Criar o arquivo de treinamento via API
+            with open(temp_file_path, 'rb') as f:
+                ai_training_file = self.client.files.create(
+                    file=f,
+                    purpose='fine-tune'
+                )
+            
+            # Criar o trabalho de fine-tuning
+            fine_tuning_job = self.client.fine_tuning.jobs.create(
+                training_file=ai_training_file.id,
+                model=self.model_name,
+                hyperparameters=parameters
+            )
+
+            # Loop para verificar o status do ajuste fino
+            while True:
+                # Recupere o status atual do trabalho
+                status = self.client.fine_tuning.jobs.retrieve(fine_tuning_job.id)
+                status_state = status.status
+
+                # Verifique se o trabalho foi concluído
+                if status_state == 'succeeded':
+                    logger.debug("Modelo treinado")
+                    return status.fine_tuned_model
+                elif status_state == 'failed':
+                    raise APICommunicationError(f"{status.error}")
+                else:
+                    time.sleep(5)
+
+        except Exception as e:
+            logger.error(f"Erro ao treinar modelo com ChatGPT: {e}")
+            raise APICommunicationError(f"Erro ao treinar modelo com ChatGPT: {e}")
 
 @register_ai_client
 class GeminiClient(APIClient):
@@ -270,7 +334,7 @@ class GeminiClient(APIClient):
     Cliente para interação com a API do Gemini.
     """
     name = "Gemini"
-
+    can_train = True
     def __init__(self, api_key=None, model_name=None, configurations=None, base_instruction=None, prompt=None, responses=None):
         if not api_key:
             logger.error("Chave de API para Gemini não configurada.")
@@ -309,6 +373,23 @@ class GeminiClient(APIClient):
             logger.error(f"Erro ao comunicar com a API Gemini: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API Gemini: {e}")
 
+    def train(self, training_content: str) -> str:
+        """
+        Treina o modelo com o conteúdo fornecido.
+        """
+        try:
+            # Implementação fictícia de treinamento.
+            # Substitua este bloco com a lógica real de treinamento da API do Gemini.
+            logger.debug("Iniciando treinamento do Gemini.")
+            
+            # Exemplo: Supondo que a API permita o fine-tuning via um endpoint específico
+            # Aqui, apenas simulamos o treinamento e retornamos um nome de modelo fictício.
+            trained_model_name = f"{self.model_name}_trained_v1"
+            logger.debug(f"Treinamento concluído. Modelo treinado: {trained_model_name}")
+            return trained_model_name
+        except Exception as e:
+            logger.error(f"Erro ao treinar o modelo Gemini: {e}")
+            raise APICommunicationError(f"Erro ao treinar o modelo Gemini: {e}")
 
 @register_ai_client
 class Claude3Client(APIClient):
@@ -316,7 +397,7 @@ class Claude3Client(APIClient):
     Cliente para interação com a API do Claude 3.
     """
     name = "Claude3"
-
+    can_train = False
     def __init__(self, api_key=None, model_name=None, configurations=None, base_instruction=None, prompt=None, responses=None):
         if not api_key:
             logger.error("Chave de API para Claude 3 não configurada.")
@@ -360,3 +441,21 @@ class Claude3Client(APIClient):
         except Exception as e:
             logger.error(f"Erro ao comunicar com a API do Claude 3: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API do Claude 3: {e}")
+
+    def train(self, training_content: str) -> str:
+        """
+        Treina o modelo com o conteúdo fornecido.
+        """
+        try:
+            # Implementação fictícia de treinamento.
+            # Substitua este bloco com a lógica real de treinamento da API do Claude 3.
+            logger.debug("Iniciando treinamento do Claude 3.")
+            
+            # Exemplo: Supondo que a API permita o fine-tuning via um endpoint específico
+            # Aqui, apenas simulamos o treinamento e retornamos um nome de modelo fictício.
+            trained_model_name = f"{self.model_name}_trained_v1"
+            logger.debug(f"Treinamento concluído. Modelo treinado: {trained_model_name}")
+            return trained_model_name
+        except Exception as e:
+            logger.error(f"Erro ao treinar o modelo Claude 3: {e}")
+            raise APICommunicationError(f"Erro ao treinar o modelo Claude 3: {e}")

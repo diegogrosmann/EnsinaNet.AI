@@ -1,66 +1,129 @@
 {% extends 'base.html' %}
+{% load custom_tags %}
+{% load ai_config_tags %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-6">
-        <h2 class="mb-4">Gerenciar Tokens</h2>
-        {% if is_approved %}
-            <h4>Criar Novo Token</h4>
-            <form method="post" class="mb-4">
+<h2 class="mb-4">Gerenciador</h2>
+
+<ul class="nav nav-tabs" id="manageTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="tokens-tab" data-bs-toggle="tab" data-bs-target="#tokens" type="button" role="tab" aria-controls="tokens" aria-selected="true">Tokens</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="training-files-tab" data-bs-toggle="tab" data-bs-target="#training-files" type="button" role="tab" aria-controls="training-files" aria-selected="false">Arquivos de Treinamento</button>
+    </li>
+</ul>
+<div class="tab-content" id="manageTabsContent">
+    <!-- Tokens Tab -->
+    <div class="tab-pane fade show active" id="tokens" role="tabpanel" aria-labelledby="tokens-tab">
+        <div class="mt-4">
+            {% if is_approved %}
+                <h4>Criar Novo Token</h4>
+                <form method="post" class="mb-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="create_token" value="1">
+                    <div class="mb-3">
+                        {{ form.name.label_tag }}
+                        {{ form.name }}
+                        {% for error in form.name.errors %}
+                            <small class="text-danger">{{ error }}</small>
+                        {% endfor %}
+                    </div>
+                    <button type="submit" class="btn btn-success">Criar Token</button>
+                </form>
+            {% else %}
+                <div class="alert alert-warning">
+                    Sua conta ainda não foi aprovada pelo administrador. Você não pode gerar novos tokens até que sua conta seja aprovada.
+                </div>
+            {% endif %}
+
+            <h4>Tokens Existentes</h4>
+            {% if tokens %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>Chave</th>
+                                <th>Data de Criação</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for token in tokens %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'manage_configurations' token.id %}">{{ token.name }}</a>
+                                    </td>
+                                    <td>{{ token.key }}</td>
+                                    <td>{{ token.created|date:"d/m/Y H:i" }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    Você não possui tokens.
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Arquivos de Treinamento Tab -->
+    <div class="tab-pane fade" id="training-files" role="tabpanel" aria-labelledby="training-files-tab">
+        <div class="mt-4">
+            <h4>Upload de Arquivo de Treinamento</h4>
+            <form method="post" enctype="multipart/form-data" class="mb-4">
                 {% csrf_token %}
+                <input type="hidden" name="upload_training_file" value="1">
                 <div class="mb-3">
-                    {{ form.name.label_tag }}
-                    {{ form.name }}
-                    {% for error in form.name.errors %}
+                    {{ training_file_form.file.label_tag }}
+                    {{ training_file_form.file }}
+                    {% for error in training_file_form.file.errors %}
                         <small class="text-danger">{{ error }}</small>
                     {% endfor %}
                 </div>
-                <button type="submit" class="btn btn-success">Criar Token</button>
+                <button type="submit" class="btn btn-primary">Upload Arquivo</button>
             </form>
-        {% else %}
-            <div class="alert alert-warning">
-                Sua conta ainda não foi aprovada pelo administrador. Você não pode gerar novos tokens até que sua conta seja aprovada.
+            <div class="mb-3">
+                <a href="{% url 'ai_config:create_training_file'%}" class="btn btn-primary">Criar Novo Arquivo de Treinamento</a>
             </div>
-        {% endif %}
-    </div>
-    <div class="col-md-6">
-        <h4>Tokens Existentes</h4>
-        {% if tokens %}
-            <div class="table-responsive">
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>Nome</th>
-                            <th>Chave</th>
-                            <th>Data de Criação</th>
-                            <th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for token in tokens %}
+
+            <h4>Arquivos de Treinamento</h4>
+            {% if training_files %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
                             <tr>
-                                <td>
-                                    <a href="{% url 'manage_configurations' token.id %}">{{ token.name }}</a>
-                                </td>
-                                <td>{{ token.key }}</td>
-                                <td>{{ token.created|date:"d/m/Y H:i" }}</td>
-                                <td>
-                                    <a href="{% url 'manage_ia_configurations' token.id %}" class="btn btn-info btn-sm">Configurar IA</a>
-                                    <form method="post" action="{% url 'delete_token' token.id %}" class="d-inline">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Tem certeza que deseja deletar este token?');">Excluir</button>
-                                    </form>
-                                </td>
+                                <th>Nome do Arquivo</th>
+                                <th>Data de Upload</th>
+                                <th>Ações</th>
                             </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <div class="alert alert-info">
-                Você não possui tokens.
-            </div>
-        {% endif %}
+                        </thead>
+                        <tbody>
+                            {% for training_file in training_files %}
+                                <tr>
+                                    <td>{{ training_file.file.name|basename }}</td>
+                                    <td>{{ training_file.uploaded_at|date:"d/m/Y H:i" }}</td>
+                                    <td>
+                                        <a href="{% url 'ai_config:edit_training_file' training_file.id %}" class="btn btn-primary btn-sm">Editar</a>
+                                        <a href="{% url 'ai_config:download_training_file' training_file.id %}" class="btn btn-success btn-sm">Baixar</a>
+                                        <form action="{% url 'ai_config:delete_training_file' training_file.id %}" method="post" style="display:inline;">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Tem certeza que deseja excluir este arquivo?');">Excluir</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    Você não possui arquivos de treinamento.
+                </div>
+            {% endif %}
+        </div>
     </div>
 </div>
 {% endblock %}

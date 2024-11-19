@@ -1,5 +1,3 @@
-# myproject/urls.py
-
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
@@ -24,6 +22,9 @@ urlpatterns = [
     ),
     
     path('tinymce/', include('tinymce.urls')),
+
+    # Incluir as URLs do ai_config
+    path('ai-config/', include('ai_config.urls')),
 ]
 
 if settings.DEBUG:

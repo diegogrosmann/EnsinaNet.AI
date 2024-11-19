@@ -1,15 +1,34 @@
+<!-- accounts/templates/accounts/manage/manage_configurations.html -->
 {% extends 'base.html' %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8">
         <h2 class="mb-4">Configurações para o Token "{{ token.name }}"</h2>
-        <form method="post" enctype="multipart/form-data">  <!-- Adicionado enctype -->
+        
+        <!-- Formulário de Configurações -->
+        <form method="post" enctype="multipart/form-data" class="mb-4">
             {% csrf_token %}
             {{ form.as_p }}
             <button type="submit" class="btn btn-primary">Salvar Configurações</button>
         </form>
-        <a href="{% url 'manage_tokens' %}" class="btn btn-secondary mt-3">Voltar para Gerenciar Tokens</a>
+        
+        <!-- Botões de Ação Integrados -->
+        <div class="d-flex flex-wrap justify-content-start gap-2">
+            <a href="{% url 'ai_config:manage_ai_configurations' token.id %}" class="btn btn-info">Configurar IA</a>
+            <a href="{% url 'ai_config:manage_token_configurations' token.id %}" class="btn btn-secondary">Configurar Prompt</a>
+            <a href="{% url 'ai_config:manage_training_configurations' token.id %}" class="btn btn-warning">Parâmetros de Treinamento</a>
+            <a href="{% url 'ai_config:train_ai' token.id %}" class="btn btn-danger">Treinar IA</a>
+            <form method="post" action="{% url 'delete_token' token.id %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger" onclick="return confirm('Tem certeza que deseja deletar este token?');">Excluir Token</button>
+            </form>
+        </div>
+        
+        <!-- Botão para Voltar -->
+        <div class="mt-3">
+            <a href="{% url 'manage_tokens' %}" class="btn btn-outline-secondary">Voltar para Gerenciar Tokens</a>
+        </div>
     </div>
 </div>
 {% endblock %}

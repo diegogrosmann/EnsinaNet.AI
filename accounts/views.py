@@ -7,13 +7,15 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.sites.shortcuts import get_current_site
 from django.core.mail import send_mail
 from django.conf import settings
+from ai_config.forms import UserAITrainingFileForm  
+from ai_config.models import AITrainingFile 
+
 
 from allauth.account.views import ConfirmEmailView
 from allauth.account.utils import send_email_confirmation
 
-from .forms import CustomUserCreationForm, TokenForm, EmailAuthenticationForm, TokenConfigurationForm, UserTokenForm
-from .models import UserToken, TokenConfiguration
-
+from .forms import CustomUserCreationForm, TokenForm, EmailAuthenticationForm, UserTokenForm
+from .models import UserToken, Profile
 
 from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
 
@@ -67,28 +69,51 @@ def logout_view(request):
 def manage_tokens(request):
     user = request.user
     tokens = UserToken.objects.filter(user=user)
+    training_files = AITrainingFile.objects.filter(user=user)  # Obter os arquivos de treinamento do usuário
+
     if request.method == 'POST':
         form = TokenForm(request.POST, user=user)
-        if form.is_valid():
-            if not user.profile.is_approved:
-                messages.error(request, 'Sua conta ainda não foi aprovada pelo administrador.')
-                logger.warning(f"Usuário {user.email} tentou criar token sem aprovação.")
+        training_file_form = UserAITrainingFileForm(request.POST, request.FILES)
+        if 'create_token' in request.POST:
+            if form.is_valid():
+                if not user.profile.is_approved:
+                    messages.error(request, 'Sua conta ainda não foi aprovada pelo administrador.')
+                    logger.warning(f"Usuário {user.email} tentou criar token sem aprovação.")
+                    return redirect('manage_tokens')
+                token = form.save(commit=False)
+                token.user = user
+                try:
+                    token.save()
+                    logger.info(f"Token '{token.name}' criado para o usuário {user.email}.")
+                    messages.success(request, 'Token criado com sucesso!')
+                    return redirect('manage_configurations', token_id=token.id)  # Redireciona para configurações
+                except Exception as e:
+                    logger.error(f"Erro ao salvar token para o usuário {user.email}: {e}")
+                    messages.error(request, 'Erro ao criar o token. Por favor, tente novamente.')
+            else:
+                logger.warning(f"Formulário de criação de token inválido para o usuário {user.email}: {form.errors}")
+        elif 'upload_training_file' in request.POST:
+            if training_file_form.is_valid():
+                training_file = training_file_form.save(commit=False)
+                training_file.user = user
+                training_file.save()
+                logger.info(f"Arquivo de treinamento carregado pelo usuário {user.email}.")
+                messages.success(request, 'Arquivo de treinamento carregado com sucesso!')
                 return redirect('manage_tokens')
-            token = form.save(commit=False)
-            token.user = user
-            try:
-                token.save()
-                logger.info(f"Token '{token.name}' criado para o usuário {user.email}.")
-                messages.success(request, 'Token criado com sucesso!')
-                return redirect('manage_configurations', token_id=token.id)  # Redireciona para configurações
-            except Exception as e:
-                logger.error(f"Erro ao salvar token para o usuário {user.email}: {e}")
-                messages.error(request, 'Erro ao criar o token. Por favor, tente novamente.')
-        else:
-            logger.warning(f"Formulário de criação de token inválido para o usuário {user.email}: {form.errors}")
+            else:
+                logger.warning(f"Formulário de upload de arquivo de treinamento inválido: {training_file_form.errors}")
+                messages.error(request, 'Por favor, corrija os erros no formulário de upload de arquivo de treinamento.')
     else:
         form = TokenForm()
-    context = {'tokens': tokens, 'form': form, 'is_approved': user.profile.is_approved}
+        training_file_form = UserAITrainingFileForm()
+
+    context = {
+        'tokens': tokens,
+        'form': form,
+        'training_files': training_files,
+        'training_file_form': training_file_form,
+        'is_approved': user.profile.is_approved
+    }
     return render(request, 'accounts/manage/manage_tokens.html', context)
 
 @login_required
@@ -197,56 +222,3 @@ class CustomConfirmEmailView(ConfirmEmailView):
             logger.error(f"Erro ao confirmar email: {e}")
             messages.error(request, 'Erro ao confirmar o email. Por favor, contate o suporte.')
             return redirect('register')
-
-@login_required
-def manage_ia_configurations(request, token_id):
-    user = request.user
-    token = get_object_or_404(UserToken, id=token_id, user=user)
-
-    # Obter todas as configurações de IA disponíveis para este token
-    existing_configs = TokenConfiguration.objects.filter(token=token)
-
-    # Mapear API client classes para suas configurações existentes
-    existing_configs_dict = {config.api_client_class: config for config in existing_configs}
-
-    # Criar uma lista de AI client classes para iterar nos formulários
-    ai_clients = AVAILABLE_AI_CLIENTS
-
-    if request.method == 'POST':
-        # Processar cada configuração de IA
-        success = True
-        for ai_client in ai_clients:
-            form_prefix = ai_client.name
-            config_instance = existing_configs_dict.get(ai_client.name, TokenConfiguration(token=token, api_client_class=ai_client.name))
-            form = TokenConfigurationForm(request.POST, prefix=form_prefix, instance=config_instance)
-            if form.is_valid():
-                try:
-                    config = form.save(commit=False)
-                    config.token = token
-                    config.api_client_class = ai_client.name  # Assegura que a classe do cliente é correta
-                    config.save()
-                    success = success and True
-                except Exception as e:
-                    logger.error(f"Erro ao salvar configuração para {ai_client.name}: {e}")
-                    messages.error(request, f"Erro ao salvar configuração para {ai_client.name}. Por favor, tente novamente.")
-                    success = False
-            else:
-                logger.warning(f"Formulário inválido para {ai_client.name}: {form.errors}")
-                messages.error(request, f"Erros na configuração para {ai_client.name}. Por favor, corrija os erros.")
-                success = False
-        if success:
-            messages.success(request, 'Configurações de IA atualizadas com sucesso!')
-            return redirect('manage_tokens')
-    else:
-        # Inicializar formulários para cada AI client
-        forms = []
-        for ai_client in ai_clients:
-            config = existing_configs_dict.get(ai_client.name)
-            form = TokenConfigurationForm(prefix=ai_client.name, instance=config)
-            forms.append({
-                'ai_client': ai_client.name,
-                'form': form,
-            })
-        context = {'token': token, 'forms': forms}
-        return render(request, 'accounts/manage/manage_ia_configurations.html', context)
-

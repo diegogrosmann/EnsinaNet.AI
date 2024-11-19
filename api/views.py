@@ -2,7 +2,6 @@ import logging
 import json
 
 from django.http import JsonResponse
-
 from rest_framework.decorators import api_view
 from rest_framework import status
 
@@ -11,90 +10,84 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from api.exceptions import APIClientError, FileProcessingError, MissingAPIKeyError
 from api.utils.clientsIA import AVAILABLE_AI_CLIENTS, extract_text
 
-from accounts.models import UserToken, TokenConfiguration, AIClientConfiguration, GlobalConfiguration
+from accounts.models import UserToken
+from ai_config.models import AIClient, TrainingCapture, AITrainingFile
 
 logger = logging.getLogger(__name__)
 
 def process_client(AIClientClass, processed_data, user_token):
     ai_client_name = AIClientClass.name
     try:
-        # Obter a configuração padrão da API
-        try:
-            default_config = AIClientConfiguration.objects.get(api_client_class=ai_client_name)
-            api_key = default_config.api_key
-            model_name = default_config.model_name
-            configurations = default_config.configurations.copy()
-        except AIClientConfiguration.DoesNotExist:
-            logger.error(f"Configuração padrão para {ai_client_name} não encontrada.")
-            raise MissingAPIKeyError(f"Configuração padrão para {ai_client_name} não encontrada.")
+        # Obter o AIClient
+        ai_client = AIClient.objects.get(api_client_class=ai_client_name)
+        ai_client_config = user_token.configurations.get(ai_client=ai_client)
+        if not ai_client_config.enabled:
+            logger.info(f"{ai_client_name} está desabilitado para este token.")
+            return ai_client_name, {"message": "Esta IA está desabilitada."}
 
-        # Obter configurações globais de Prompt
-        try:
-            global_config = GlobalConfiguration.objects.first()
-            base_instruction_global = global_config.base_instruction if global_config else ""
-            prompt_global = global_config.prompt if global_config else ""
-            responses_global = global_config.responses if global_config else ""
-        except GlobalConfiguration.DoesNotExist:
-            base_instruction_global = ""
-            prompt_global = ""
-            responses_global = ""
+        model_name = ai_client_config.model_name or AIClientClass.default_model_name
+        configurations = ai_client_config.configurations.copy()
 
-        # Obter configurações específicas da API, se houver
-        try:
-            token_config = user_token.configurations.get(api_client_class=ai_client_name)
-            if not token_config.enabled:
-                logger.info(f"{ai_client_name} está desabilitado para este token.")
-                return ai_client_name, {"message": "Esta IA está desabilitada."}
-            
-            # Sobrescrever model_name e configurations se fornecidos pelo usuário
-            if token_config.model_name:
-                model_name = token_config.model_name
-            if token_config.configurations:
-                configurations.update(token_config.configurations)
-        except TokenConfiguration.DoesNotExist:
-            logger.info(f"{ai_client_name} não tem configuração específica para este token. Usando configurações globais.")
-        
-        # Obter as configurações especificas do Prompt, se houver
-        base_instruction = user_token.base_instruction if user_token.base_instruction else base_instruction_global
-        prompt = user_token.prompt if user_token.prompt else prompt_global
-        responses = user_token.responses if user_token.responses else responses_global
+        token_ai_config = user_token.ai_configuration
+        base_instruction = token_ai_config.base_instruction or ""
+        prompt = token_ai_config.prompt or ""
+        responses = token_ai_config.responses or ""
 
-        # Ler o conteúdo do arquivo de treinamento
-        training_data_content = ''
-        if user_token.training_file:
-            # Ler o arquivo de treinamento do token
-            try:
-                user_token.training_file.open()
-                training_data_content = user_token.training_file.read().decode('utf-8')
-                user_token.training_file.close()
-            except Exception as e:
-                logger.error(f"Erro ao ler o arquivo de treinamento do token: {e}")
-        elif global_config and global_config.training_file:
-            # Ler o arquivo de treinamento global
-            try:
-                global_config.training_file.open()
-                training_data_content = global_config.training_file.read().decode('utf-8')
-                global_config.training_file.close()
-            except Exception as e:
-                logger.error(f"Erro ao ler o arquivo de treinamento global: {e}")
+        ai_client_training = getattr(ai_client_config, 'training', None)
+        if ai_client_training and ai_client_training.trained_model_name:
+            model_name = ai_client_training.trained_model_name
 
-        # Incluir o training_data no processed_data
-        processed_data['training_data'] = training_data_content
-
-        # Inicializar o cliente de IA com as configurações apropriadas
-        ai_client = AIClientClass(
-            api_key=api_key, 
-            model_name=model_name, 
-            configurations=configurations, 
-            base_instruction=base_instruction, 
-            prompt=prompt, 
+        # Inicializar o cliente de IA
+        ai_client_instance = AIClientClass(
+            api_key=ai_client.api_key,
+            model_name=model_name,
+            configurations=configurations,
+            base_instruction=base_instruction,
+            prompt=prompt,
             responses=responses
         )
 
-        # Chamar o método compare com processed_data
-        comparison_result = ai_client.compare(processed_data)
+        # Realizar a comparação
+        comparison_result = ai_client_instance.compare(processed_data)
 
-        logger.info(f"Comparação com {ai_client_name} realizada com sucesso.")
+        # Verificar se a captura está ativa
+        try:
+            capture = TrainingCapture.objects.get(token=user_token, ai_client=ai_client)
+            if capture.is_active:
+                training_file = token_ai_config.training_file
+                if not training_file:
+                    # Criar um arquivo de treinamento padrão
+                    training_file = AITrainingFile.objects.create(
+                        user=user_token.user,
+                        name=f"Training_{user_token.name}",
+                        file='training_files/default.json'
+                    )
+                    token_ai_config.training_file = training_file
+                    token_ai_config.save()
+
+                # Ler os dados existentes
+                try:
+                    with training_file.file.open('r') as f:
+                        training_data = json.load(f)
+                except json.JSONDecodeError:
+                    training_data = []
+
+                # Adicionar o novo exemplo
+                new_example = {
+                    'system_message': base_instruction,
+                    'user_message': processed_data.get('instruction', ''),
+                    'response': comparison_result
+                }
+                training_data.append(new_example)
+
+                # Salvar de volta no arquivo
+                with training_file.file.open('w') as f:
+                    json.dump(training_data, f, ensure_ascii=False, indent=4)
+
+                logger.info(f"Novo exemplo adicionado ao arquivo de treinamento para {ai_client_name} do Token {user_token.name}.")
+        except TrainingCapture.DoesNotExist:
+            pass  # Captura não está ativa
+
         return ai_client_name, {"response": comparison_result}
 
     except MissingAPIKeyError as e:
@@ -136,17 +129,12 @@ def compare(request):
         if isinstance(obj, dict):
             for key, value in obj.items():
                 if isinstance(value, dict):
-                    # Verifica se o dicionário possui 'type': 'file'
                     if value.get("type") == "file":
-                        # Processa o conteúdo do arquivo
                         processed_value = extract_text(value)
-                        # Insere o conteúdo processado diretamente na chave atual
                         obj[key] = processed_value
                     else:
-                        # Chama a função recursivamente para outros dicionários
                         process_file_content(value)
                 elif isinstance(value, list):
-                    # Chama a função recursivamente para cada item da lista
                     process_file_content(value)
         elif isinstance(obj, list):
             for item in obj:
@@ -173,6 +161,6 @@ def compare(request):
 
     logger.info("Operação compare finalizada.")
 
-    logger.info(data)
-    logger.info(response_data)
+    logger.debug(f"Dados Processados: {data}")
+    logger.debug(f"Resposta: {response_data}")
     return JsonResponse(response_data, status=status.HTTP_200_OK)

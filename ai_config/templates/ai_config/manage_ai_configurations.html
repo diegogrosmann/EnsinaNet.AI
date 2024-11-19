@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <h2 class="mb-4">Configurações de IA para o Token "{{ token.name }}"</h2>
+        <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <ul class="nav nav-tabs" id="apiTabs" role="tablist">
+                {% for ai_form in forms %}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link {% if forloop.first %}active{% endif %}"
+                                id="{{ ai_form.ai_client }}-tab"
+                                data-bs-toggle="tab"
+                                data-bs-target="#{{ ai_form.ai_client }}"
+                                type="button"
+                                role="tab"
+                                aria-controls="{{ ai_form.ai_client }}"
+                                aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                            {{ ai_form.ai_client }}
+                        </button>
+                    </li>
+                {% endfor %}
+            </ul>
+            <div class="tab-content mt-3" id="apiTabsContent">
+                {% for ai_form in forms %}
+                    <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+                         id="{{ ai_form.ai_client }}"
+                         role="tabpanel"
+                         aria-labelledby="{{ ai_form.ai_client }}-tab">
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h4>{{ ai_form.ai_client }}</h4>
+                                <div class="form-check form-switch mb-3">
+                                    {{ ai_form.form.enabled }}
+                                    {{ ai_form.form.enabled.label_tag }}
+                                    {% for error in ai_form.form.enabled.errors %}
+                                        <small class="text-danger">{{ error }}</small>
+                                    {% endfor %}
+                                </div>
+                                <div class="mb-3">
+                                    {{ ai_form.form.model_name.label_tag }}
+                                    {{ ai_form.form.model_name }}
+                                    {% for error in ai_form.form.model_name.errors %}
+                                        <small class="text-danger">{{ error }}</small>
+                                    {% endfor %}
+                                </div>
+                                <div class="mb-3">
+                                    {{ ai_form.form.configurations.label_tag }}
+                                    {{ ai_form.form.configurations }}
+                                    {% for error in ai_form.form.configurations.errors %}
+                                        <small class="text-danger">{{ error }}</small>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+            <button type="submit" class="btn btn-primary">Salvar Configurações</button>
+        </form>
+        <!-- Botão de Voltar atualizado -->
+        <a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary mt-3">Voltar para Configurações do Token</a>
+    </div>
+</div>
+{% endblock %}

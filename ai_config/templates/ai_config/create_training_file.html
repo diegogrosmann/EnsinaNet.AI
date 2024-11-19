@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+{% load ai_config_tags %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        {% if training_file %}
+            <h2>Editar Arquivo de Treinamento: {{ training_file.name }}</h2>
+        {% else %}
+            <h2>Criar Arquivo de Treinamento</h2>
+        {% endif %}
+        <form method="post">
+            {% csrf_token %}
+            {{ formset.media }}
+            <!-- Campo de Nome do Arquivo -->
+            <div class="mb-3">
+                {{ name_form.name.label_tag }}
+                {{ name_form.name }}
+                {% for error in name_form.name.errors %}
+                    <small class="text-danger">{{ error }}</small>
+                {% endfor %}
+            </div>
+            
+            <!-- Formset de Exemplos -->
+            {{ formset.management_form }}
+            <div id="formset-container">
+                {% for form in formset %}
+                    <div class="card mb-3 formset-form">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <!-- Área de Colapso Separada -->
+                            <div class="collapse-toggle" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#collapse{{ forloop.counter }}" aria-expanded="{% if forloop.last and not training_file %}true{% else %}false{% endif %}" aria-controls="collapse{{ forloop.counter }}">
+                                <h5 class="mb-0">
+                                    Exemplo {{ forloop.counter }}
+                                    <i class="bi bi-chevron-down ms-2"></i>
+                                </h5>
+                            </div>
+                            <!-- Botão Remover Independente -->
+                            <button type="button" class="btn btn-danger btn-sm remove-form">Remover</button>
+                        </div>
+                        <div id="collapse{{ forloop.counter }}" class="collapse {% if forloop.last and not training_file %}show{% endif %}" aria-labelledby="heading{{ forloop.counter }}" data-bs-parent="#formset-container">
+                            <div class="card-body">
+                                <div class="mb-3" style="display: none;">
+                                    {{ form.DELETE }} <!-- Campo de deleção oculto -->
+                                </div>
+                                <div class="mb-3">
+                                    {{ form.system_message.label_tag }}
+                                    {{ form.system_message }}
+                                    {% for error in form.system_message.errors %}
+                                        <small class="text-danger">{{ error }}</small>
+                                    {% endfor %}
+                                </div>
+                                <div class="mb-3">
+                                    {{ form.user_message.label_tag }}
+                                    {{ form.user_message }}
+                                    {% for error in form.user_message.errors %}
+                                        <small class="text-danger">{{ error }}</small>
+                                    {% endfor %}
+                                </div>
+                                <div class="mb-3">
+                                    {{ form.response.label_tag }}
+                                    {{ form.response }}
+                                    {% for error in form.response.errors %}
+                                        <small class="text-danger">{{ error }}</small>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% empty %}
+                    <p>Nenhum exemplo adicionado.</p>
+                {% endfor %}
+            </div>
+            <button type="button" id="add-form" class="btn btn-secondary">Adicionar Exemplo</button>
+            
+            <!-- Botões de Salvamento -->
+            {% if training_file %}
+                <button type="submit" name="save" class="btn btn-primary">Salvar Alterações</button>
+                <button type="submit" name="save_and_continue" class="btn btn-primary">Salvar e Continuar Editando</button>
+            {% else %}
+                <button type="submit" name="save" class="btn btn-primary">Salvar Arquivo de Treinamento</button>
+                <button type="submit" name="save_and_continue" class="btn btn-primary">Salvar e Continuar Editando</button>
+            {% endif %}
+        </form>
+        <a href="{% url 'manage_tokens' %}" class="btn btn-secondary mt-3">Voltar para Gerenciar Tokens</a>
+    </div>
+</div>
+
+<script>
+// JavaScript para lidar com adicionar e remover formulários
+document.addEventListener('DOMContentLoaded', function() {
+    var formsetContainer = document.getElementById('formset-container');
+    var addFormButton = document.getElementById('add-form');
+    var totalForms = document.querySelector('[name="form-TOTAL_FORMS"]');
+    var formNum = parseInt(totalForms.value);
+    
+    addFormButton.addEventListener('click', function(e) {
+        e.preventDefault();
+        var emptyForm = document.querySelector('.formset-form').cloneNode(true);
+        var regex = new RegExp('form-(\\d+)-', 'g');
+        emptyForm.innerHTML = emptyForm.innerHTML.replace(regex, 'form-' + formNum + '-');
+        formNum++;
+        totalForms.value = formNum;
+        formsetContainer.appendChild(emptyForm);
+    
+        // Limpar os valores dos campos
+        var inputs = emptyForm.querySelectorAll('input, textarea');
+        inputs.forEach(function(input) {
+            if (input.type !== 'checkbox') { // Mantém o estado do checkbox DELETE
+                input.value = '';
+            } else {
+                input.checked = false;
+            }
+        });
+    
+        // Atualizar o número do exemplo no cabeçalho
+        var header = emptyForm.querySelector('.card-header .collapse-toggle h5');
+        header.innerHTML = 'Exemplo ' + formNum + ' <i class="bi bi-chevron-down ms-2"></i>';
+    
+        // Atualizar o data-bs-target e aria-controls para o novo form
+        var newCollapseId = 'collapse' + formNum;
+        var newHeadingId = 'heading' + formNum;
+    
+        emptyForm.querySelector('.collapse-toggle').setAttribute('data-bs-target', '#' + newCollapseId);
+        emptyForm.querySelector('.collapse-toggle').setAttribute('aria-controls', newCollapseId);
+        emptyForm.querySelector('.collapse').id = newCollapseId;
+        emptyForm.querySelector('.collapse').setAttribute('aria-labelledby', newHeadingId);
+        emptyForm.querySelector('.collapse').classList.remove('show'); // Colapsar por padrão
+    
+        // Atualizar o evento de colapso
+        var headerCard = emptyForm.querySelector('.collapse-toggle');
+        headerCard.addEventListener('click', function() {
+            var collapseElement = document.getElementById(newCollapseId);
+            var bsCollapse = new bootstrap.Collapse(collapseElement, {
+                toggle: true
+            });
+        });
+    
+        // Atualizar o ícone
+        var icon = emptyForm.querySelector('.collapse-toggle i');
+        if (icon) {
+            icon.classList.remove('bi-chevron-up');
+            icon.classList.add('bi-chevron-down');
+        }
+    
+        // Inicializar o TinyMCE no novo campo 'response'
+        var newResponseTextarea = emptyForm.querySelector('textarea.tinymce');
+        if (newResponseTextarea) {
+            tinymce.init({
+                target: newResponseTextarea,
+                plugins: 'lists link image preview',
+                toolbar: 'undo redo | formatselect | bold italic | alignleft aligncenter alignright | bullist numlist | link image | preview'
+            });
+        }
+    });
+    
+    formsetContainer.addEventListener('click', function(e) {
+        if (e.target && e.target.matches('.remove-form')) {
+            e.preventDefault();
+            var formToRemove = e.target.closest('.formset-form');
+            
+            // Verifica se o form a ser removido já existe na base de dados (edição)
+            // Se sim, marca o checkbox DELETE
+            var deleteInput = formToRemove.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            if (deleteInput) {
+                deleteInput.checked = true;
+                // Esconder o formulário visualmente
+                formToRemove.style.display = 'none';
+            } else {
+                // Se for um novo formulário (criação), simplesmente remove do DOM
+                formToRemove.remove();
+                formNum--;
+                totalForms.value = formNum;
+    
+                // Re-numerar os formulários
+                var forms = formsetContainer.querySelectorAll('.formset-form');
+                forms.forEach(function(form, index) {
+                    var currentIndex = index + 1;
+                    var regex = new RegExp('form-(\\d+)-', 'g');
+                    form.innerHTML = form.innerHTML.replace(regex, 'form-' + index + '-');
+    
+                    // Atualizar o número do exemplo no cabeçalho
+                    var header = form.querySelector('.card-header .collapse-toggle h5');
+                    header.innerHTML = 'Exemplo ' + currentIndex + ' <i class="bi bi-chevron-down ms-2"></i>';
+    
+                    // Atualizar o data-bs-target e aria-controls
+                    var newCollapseId = 'collapse' + currentIndex;
+    
+                    form.querySelector('.collapse-toggle').setAttribute('data-bs-target', '#' + newCollapseId);
+                    form.querySelector('.collapse-toggle').setAttribute('aria-controls', newCollapseId);
+    
+                    form.querySelector('.collapse').id = newCollapseId;
+                    form.querySelector('.collapse').setAttribute('aria-labelledby', 'heading' + currentIndex);
+    
+                    // Atualizar o evento de colapso
+                    var headerCard = form.querySelector('.collapse-toggle');
+                    headerCard.removeEventListener('click', null); // Remove qualquer ouvinte existente
+                    headerCard.addEventListener('click', function() {
+                        var collapseElement = document.getElementById(newCollapseId);
+                        var bsCollapse = new bootstrap.Collapse(collapseElement, {
+                            toggle: true
+                        });
+                    });
+    
+                    // Atualizar o ícone
+                    var icon = form.querySelector('.collapse-toggle i');
+                    if (icon) {
+                        icon.classList.remove('bi-chevron-up');
+                        icon.classList.add('bi-chevron-down');
+                    }
+                });
+            }
+        }
+    });
+    
+    // Atualizar ícones de collapse
+    var collapseElements = document.querySelectorAll('.collapse');
+    collapseElements.forEach(function(collapseEl, index) {
+        collapseEl.addEventListener('show.bs.collapse', function () {
+            var button = collapseEl.previousElementSibling.querySelector('.collapse-toggle i');
+            if (button) {
+                button.classList.remove('bi-chevron-down');
+                button.classList.add('bi-chevron-up');
+            }
+        });
+    
+        collapseEl.addEventListener('hide.bs.collapse', function () {
+            var button = collapseEl.previousElementSibling.querySelector('.collapse-toggle i');
+            if (button) {
+                button.classList.remove('bi-chevron-up');
+                button.classList.add('bi-chevron-down');
+            }
+        });
+    });
+    
+    // Inicializar TinyMCE nos campos existentes
+    tinymce.init({
+        selector: 'textarea.tinymce',
+        plugins: 'lists link image preview',
+        toolbar: 'undo redo | formatselect | bold italic | alignleft aligncenter alignright | bullist numlist | link image | preview'
+    });
+});
+</script>
+{% endblock %}
+
+
