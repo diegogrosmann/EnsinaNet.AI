@@ -202,13 +202,15 @@ class APIClient:
             'user_prompt': prompt
         }
 
-    def compare(self, data: dict) -> str:
+    def compare(self, data: dict) -> tuple:
         """
         Método unificado para realizar comparações com base no tipo fornecido.
         """
         prompts = self._prepare_prompts(**data)
         response = self._call_api(prompts)
-        return response
+        system_message = prompts.get('base_instruction', '')
+        user_message = prompts.get('user_prompt', '')
+        return (response, system_message, user_message)
 
     def _call_api(self, prompts: dict) -> str:
         """

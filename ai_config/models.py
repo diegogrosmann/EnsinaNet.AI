@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
-class AIClient(models.Model):  # Renomeado de AIClientConfiguration e ajustado
+class AIClientGlobalConfiguration(models.Model):
     api_client_class = models.CharField(max_length=255, unique=True)
     api_key = models.CharField(max_length=255)
 
@@ -26,7 +26,7 @@ class AIClient(models.Model):  # Renomeado de AIClientConfiguration e ajustado
 
 class AIClientConfiguration(models.Model):  # Renomeado de TokenConfiguration
     token = models.ForeignKey('accounts.UserToken', related_name='configurations', on_delete=models.CASCADE)
-    ai_client = models.ForeignKey('AIClient', on_delete=models.CASCADE)  # Agora referencia AIClient
+    ai_client = models.ForeignKey('AIClientGlobalConfiguration', on_delete=models.CASCADE)
     enabled = models.BooleanField(default=False)
     model_name = models.CharField(max_length=255, blank=True, null=True)
     configurations = models.JSONField(default=dict, blank=True)
@@ -127,8 +127,10 @@ class DocumentAIConfiguration(models.Model):
 
 class TrainingCapture(models.Model):
     token = models.ForeignKey(UserToken, related_name='training_captures', on_delete=models.CASCADE)
-    ai_client = models.ForeignKey('AIClient', on_delete=models.CASCADE)
+    ai_client = models.ForeignKey('AIClientGlobalConfiguration', on_delete=models.CASCADE)
     is_active = models.BooleanField(default=False)
+    temp_file = models.FileField(upload_to='training_captures/', null=True, blank=True)
+    create_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ('token', 'ai_client')

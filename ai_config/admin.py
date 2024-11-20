@@ -1,8 +1,6 @@
-import bleach
 import os
 import logging
 
-from django.contrib import admin
 from django import forms
 from django.conf import settings
 from django.urls import path
@@ -13,8 +11,14 @@ from django.utils.html import format_html
 
 from tinymce.widgets import TinyMCE
 
-from .models import AIClient, AIClientConfiguration, TokenAIConfiguration, AITrainingFile, AIClientTraining, DocumentAIConfiguration
-from .forms import AIClientForm, AIClientConfigurationForm, TokenAIConfigurationForm, AITrainingFileForm, AIClientTrainingForm
+from .models import ( 
+    AIClientGlobalConfiguration, 
+    AIClientConfiguration, 
+    TokenAIConfiguration, 
+    AITrainingFile, 
+    AIClientTraining,
+    DocumentAIConfiguration)
+from .forms import AIClientGlobalConfigForm, AIClientConfigurationForm, TokenAIConfigurationForm, AITrainingFileForm, AIClientTrainingForm
 
 from .utils import perform_training
 
@@ -36,8 +40,8 @@ class AIClientTrainingInline(admin.StackedInline):
         formset = super().get_formset(request, obj, **kwargs)
         return formset
 
-class AIClientAdmin(admin.ModelAdmin):
-    form = AIClientForm
+class AIClientGlobalConfigAdmin(admin.ModelAdmin):
+    form = AIClientGlobalConfigForm
     list_display = ('api_client_class', 'masked_api_key')
     search_fields = ('api_client_class',)
     list_filter = ('api_client_class',)
@@ -57,7 +61,7 @@ class AIClientAdmin(admin.ModelAdmin):
         return self.readonly_fields
 
     def has_add_permission(self, request):
-        existing_clients = AIClient.objects.values_list('api_client_class', flat=True)
+        existing_clients = AIClientGlobalConfig.objects.values_list('api_client_class', flat=True)
         all_ai_classes = [client.name for client in AVAILABLE_AI_CLIENTS]
         missing_clients = set(all_ai_classes) - set(existing_clients)
         if not missing_clients:
@@ -67,7 +71,7 @@ class AIClientAdmin(admin.ModelAdmin):
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
         if not obj:  # Se estiver criando uma nova instância
-            existing_clients = AIClient.objects.values_list('api_client_class', flat=True)
+            existing_clients = AIClientGlobalConfig.objects.values_list('api_client_class', flat=True)
             available_choices = [(client.name, client.name) for client in AVAILABLE_AI_CLIENTS if client.name not in existing_clients]
             form.base_fields['api_client_class'].choices = available_choices
         return form
@@ -169,7 +173,7 @@ class DocumentAIConfigurationAdmin(admin.ModelAdmin):
             return False
         return True
 
-admin.site.register(AIClient, AIClientAdmin)
+#admin.site.register(AIClientGlobalConfig, AIClientGlobalConfig)
 admin.site.register(AIClientConfiguration, AIClientConfigurationAdmin)
 admin.site.register(TokenAIConfiguration, TokenAIConfigurationAdmin)
 admin.site.register(AITrainingFile, AITrainingFileAdmin)

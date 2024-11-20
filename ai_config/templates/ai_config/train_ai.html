@@ -1,3 +1,5 @@
+<!-- ai_config/templates/ai_config/train_ai.html -->
+
 {% extends 'base.html' %}
 
 {% block content %}
@@ -10,6 +12,30 @@
             <button type="submit" class="btn btn-primary">Iniciar Treinamento</button>
             <a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary">Cancelar</a>
         </form>
+        
+        {% if ai_clients_trainable_details %}
+            <hr>
+            <h4>Modelos Treinados</h4>
+            {% for ai_client in ai_clients_trainable_details %}
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ ai_client.name }}</h5>
+                        {% if ai_client.trained_model_name %}
+                            <p class="card-text">
+                                <strong>Modelo Treinado:</strong> {{ ai_client.trained_model_name }}
+                            </p>
+                            <form method="post" action="{% url 'ai_config:remove_trained_model' token.id ai_client.name %}" onsubmit="return confirm('Tem certeza de que deseja remover o modelo treinado para {{ ai_client.name }}?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-danger">Remover Modelo Treinado</button>
+                            </form>
+                        {% else %}
+                            <p class="card-text text-muted">Nenhum modelo treinado.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        {% endif %}
+        
         {% if ai_clients_not_trainable %}
             <h4>IAs que não podem ser treinadas:</h4>
             <ul>
@@ -17,7 +43,7 @@
                     <li>{{ ai_client_name }}</li>
                 {% endfor %}
             </ul>
-            Estas IAs não suportam o treinamento. Por favor, inclua o arquivo de treinamento no prompt.
+            <p>Estas IAs não suportam o treinamento. Por favor, inclua o arquivo de treinamento no prompt.</p>
         {% endif %}
     </div>
 </div>

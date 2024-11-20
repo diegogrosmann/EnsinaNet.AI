@@ -11,7 +11,7 @@ from api.exceptions import APIClientError, FileProcessingError, MissingAPIKeyErr
 from api.utils.clientsIA import AVAILABLE_AI_CLIENTS, extract_text
 
 from accounts.models import UserToken
-from ai_config.models import AIClient, TrainingCapture, AITrainingFile
+from ai_config.models import AIClientGlobalConfiguration, TrainingCapture, AITrainingFile
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ def process_client(AIClientClass, processed_data, user_token):
     ai_client_name = AIClientClass.name
     try:
         # Obter o AIClient
-        ai_client = AIClient.objects.get(api_client_class=ai_client_name)
+        ai_client = AIClientGlobalConfiguration.objects.get(api_client_class=ai_client_name)
         ai_client_config = user_token.configurations.get(ai_client=ai_client)
         if not ai_client_config.enabled:
             logger.info(f"{ai_client_name} está desabilitado para este token.")
@@ -48,43 +48,33 @@ def process_client(AIClientClass, processed_data, user_token):
         )
 
         # Realizar a comparação
-        comparison_result = ai_client_instance.compare(processed_data)
+        comparison_result, system_message, user_message = ai_client_instance.compare(processed_data)
 
         # Verificar se a captura está ativa
         try:
             capture = TrainingCapture.objects.get(token=user_token, ai_client=ai_client)
-            if capture.is_active:
-                training_file = token_ai_config.training_file
-                if not training_file:
-                    # Criar um arquivo de treinamento padrão
-                    training_file = AITrainingFile.objects.create(
-                        user=user_token.user,
-                        name=f"Training_{user_token.name}",
-                        file='training_files/default.json'
-                    )
-                    token_ai_config.training_file = training_file
-                    token_ai_config.save()
-
+            temp_file = capture.temp_file
+            if capture.is_active and temp_file:
                 # Ler os dados existentes
                 try:
-                    with training_file.file.open('r') as f:
+                    with temp_file.open('r') as f:
                         training_data = json.load(f)
                 except json.JSONDecodeError:
                     training_data = []
 
                 # Adicionar o novo exemplo
                 new_example = {
-                    'system_message': base_instruction,
-                    'user_message': processed_data.get('instruction', ''),
+                    'system_message': system_message,
+                    'user_message': user_message,
                     'response': comparison_result
                 }
                 training_data.append(new_example)
 
-                # Salvar de volta no arquivo
-                with training_file.file.open('w') as f:
+                # Salvar de volta no arquivo temporário
+                with temp_file.open('w') as f:
                     json.dump(training_data, f, ensure_ascii=False, indent=4)
 
-                logger.info(f"Novo exemplo adicionado ao arquivo de treinamento para {ai_client_name} do Token {user_token.name}.")
+                logger.info(f"Novo exemplo adicionado ao arquivo temporário para {ai_client_name} do Token {user_token.name}.")
         except TrainingCapture.DoesNotExist:
             pass  # Captura não está ativa
 

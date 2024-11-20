@@ -317,10 +317,10 @@ TINYMCE_DEFAULT_CONFIG = {
     'selector': '.tinymce',
     'theme': 'silver',
     'plugins': '''
-            textcolor save preview contextmenu
+            save preview 
             table code lists fullscreen insertdatetime nonbreaking
             directionality searchreplace wordcount visualblocks
-            visualchars autolink charmap print hr
+            visualchars autolink charmap
             ''',
     'toolbar1': '''
             fullscreen preview bold italic underline | fontselect,
@@ -328,7 +328,7 @@ TINYMCE_DEFAULT_CONFIG = {
              indent outdent | bullist numlist | outdent indent |
             ''',
     'toolbar2': '''
-            h1 h2 h3 h4 h5 h6 | table |
+            undo redo | h1 h2 h3 h4 h5 h6 | table |
             charmap hr pagebreak nonbreaking anchor |
             visualblocks visualchars | code
             ''',

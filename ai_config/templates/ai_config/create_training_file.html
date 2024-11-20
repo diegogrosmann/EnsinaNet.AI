@@ -1,3 +1,5 @@
+<!-- ai_config/templates/ai_config/create_training_file.html -->
+
 {% extends 'base.html' %}
 {% load ai_config_tags %}
 
@@ -9,8 +11,30 @@
         {% else %}
             <h2>Criar Arquivo de Treinamento</h2>
         {% endif %}
-        <form method="post">
+        
+        <!-- Card Colapsado para Captura de Consulta -->
+        <div class="card mb-4">
+            <div class="card-header" id="captureCardHeader">
+                <h5 class="mb-0">
+                    <button class="btn btn-link" type="button" data-bs-toggle="collapse" data-bs-target="#captureCardBody" aria-expanded="false" aria-controls="captureCardBody">
+                        Ativar Captura de Consulta
+                    </button>
+                </h5>
+            </div>
+            <div id="captureCardBody" class="collapse">
+                <div class="card-body">
+                    <form id="capture-form" method="post">
+                        {% csrf_token %}
+                        {{ capture_form.as_p }}
+                        <button type="button" id="toggle-capture-btn" class="btn btn-primary">Ativar Captura de Consulta</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
+            {{ form.media }}
             {{ formset.media }}
             <!-- Campo de Nome do Arquivo -->
             <div class="mb-3">
@@ -28,7 +52,7 @@
                     <div class="card mb-3 formset-form">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <!-- Área de Colapso Separada -->
-                            <div class="collapse-toggle" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#collapse{{ forloop.counter }}" aria-expanded="{% if forloop.last and not training_file %}true{% else %}false{% endif %}" aria-controls="collapse{{ forloop.counter }}">
+                            <div class="collapse-toggle" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#collapse{{ forloop.counter0 }}" aria-expanded="{% if forloop.first and not training_file %}true{% else %}false{% endif %}" aria-controls="collapse{{ forloop.counter0 }}">
                                 <h5 class="mb-0">
                                     Exemplo {{ forloop.counter }}
                                     <i class="bi bi-chevron-down ms-2"></i>
@@ -37,10 +61,10 @@
                             <!-- Botão Remover Independente -->
                             <button type="button" class="btn btn-danger btn-sm remove-form">Remover</button>
                         </div>
-                        <div id="collapse{{ forloop.counter }}" class="collapse {% if forloop.last and not training_file %}show{% endif %}" aria-labelledby="heading{{ forloop.counter }}" data-bs-parent="#formset-container">
+                        <div id="collapse{{ forloop.counter0 }}" class="collapse {% if forloop.first and not training_file %}show{% endif %}" aria-labelledby="heading{{ forloop.counter0 }}" data-bs-parent="#formset-container">
                             <div class="card-body">
                                 <div class="mb-3" style="display: none;">
-                                    {{ form.DELETE }} <!-- Campo de deleção oculto -->
+                                    {{ form.DELETE }}
                                 </div>
                                 <div class="mb-3">
                                     {{ form.system_message.label_tag }}
@@ -85,161 +109,315 @@
     </div>
 </div>
 
+<!-- Modal para mensagens -->
+<div class="modal fade" id="captureModal" tabindex="-1" aria-labelledby="captureModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h1 class="modal-title fs-5" id="captureModalLabel">Captura de Consulta</h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body" id="captureModalBody">
+        <!-- Mensagens serão inseridas via JavaScript -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
-// JavaScript para lidar com adicionar e remover formulários
-document.addEventListener('DOMContentLoaded', function() {
-    var formsetContainer = document.getElementById('formset-container');
-    var addFormButton = document.getElementById('add-form');
-    var totalForms = document.querySelector('[name="form-TOTAL_FORMS"]');
-    var formNum = parseInt(totalForms.value);
-    
-    addFormButton.addEventListener('click', function(e) {
-        e.preventDefault();
-        var emptyForm = document.querySelector('.formset-form').cloneNode(true);
-        var regex = new RegExp('form-(\\d+)-', 'g');
-        emptyForm.innerHTML = emptyForm.innerHTML.replace(regex, 'form-' + formNum + '-');
-        formNum++;
-        totalForms.value = formNum;
-        formsetContainer.appendChild(emptyForm);
-    
-        // Limpar os valores dos campos
-        var inputs = emptyForm.querySelectorAll('input, textarea');
-        inputs.forEach(function(input) {
-            if (input.type !== 'checkbox') { // Mantém o estado do checkbox DELETE
-                input.value = '';
-            } else {
-                input.checked = false;
-            }
-        });
-    
-        // Atualizar o número do exemplo no cabeçalho
-        var header = emptyForm.querySelector('.card-header .collapse-toggle h5');
-        header.innerHTML = 'Exemplo ' + formNum + ' <i class="bi bi-chevron-down ms-2"></i>';
-    
-        // Atualizar o data-bs-target e aria-controls para o novo form
-        var newCollapseId = 'collapse' + formNum;
-        var newHeadingId = 'heading' + formNum;
-    
-        emptyForm.querySelector('.collapse-toggle').setAttribute('data-bs-target', '#' + newCollapseId);
-        emptyForm.querySelector('.collapse-toggle').setAttribute('aria-controls', newCollapseId);
-        emptyForm.querySelector('.collapse').id = newCollapseId;
-        emptyForm.querySelector('.collapse').setAttribute('aria-labelledby', newHeadingId);
-        emptyForm.querySelector('.collapse').classList.remove('show'); // Colapsar por padrão
-    
-        // Atualizar o evento de colapso
-        var headerCard = emptyForm.querySelector('.collapse-toggle');
-        headerCard.addEventListener('click', function() {
-            var collapseElement = document.getElementById(newCollapseId);
-            var bsCollapse = new bootstrap.Collapse(collapseElement, {
-                toggle: true
-            });
-        });
-    
-        // Atualizar o ícone
-        var icon = emptyForm.querySelector('.collapse-toggle i');
-        if (icon) {
-            icon.classList.remove('bi-chevron-up');
-            icon.classList.add('bi-chevron-down');
-        }
-    
-        // Inicializar o TinyMCE no novo campo 'response'
-        var newResponseTextarea = emptyForm.querySelector('textarea.tinymce');
-        if (newResponseTextarea) {
-            tinymce.init({
-                target: newResponseTextarea,
-                plugins: 'lists link image preview',
-                toolbar: 'undo redo | formatselect | bold italic | alignleft aligncenter alignright | bullist numlist | link image | preview'
-            });
-        }
-    });
-    
-    formsetContainer.addEventListener('click', function(e) {
-        if (e.target && e.target.matches('.remove-form')) {
-            e.preventDefault();
-            var formToRemove = e.target.closest('.formset-form');
+    document.addEventListener('DOMContentLoaded', function() {
+        var formsetContainer = document.getElementById('formset-container');
+        var addFormButton = document.getElementById('add-form');
+        var totalForms = document.querySelector('[name="form-TOTAL_FORMS"]');
+        var formNum = parseInt(totalForms.value);
+        
+        const toggleCaptureBtn = document.getElementById('toggle-capture-btn');
+        const aiClientSelect = document.getElementById('id_capture-ai_client');
+        const tokenSelect = document.getElementById('id_capture-token');
+        let isCapturing = false;
+        let selectedAIClientId = null;
+        let selectedAIClientName = null;
+        let selectedTokenId = null;
+        
+        toggleCaptureBtn.addEventListener('click', function() {
+            selectedAIClientId = aiClientSelect.value;
+            selectedAIClientName = aiClientSelect.options[aiClientSelect.selectedIndex].text;
+            selectedTokenId = tokenSelect.value;
             
-            // Verifica se o form a ser removido já existe na base de dados (edição)
-            // Se sim, marca o checkbox DELETE
-            var deleteInput = formToRemove.querySelector('input[type="checkbox"][name$="-DELETE"]');
-            if (deleteInput) {
-                deleteInput.checked = true;
-                // Esconder o formulário visualmente
-                formToRemove.style.display = 'none';
-            } else {
-                // Se for um novo formulário (criação), simplesmente remove do DOM
-                formToRemove.remove();
-                formNum--;
-                totalForms.value = formNum;
-    
-                // Re-numerar os formulários
-                var forms = formsetContainer.querySelectorAll('.formset-form');
-                forms.forEach(function(form, index) {
-                    var currentIndex = index + 1;
-                    var regex = new RegExp('form-(\\d+)-', 'g');
-                    form.innerHTML = form.innerHTML.replace(regex, 'form-' + index + '-');
-    
-                    // Atualizar o número do exemplo no cabeçalho
-                    var header = form.querySelector('.card-header .collapse-toggle h5');
-                    header.innerHTML = 'Exemplo ' + currentIndex + ' <i class="bi bi-chevron-down ms-2"></i>';
-    
-                    // Atualizar o data-bs-target e aria-controls
-                    var newCollapseId = 'collapse' + currentIndex;
-    
-                    form.querySelector('.collapse-toggle').setAttribute('data-bs-target', '#' + newCollapseId);
-                    form.querySelector('.collapse-toggle').setAttribute('aria-controls', newCollapseId);
-    
-                    form.querySelector('.collapse').id = newCollapseId;
-                    form.querySelector('.collapse').setAttribute('aria-labelledby', 'heading' + currentIndex);
-    
-                    // Atualizar o evento de colapso
-                    var headerCard = form.querySelector('.collapse-toggle');
-                    headerCard.removeEventListener('click', null); // Remove qualquer ouvinte existente
-                    headerCard.addEventListener('click', function() {
-                        var collapseElement = document.getElementById(newCollapseId);
-                        var bsCollapse = new bootstrap.Collapse(collapseElement, {
-                            toggle: true
-                        });
-                    });
-    
-                    // Atualizar o ícone
-                    var icon = form.querySelector('.collapse-toggle i');
-                    if (icon) {
-                        icon.classList.remove('bi-chevron-up');
-                        icon.classList.add('bi-chevron-down');
+            if (!selectedAIClientId) {
+                alert('Por favor, selecione uma IA para capturar consultas.');
+                return;
+            }
+            
+            if (!selectedTokenId) {
+                alert('Por favor, selecione um Token para capturar consultas.');
+                return;
+            }
+            
+            if (!isCapturing) {
+                // Iniciar a captura
+                fetch("{% url 'ai_config:toggle_capture' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: new URLSearchParams({
+                        'token_id': selectedTokenId,
+                        'ai_client_id': selectedAIClientName,
+                        'action': 'activate'
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.message) {
+                        isCapturing = true;
+                        toggleCaptureBtn.textContent = 'Desativar Captura de Consulta';
+                        showModal(data.message);
+                    } else if (data.error) {
+                        showModal(data.error);
                     }
+                })
+                .catch(error => {
+                    console.error('Erro:', error);
+                    showModal('Ocorreu um erro ao ativar a captura.');
+                });
+            } else {
+                // Parar a captura
+                fetch("{% url 'ai_config:toggle_capture' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: new URLSearchParams({
+                        'token_id': selectedTokenId,
+                        'ai_client_id': selectedAIClientName,
+                        'action': 'deactivate'
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.message) {
+                        isCapturing = false;
+                        toggleCaptureBtn.textContent = 'Ativar Captura de Consulta';
+                        showModal(data.message);
+                    } else if (data.error) {
+                        showModal(data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro:', error);
+                    showModal('Ocorreu um erro ao desativar a captura.');
                 });
             }
+        });
+    
+        // Função para mostrar mensagens no modal
+        function showModal(message) {
+            const captureModal = new bootstrap.Modal(document.getElementById('captureModal'));
+            document.getElementById('captureModalBody').textContent = message;
+            captureModal.show();
         }
-    });
     
-    // Atualizar ícones de collapse
-    var collapseElements = document.querySelectorAll('.collapse');
-    collapseElements.forEach(function(collapseEl, index) {
-        collapseEl.addEventListener('show.bs.collapse', function () {
-            var button = collapseEl.previousElementSibling.querySelector('.collapse-toggle i');
-            if (button) {
-                button.classList.remove('bi-chevron-down');
-                button.classList.add('bi-chevron-up');
+        // Parar a captura quando o usuário sair da página
+        window.addEventListener('beforeunload', function (e) {
+            if (isCapturing && selectedAIClientId && selectedTokenId) {
+                navigator.sendBeacon("{% url 'ai_config:toggle_capture' %}", new URLSearchParams({
+                    'token_id': selectedTokenId,
+                    'ai_client_id': selectedAIClientName,
+                    'action': 'deactivate'
+                }));
             }
         });
     
-        collapseEl.addEventListener('hide.bs.collapse', function () {
-            var button = collapseEl.previousElementSibling.querySelector('.collapse-toggle i');
-            if (button) {
-                button.classList.remove('bi-chevron-up');
-                button.classList.add('bi-chevron-down');
+        // Função para adicionar um novo formulário ao formset
+        function addNewForm(system_message = '', user_message = '', response = '') {
+            var emptyForm = document.querySelector('.formset-form').cloneNode(true);
+            emptyForm.querySelector('.tox-tinymce').remove();
+            var regex = new RegExp('form-(\\d+)-', 'g');
+            emptyForm.innerHTML = emptyForm.innerHTML.replace(regex, 'form-' + formNum + '-');
+            formNum++;
+            totalForms.value = formNum;
+
+            emptyForm.querySelector(`#id_form-${formNum-1}-system_message`).value = system_message;
+            emptyForm.querySelector(`#id_form-${formNum-1}-user_message`).value = user_message;
+            emptyForm.querySelector(`#id_form-${formNum-1}-response`).value = response;
+            emptyForm.querySelector(`#id_form-${formNum-1}-DELETE`).value = false;
+
+            emptyForm.querySelector(`#id_form-${formNum-1}-response`).style = '';
+
+            // Atualizar o número do exemplo no cabeçalho
+            var header = emptyForm.querySelector('.card-header .collapse-toggle h5');
+            header.innerHTML = 'Exemplo ' + formNum + ' <i class="bi bi-chevron-up ms-2"></i>';
+        
+            // Atualizar o data-bs-target e aria-controls para o novo form
+            var newCollapseId = 'collapse' + formNum;
+            var newHeadingId = 'heading' + formNum;
+        
+            emptyForm.querySelector('.collapse-toggle').setAttribute('data-bs-target', '#' + newCollapseId);
+            emptyForm.querySelector('.collapse-toggle').setAttribute('aria-controls', newCollapseId);
+            emptyForm.querySelector('.collapse').id = newCollapseId;
+            emptyForm.querySelector('.collapse').setAttribute('aria-labelledby', newHeadingId);
+            emptyForm.querySelector('.collapse').classList.add('show');
+
+            // Atualizar o atributo 'aria-expanded' para true
+            emptyForm.querySelector('.collapse-toggle').setAttribute('aria-expanded', 'true');
+            
+            formsetContainer.appendChild(emptyForm);
+
+            el = emptyForm.querySelector(`#id_form-${formNum-1}-response`);
+            initTinyMCE(el);           
+        }
+
+        function initTinyMCE(el) {
+            if (el.closest('.empty-form') === null) {  // Don't do empty inlines
+            var mce_conf = JSON.parse(el.dataset.mceConf);
+
+            // There is no way to pass a JavaScript function as an option
+            // because all options are serialized as JSON.
+            const fns = [
+                'color_picker_callback',
+                'file_browser_callback',
+                'file_picker_callback',
+                'images_dataimg_filter',
+                'images_upload_handler',
+                'paste_postprocess',
+                'paste_preprocess',
+                'setup',
+                'urlconverter_callback',
+            ];
+            fns.forEach((fn_name) => {
+                if (typeof mce_conf[fn_name] != 'undefined') {
+                    if (mce_conf[fn_name].includes('(')) {
+                        mce_conf[fn_name] = eval('(' + mce_conf[fn_name] + ')');
+                    }
+                    else {
+                        mce_conf[fn_name] = window[mce_conf[fn_name]];
+                    }
+                }
+            });
+
+            // replace default prefix of 'empty-form' if used in selector
+            if (mce_conf.selector && mce_conf.selector.includes('__prefix__')) {
+                mce_conf.selector = `#${el.id}`;
+            }
+            else if (!('selector' in mce_conf)) {
+                mce_conf['target'] = el;
+            }
+            if (el.dataset.mceGzConf) {
+                tinyMCE_GZ.init(JSON.parse(el.dataset.mceGzConf));
+            }
+            if (!tinyMCE.get(el.id)) {
+                tinyMCE.init(mce_conf);
+            }
+            }
+        }
+
+    
+        // Atualizar a lista de exemplos em tempo real
+        setInterval(function() {
+            if (isCapturing && selectedTokenId && selectedAIClientName) {
+                fetch(`/ai-config/get-training-examples/${selectedTokenId}/${selectedAIClientName}/`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.examples && data.examples.length > 0) {
+                        data.examples.forEach((example) => {
+                            addNewForm(example.system_message, example.user_message, example.response);
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro ao buscar exemplos:', error);
+                });
+            }
+        }, 5000); // Atualiza a cada 5 segundos
+    
+        addFormButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            addNewForm(); // Adiciona um formulário vazio
+        });
+        
+        formsetContainer.addEventListener('click', function(e) {
+            if (e.target && e.target.matches('.remove-form')) {
+                e.preventDefault();
+                var formToRemove = e.target.closest('.formset-form');
+                
+                // Verifica se o form a ser removido já existe na base de dados (edição)
+                // Se sim, marca o checkbox DELETE
+                var deleteInput = formToRemove.querySelector('input[type="checkbox"][name$="-DELETE"]');
+                if (deleteInput) {
+                    deleteInput.checked = true;
+                    // Esconder o formulário visualmente
+                    formToRemove.style.display = 'none';
+                } else {
+                    // Se for um novo formulário (criação), simplesmente remove do DOM
+                    formToRemove.remove();
+                    formNum--;
+                    totalForms.value = formNum;
+        
+                    // Re-numerar os formulários
+                    var forms = formsetContainer.querySelectorAll('.formset-form');
+                    forms.forEach(function(form, index) {
+                        var currentIndex = index;
+                        var regex = new RegExp('form-(\\d+)-', 'g');
+                        form.innerHTML = form.innerHTML.replace(regex, 'form-' + index + '-');
+        
+                        // Atualizar o número do exemplo no cabeçalho
+                        var header = form.querySelector('.card-header .collapse-toggle h5');
+                        header.innerHTML = 'Exemplo ' + (index + 1) + ' <i class="bi bi-chevron-down ms-2"></i>';
+        
+                        // Atualizar os atributos de controle de colapso
+                        var collapseId = 'collapse' + index;
+                        form.querySelector('.collapse-toggle').setAttribute('data-bs-target', '#' + collapseId);
+                        form.querySelector('.collapse-toggle').setAttribute('aria-controls', collapseId);
+                        form.querySelector('.collapse').id = collapseId;
+                        form.querySelector('.collapse').setAttribute('aria-labelledby', 'heading' + index);
+        
+                        // Atualizar o evento de colapso
+                        var headerCard = form.querySelector('.collapse-toggle');
+                        headerCard.removeEventListener('click', null); // Remove qualquer ouvinte existente
+                        headerCard.addEventListener('click', function() {
+                            var collapseElement = document.getElementById(collapseId);
+                            var bsCollapse = new bootstrap.Collapse(collapseElement, {
+                                toggle: true
+                            });
+                        });
+        
+                        // Atualizar o ícone
+                        var icon = form.querySelector('.collapse-toggle i');
+                        if (icon) {
+                            icon.classList.remove('bi-chevron-up');
+                            icon.classList.add('bi-chevron-down');
+                        }
+                    });
+                }
             }
         });
+        
+        // Atualizar ícones de collapse
+        var collapseElements = document.querySelectorAll('.collapse');
+        collapseElements.forEach(function(collapseEl, index) {
+            collapseEl.addEventListener('show.bs.collapse', function () {
+                var button = collapseEl.previousElementSibling.querySelector('.collapse-toggle i');
+                if (button) {
+                    button.classList.remove('bi-chevron-down');
+                    button.classList.add('bi-chevron-up');
+                }
+            });
+        
+            collapseEl.addEventListener('hide.bs.collapse', function () {
+                var button = collapseEl.previousElementSibling.querySelector('.collapse-toggle i');
+                if (button) {
+                    button.classList.remove('bi-chevron-up');
+                    button.classList.add('bi-chevron-down');
+                }
+            });
+        });
+        
     });
-    
-    // Inicializar TinyMCE nos campos existentes
-    tinymce.init({
-        selector: 'textarea.tinymce',
-        plugins: 'lists link image preview',
-        toolbar: 'undo redo | formatselect | bold italic | alignleft aligncenter alignright | bullist numlist | link image | preview'
-    });
-});
 </script>
 {% endblock %}
-
-

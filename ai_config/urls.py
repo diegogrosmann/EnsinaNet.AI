@@ -13,6 +13,8 @@ urlpatterns = [
     path('training-file/<int:file_id>/', views.create_or_edit_training_file, name='edit_training_file'),
     path('download-training-file/<int:file_id>/', views.download_training_file, name='download_training_file'),
     path('delete-training-file/<int:file_id>/', views.delete_training_file, name='delete_training_file'),
+    path('toggle-capture/', views.toggle_capture, name='toggle_capture'),
+    #path('receive-capture/', views.receive_capture, name='receive_capture'),
+    path('get-training-examples/<uuid:token_id>/<str:ai_client_name>/', views.get_training_examples, name='get_training_examples'),
+    path('remove-trained-model/<uuid:token_id>/<str:ai_client_name>/',views.remove_trained_model,name='remove_trained_model'),
 ]
-
-

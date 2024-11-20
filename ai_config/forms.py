@@ -5,7 +5,14 @@ from django.forms import formset_factory, BaseFormSet
 from django.contrib.auth import get_user_model
 from tinymce.widgets import TinyMCE
 
-from .models import AIClient, AIClientConfiguration, TokenAIConfiguration, AITrainingFile, AIClientTraining
+from .models import (
+    AIClientGlobalConfiguration, 
+    AIClientConfiguration, 
+    TokenAIConfiguration, 
+    AITrainingFile, 
+    AIClientTraining, 
+    TrainingCapture,
+    UserToken)
 
 from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
 
@@ -24,7 +31,14 @@ ALLOWED_ATTRIBUTES = {
 
 User = get_user_model()
 
-class AIClientForm(forms.ModelForm):
+class BaseTrainingExampleFormSet(BaseFormSet):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.media = forms.Media()
+        for form in self.forms:
+            self.media += form.media
+
+class AIClientGlobalConfigForm(forms.ModelForm):
     api_client_class = forms.ChoiceField(
         choices=API_CLIENT_CHOICES,
         label='Classe do Cliente de API',
@@ -34,11 +48,11 @@ class AIClientForm(forms.ModelForm):
     original_api_key = forms.CharField(widget=forms.HiddenInput(), required=False)
 
     class Meta:
-        model = AIClient
+        model = AIClientGlobalConfiguration
         fields = ['api_client_class', 'api_key']
 
     def __init__(self, *args, **kwargs):
-        super(AIClientForm, self).__init__(*args, **kwargs)
+        super(AIClientGlobalConfigForm, self).__init__(*args, **kwargs)
         if self.instance and self.instance.api_key:
             masked_key = self.mask_api_key(self.instance.api_key)
             self.initial['api_key'] = masked_key
@@ -192,6 +206,35 @@ class AITrainingFileNameForm(forms.Form):
         help_text='Insira um nome para identificar facilmente este arquivo de treinamento.'
     )
 
+class TrainingCaptureForm(forms.Form):
+    ai_client = forms.ChoiceField(
+        choices=API_CLIENT_CHOICES,
+        label='Selecione a IA para Capturar',
+        required=True,
+        widget=forms.Select(attrs={'class': 'form-control'})
+    )
+
+    token = forms.ChoiceField(
+        choices=[],
+        widget=forms.Select(attrs={'class': 'form-control'}),
+        label='Selecionar Token para Capturar',
+        required=True,
+        help_text='Selecione o Token que deseja capturar.',
+    )
+
+    class Meta:
+        model = TrainingCapture
+        fields = ['token', 'ai_client']
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super(TrainingCaptureForm, self).__init__(*args, **kwargs)
+        if user:
+            tokens = UserToken.objects.filter(user=user)
+            self.fields['token'].choices = [(token.id, token.name) for token in tokens]
+        else:
+            self.fields['token'].choices = []
+
 class AITrainingFileForm(forms.ModelForm):
     class Meta:
         model = AITrainingFile
@@ -320,8 +363,7 @@ class TrainingExampleForm(forms.Form):
     )
     response = forms.CharField(
         label='Resposta',
-        widget=TinyMCE(attrs={
-            'class': 'tinymce', 
+        widget=TinyMCE(attrs={ 
             'cols': 100, 
             'rows': 20
         }),
@@ -349,6 +391,7 @@ class TrainingExampleForm(forms.Form):
 
 TrainingExampleFormSetFactory = formset_factory(
     TrainingExampleForm,
+    formset=BaseTrainingExampleFormSet,
     can_delete=True,
     extra=0
 )

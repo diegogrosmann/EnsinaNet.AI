@@ -1,9 +1,5 @@
 from .models import (
-    AIClient, 
     AIClientConfiguration, 
-    AIClientTraining, 
-    AITrainingFile, 
-    TokenAIConfiguration
 )
 from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
 import logging
