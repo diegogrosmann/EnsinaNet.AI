@@ -11,6 +11,8 @@ from django.utils.html import format_html
 
 from tinymce.widgets import TinyMCE
 
+from api.utils.clientsIA import AI_CLIENT_MAPPING
+
 from .models import ( 
     AIClientGlobalConfiguration, 
     AIClientConfiguration, 
@@ -18,11 +20,15 @@ from .models import (
     AITrainingFile, 
     AIClientTraining,
     DocumentAIConfiguration)
-from .forms import AIClientGlobalConfigForm, AIClientConfigurationForm, TokenAIConfigurationForm, AITrainingFileForm, AIClientTrainingForm
+from .forms import (
+    AIClientGlobalConfigForm, 
+    AIClientConfigurationForm, 
+    TokenAIConfigurationForm, 
+    AITrainingFileForm, 
+    AIClientTrainingForm)
 
 from .utils import perform_training
-
-from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
+from api.constants import AIClientType
 
 logger = logging.getLogger(__name__)
 
@@ -61,18 +67,20 @@ class AIClientGlobalConfigAdmin(admin.ModelAdmin):
         return self.readonly_fields
 
     def has_add_permission(self, request):
-        existing_clients = AIClientGlobalConfig.objects.values_list('api_client_class', flat=True)
-        all_ai_classes = [client.name for client in AVAILABLE_AI_CLIENTS]
+        existing_clients = AIClientGlobalConfiguration.objects.values_list('api_client_class', flat=True)
+        all_ai_classes = [client_type.value for client_type in AIClientType]
         missing_clients = set(all_ai_classes) - set(existing_clients)
-        if not missing_clients:
-            return False  # Desabilita o botão 'Adicionar'
-        return True
+        return bool(missing_clients)
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
         if not obj:  # Se estiver criando uma nova instância
-            existing_clients = AIClientGlobalConfig.objects.values_list('api_client_class', flat=True)
-            available_choices = [(client.name, client.name) for client in AVAILABLE_AI_CLIENTS if client.name not in existing_clients]
+            existing_clients = AIClientGlobalConfiguration.objects.values_list('api_client_class', flat=True)
+            available_choices = [
+                (client_type.value, client_type.value) 
+                for client_type in AIClientType 
+                if client_type.value not in existing_clients
+            ]
             form.base_fields['api_client_class'].choices = available_choices
         return form
 
@@ -84,11 +92,24 @@ class AIClientConfigurationAdmin(admin.ModelAdmin):  # Atualizado
     fields = ('token', 'ai_client', 'enabled', 'model_name', 'configurations')
     inlines = [AIClientTrainingInline]
 
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "ai_client":
+            kwargs["queryset"] = AIClientGlobalConfiguration.objects.filter(
+                api_client_class__in=[client_type.value for client_type in AIClientType]
+            )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
 class TokenAIConfigurationAdmin(admin.ModelAdmin):
     form = TokenAIConfigurationForm
     list_display = ('token', 'base_instruction', 'prompt', 'responses')
     search_fields = ('token__name', 'token__user__email')
     list_filter = ('token',)
+
+class AIClientGlobalConfigurationForm(admin.ModelAdmin):
+    form = AIClientGlobalConfigForm
+    list_display = ('api_client_class', 'original_api_key')
+    search_fields = ('api_client_class')
+    list_filter = ('api_client_class',)
 
 class AITrainingFileAdmin(admin.ModelAdmin):
     form = AITrainingFileForm
@@ -112,18 +133,31 @@ class AITrainingFileAdmin(admin.ModelAdmin):
     def train_a_is_view(self, request, training_file_id):
         training_file = get_object_or_404(AITrainingFile, id=training_file_id)
         if request.method == 'POST':
-            # Implementação da lógica de treinamento
-            results = perform_training()  # Certifique-se de que esta função está correta
-            for key, result in results.items():
-                token_name, ai_name = key
-                messages.info(request, f"Token {token_name}, {ai_name}: {result}")
+            # Filtra apenas IAs que suportam treinamento
+            trainable_ias = [
+                ai_type.value for ai_type in AIClientType 
+                if AI_CLIENT_MAPPING[ai_type].can_train
+            ]
+            results = perform_training(request.user, training_file.token, trainable_ias)
+            
+            for ai_name, result in results.items():
+                messages.info(request, f"{ai_name}: {result}")
             return redirect('..')
+
         context = {
             'training_file': training_file,
             'opts': self.model._meta,
             'title': 'Confirmar Treinamento das IAs',
+            'trainable_ias': [
+                ai_type.value for ai_type in AIClientType 
+                if AI_CLIENT_MAPPING[ai_type].can_train
+            ]
         }
-        return TemplateResponse(request, 'admin/ai_config/train_a_is_confirmation.html', context)
+        return TemplateResponse(
+            request, 
+            'admin/ai_config/train_a_is_confirmation.html', 
+            context
+        )
 
 class AIClientTrainingAdmin(admin.ModelAdmin):
     form = AIClientTrainingForm
@@ -173,7 +207,7 @@ class DocumentAIConfigurationAdmin(admin.ModelAdmin):
             return False
         return True
 
-#admin.site.register(AIClientGlobalConfig, AIClientGlobalConfig)
+admin.site.register(AIClientGlobalConfiguration, AIClientGlobalConfigAdmin)
 admin.site.register(AIClientConfiguration, AIClientConfigurationAdmin)
 admin.site.register(TokenAIConfiguration, TokenAIConfigurationAdmin)
 admin.site.register(AITrainingFile, AITrainingFileAdmin)

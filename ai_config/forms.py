@@ -1,9 +1,10 @@
 import json
 import bleach
 from django import forms
-from django.forms import formset_factory, BaseFormSet
+from django.forms import formset_factory, BaseFormSet, ModelChoiceField
 from django.contrib.auth import get_user_model
 from tinymce.widgets import TinyMCE
+
 
 from .models import (
     AIClientGlobalConfiguration, 
@@ -14,9 +15,9 @@ from .models import (
     TrainingCapture,
     UserToken)
 
-from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
+from api.utils.clientsIA import AI_CLIENT_MAPPING
 
-API_CLIENT_CHOICES = [(client.name, client.name) for client in AVAILABLE_AI_CLIENTS]
+API_CLIENT_CHOICES = [(client_type.value, client_type.value) for client_type in AI_CLIENT_MAPPING.keys()]
 
 ALLOWED_TAGS = bleach.sanitizer.ALLOWED_TAGS.union({
     'p', 'br', 'strong', 'em', 'ul', 'ol', 'li',
@@ -206,7 +207,7 @@ class AITrainingFileNameForm(forms.Form):
         help_text='Insira um nome para identificar facilmente este arquivo de treinamento.'
     )
 
-class TrainingCaptureForm(forms.Form):
+class TrainingCaptureForm(forms.ModelForm):
     ai_client = forms.ChoiceField(
         choices=API_CLIENT_CHOICES,
         label='Selecione a IA para Capturar',
@@ -214,12 +215,11 @@ class TrainingCaptureForm(forms.Form):
         widget=forms.Select(attrs={'class': 'form-control'})
     )
 
-    token = forms.ChoiceField(
-        choices=[],
+    token = ModelChoiceField(
+        queryset=UserToken.objects.none(),
         widget=forms.Select(attrs={'class': 'form-control'}),
         label='Selecionar Token para Capturar',
-        required=True,
-        help_text='Selecione o Token que deseja capturar.',
+        required=True
     )
 
     class Meta:
@@ -231,9 +231,14 @@ class TrainingCaptureForm(forms.Form):
         super(TrainingCaptureForm, self).__init__(*args, **kwargs)
         if user:
             tokens = UserToken.objects.filter(user=user)
-            self.fields['token'].choices = [(token.id, token.name) for token in tokens]
+            self.fields['token'].queryset = tokens
         else:
-            self.fields['token'].choices = []
+            self.fields['token'].queryset = UserToken.objects.none()
+        
+        # Definir valores iniciais
+        if self.instance and self.instance.pk:
+            self.initial['ai_client'] = self.instance.ai_client.api_client_class
+            self.fields['token'].initial = self.instance.token
 
 class AITrainingFileForm(forms.ModelForm):
     class Meta:

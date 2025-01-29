@@ -12,10 +12,12 @@ from django.forms import formset_factory
 from django.views.decorators.http import require_POST
 from django.core.files import File
 from django.conf import settings
-
-from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
+from django.utils import timezone
+from datetime import timedelta
 
 from accounts.models import UserToken
+from api.constants import AIClientType
+from api.utils.clientsIA import AI_CLIENT_MAPPING
 
 from .forms import (
     AIClientConfigurationForm, 
@@ -33,7 +35,7 @@ from .models import (
     AIClientTraining,
     AITrainingFile,
     TrainingCapture)
-from .utils import perform_training_for_single_ai
+from .utils import perform_training
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -44,8 +46,8 @@ def manage_ai_configurations(request, token_id):
     token = get_object_or_404(UserToken, id=token_id, user=user)
 
     forms = []
-    for client in AVAILABLE_AI_CLIENTS:
-        ai_client_name = client.name
+    for ai_type in AIClientType:
+        ai_client_name = ai_type.value
         try:
             ai_client = AIClientGlobalConfiguration.objects.get(api_client_class=ai_client_name)
             ai_client_config = AIClientConfiguration.objects.get(token=token, ai_client=ai_client)
@@ -123,13 +125,17 @@ def manage_training_configurations(request, token_id):
 
     forms = []
     for ai_client_config in ai_client_configs:
-        try:
-            ai_client_training = AIClientTraining.objects.get(ai_client_configuration=ai_client_config)
-        except AIClientTraining.DoesNotExist:
-            ai_client_training = AIClientTraining(ai_client_configuration=ai_client_config)
+        ai_client_name = ai_client_config.ai_client.api_client_class
+        client_class = AI_CLIENT_MAPPING.get(ai_client_name)
+        
+        if client_class and client_class.can_train:
+            try:
+                ai_client_training = AIClientTraining.objects.get(ai_client_configuration=ai_client_config)
+            except AIClientTraining.DoesNotExist:
+                ai_client_training = AIClientTraining(ai_client_configuration=ai_client_config)
 
-        form = AIClientTrainingForm(instance=ai_client_training, prefix=ai_client_config.ai_client.api_client_class)
-        forms.append({'ai_client': ai_client_config.ai_client.api_client_class, 'form': form})
+            form = AIClientTrainingForm(instance=ai_client_training, prefix=ai_client_name)
+            forms.append({'ai_client': ai_client_name, 'form': form})
 
     if request.method == 'POST':
         success = True
@@ -169,63 +175,75 @@ def train_ai(request, token_id):
     # Obter as classes de IA correspondentes
     for ai_client_config in ai_client_configs:
         ai_client_name = ai_client_config.ai_client.api_client_class
-        ai_client_cls = next((cls for cls in AVAILABLE_AI_CLIENTS if cls.name == ai_client_name), None)
-        if ai_client_cls:
-            if ai_client_cls.can_train:
-                ai_clients_trainable.append(ai_client_cls)
+        client_class = AI_CLIENT_MAPPING.get(ai_client_name)
+        if client_class:
+            if client_class.can_train:
+                ai_clients_trainable.append({
+                    'name': ai_client_name,
+                    'trained_model_name': ai_client_config.training.trained_model_name if hasattr(ai_client_config, 'training') else None
+                })
             else:
-                ai_clients_not_trainable.append(ai_client_cls.name)
+                ai_clients_not_trainable.append(ai_client_name)
 
-    logger.debug(f"AI Clients treináveis: {[cls.name for cls in ai_clients_trainable]}")
+    logger.debug(f"AI Clients treináveis: {[cls['name'] for cls in ai_clients_trainable]}")
     logger.debug(f"AI Clients não treináveis: {ai_clients_not_trainable}")
 
-    # Preparar detalhes dos AI clients treináveis
-    ai_clients_trainable_details = []
-    for ai_client_cls in ai_clients_trainable:
-        try:
-            ai_client_config = ai_client_configs.get(ai_client__api_client_class=ai_client_cls.name)
-            trained_model_name = ai_client_config.training.trained_model_name if ai_client_config.training and ai_client_config.training.trained_model_name else None
-            ai_clients_trainable_details.append({
-                'name': ai_client_cls.name,
-                'trained_model_name': trained_model_name
-            })
-        except AIClientConfiguration.DoesNotExist:
-            ai_clients_trainable_details.append({
-                'name': ai_client_cls.name,
-                'trained_model_name': None
-            })
-
     if request.method == 'POST':
-        form = TrainAIForm(request.POST, ai_clients=ai_clients_trainable)
-        if form.is_valid():
-            selected_ai_clients = form.cleaned_data['ai_clients_to_train']
-
-            for ai_client_cls in ai_clients_trainable:
-                if ai_client_cls.name in selected_ai_clients:
-                    # Obter a configuração da IA para o token
-                    ai_client_config = ai_client_configs.get(ai_client__api_client_class=ai_client_cls.name)
-                    # Obter o arquivo de treinamento do TokenAIConfiguration
-                    token_ai_config = token.ai_configuration
-                    training_file = token_ai_config.training_file
-                    if not training_file:
-                        messages.error(request, f"Arquivo de treinamento não selecionado para o token {token.name}.")
-                        continue
-                    # Realizar o treinamento
-                    result = perform_training_for_single_ai(user, token, ai_client_config, training_file)
-                    if result:
-                        ai_name, res = result
-                        messages.info(request, f"{ai_name}: {res}")
-            return redirect('ai_config:train_ai', token_id=token.id)
-        else:
+        form = TrainAIForm(request.POST, ai_clients=[client['name'] for client in ai_clients_trainable])
+        if not form.is_valid():
             messages.error(request, "Por favor, corrija os erros no formulário.")
+            return redirect('ai_config:train_ai', token_id=token.id)
+
+        selected_ias = form.cleaned_data['ai_clients_to_train']
+
+        if not selected_ias:
+            messages.warning(request, "Nenhuma IA selecionada.")
+            return redirect('ai_config:train_ai', token_id=token.id)
+
+        action = request.POST.get('action')
+
+        if action == 'train':
+            # Usar a função perform_training com as IAs selecionadas
+            results = perform_training(user, token, selected_ias=selected_ias)
+            for ai_name, res in results.items():
+                messages.info(request, f"{ai_name}: {res}")
+            return redirect('ai_config:train_ai', token_id=token.id)
+        elif action == 'remove_model':
+            # Remover modelos treinados das IAs selecionadas
+            for ai_client_name in selected_ias:
+                try:
+                    # Obter a configuração global do cliente de IA
+                    ai_client = AIClientGlobalConfiguration.objects.get(api_client_class=ai_client_name)
+                except AIClientGlobalConfiguration.DoesNotExist:
+                    messages.error(request, f"Cliente de IA '{ai_client_name}' não encontrado.")
+                    continue
+
+                try:
+                    # Obter a configuração específica do cliente de IA para o token
+                    ai_client_config = ai_client_configs.get(ai_client__api_client_class=ai_client_name)
+                    ai_training = ai_client_config.training
+
+                    if ai_training.trained_model_name:
+                        ai_training.trained_model_name = None  # ou '' dependendo da preferência
+                        ai_training.save()
+                        messages.success(request, f"Modelo treinado para '{ai_client_name}' removido com sucesso.")
+                    else:
+                        messages.info(request, f"Nenhum modelo treinado encontrado para '{ai_client_name}'.")
+                except AIClientConfiguration.DoesNotExist:
+                    messages.error(request, f"Configuração de IA para '{ai_client_name}' não encontrada.")
+                except Exception as e:
+                    logger.error(f"Erro ao remover o modelo treinado para {ai_client_name}: {e}")
+                    messages.error(request, f"Erro ao remover o modelo treinado para '{ai_client_name}'. Por favor, tente novamente.")
+
+            return redirect('ai_config:train_ai', token_id=token.id)
     else:
-        form = TrainAIForm(ai_clients=ai_clients_trainable)
+        form = TrainAIForm(ai_clients=[client['name'] for client in ai_clients_trainable])
 
     context = {
         'token': token,
         'form': form,
         'ai_clients_not_trainable': ai_clients_not_trainable,
-        'ai_clients_trainable_details': ai_clients_trainable_details,
+        'ai_clients_trainable_details': ai_clients_trainable,
     }
     return render(request, 'ai_config/train_ai.html', context)
 
@@ -387,14 +405,31 @@ def create_or_edit_training_file(request, file_id=None):
         # GET request
         pass
 
-    # Inicializar o formulário de captura com o usuário atual
-    capture_form = TrainingCaptureForm(prefix='capture', user=user)
+    # Obter a captura ativa para o usuário atual
+    active_capture = TrainingCapture.objects.filter(token__user=user, is_active=True).first()
+    if active_capture:
+        # Verificar se last_activity tem mais de 1 minuto
+        time_difference = timezone.now() - active_capture.last_activity
+        if time_difference > timedelta(minutes=1):
+            # Desativar a captura
+            active_capture.is_active = False
+            active_capture.save()
+            active_capture = None  # Não há captura ativa após desativar
+            # Inicializar o formulário de captura sem instância
+            capture_form = TrainingCaptureForm(prefix='capture', user=user)
+        else:
+            # Preencher o formulário de captura com a captura ativa
+            capture_form = TrainingCaptureForm(instance=active_capture, prefix='capture', user=user)
+    else:
+        # Inicializar o formulário de captura sem instância
+        capture_form = TrainingCaptureForm(prefix='capture', user=user)
 
     context = {
         'formset': formset,
         'name_form': name_form,
         'training_file': training_file,
-        'capture_form': capture_form
+        'capture_form': capture_form,
+        'active_capture': active_capture
     }
     return render(request, 'ai_config/create_training_file.html', context)
 
@@ -433,6 +468,9 @@ def toggle_capture(request):
     capture, created = TrainingCapture.objects.get_or_create(token=token, ai_client=ai_client)
 
     if action == 'activate':
+        # Desativar todas as outras capturas ativas do mesmo usuário
+        TrainingCapture.objects.filter(is_active=True, token__user=request.user).exclude(id=capture.id).update(is_active=False)
+
         if not capture.is_active:
             capture.is_active = True
             if not capture.temp_file:
@@ -472,6 +510,7 @@ def get_training_examples(request, token_id, ai_client_name):
     ai_client = get_object_or_404(AIClientGlobalConfiguration, api_client_class=ai_client_name)
     try:
         capture = TrainingCapture.objects.get(token=token, ai_client=ai_client, is_active=True)
+        capture.save() 
         temp_file = capture.temp_file
         if not temp_file:
             return JsonResponse({'examples': []})
@@ -486,37 +525,3 @@ def get_training_examples(request, token_id, ai_client_name):
     except Exception as e:
         logger.error(f"Erro ao carregar os exemplos: {e}")
         return JsonResponse({'error': 'Erro ao carregar os exemplos.'}, status=500)
-    
-@login_required
-def remove_trained_model(request, token_id, ai_client_name):
-    """
-    View para remover o nome do modelo treinado de um cliente de IA específico.
-    """
-    user = request.user
-    token = get_object_or_404(UserToken, id=token_id, user=user)
-    
-    try:
-        # Obter a configuração global do cliente de IA
-        ai_client = AIClientGlobalConfiguration.objects.get(api_client_class=ai_client_name)
-    except AIClientGlobalConfiguration.DoesNotExist:
-        messages.error(request, f"Cliente de IA '{ai_client_name}' não encontrado.")
-        return redirect('ai_config:train_ai', token_id=token.id)
-    
-    try:
-        # Obter a configuração específica do cliente de IA para o token
-        ai_client_config = AIClientConfiguration.objects.get(token=token, ai_client=ai_client)
-        ai_training = ai_client_config.training
-        
-        if ai_training.trained_model_name:
-            ai_training.trained_model_name = None  # ou '' dependendo da preferência
-            ai_training.save()
-            messages.success(request, f"Nome do modelo treinado para '{ai_client_name}' removido com sucesso.")
-        else:
-            messages.info(request, f"Nenhum modelo treinado encontrado para '{ai_client_name}'.")
-    except AIClientConfiguration.DoesNotExist:
-        messages.error(request, f"Configuração de IA para '{ai_client_name}' não encontrada.")
-    except Exception as e:
-        logger.error(f"Erro ao remover o modelo treinado para {ai_client_name}: {e}")
-        messages.error(request, f"Erro ao remover o modelo treinado para '{ai_client_name}'. Por favor, tente novamente.")
-    
-    return redirect('ai_config:train_ai', token_id=token.id)

@@ -1,25 +1,21 @@
 import logging
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
-from django.contrib.auth import login, authenticate, logout
-from django.contrib.auth import views as auth_views
+from django.contrib.auth import login, authenticate, logout, views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.contrib.sites.shortcuts import get_current_site
 from django.core.mail import send_mail
 from django.conf import settings
-from ai_config.forms import UserAITrainingFileForm  
-from ai_config.models import AITrainingFile 
-
 
 from allauth.account.views import ConfirmEmailView
 from allauth.account.utils import send_email_confirmation
 
 from .forms import CustomUserCreationForm, TokenForm, EmailAuthenticationForm, UserTokenForm
 from .models import UserToken, Profile
+from ai_config.forms import UserAITrainingFileForm  
+from ai_config.models import AITrainingFile
+from api.constants import AIClientType
 
-from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
-
-# Configuração do logger
 logger = logging.getLogger(__name__)
 
 def register_view(request):
@@ -68,52 +64,57 @@ def logout_view(request):
 @login_required
 def manage_tokens(request):
     user = request.user
-    tokens = UserToken.objects.filter(user=user)
-    training_files = AITrainingFile.objects.filter(user=user)  # Obter os arquivos de treinamento do usuário
+    context = {
+        'tokens': UserToken.objects.filter(user=user),
+        'training_files': AITrainingFile.objects.filter(user=user),
+        'is_approved': user.profile.is_approved,
+        'available_ais': [(ai_type.value, ai_type.value) for ai_type in AIClientType],
+        'form': TokenForm(),
+        'training_file_form': UserAITrainingFileForm()
+    }
 
     if request.method == 'POST':
-        form = TokenForm(request.POST, user=user)
-        training_file_form = UserAITrainingFileForm(request.POST, request.FILES)
         if 'create_token' in request.POST:
+            form = TokenForm(request.POST, user=user)
             if form.is_valid():
                 if not user.profile.is_approved:
                     messages.error(request, 'Sua conta ainda não foi aprovada pelo administrador.')
                     logger.warning(f"Usuário {user.email} tentou criar token sem aprovação.")
                     return redirect('manage_tokens')
-                token = form.save(commit=False)
-                token.user = user
+                
                 try:
+                    token = form.save(commit=False)
+                    token.user = user
                     token.save()
-                    logger.info(f"Token '{token.name}' criado para o usuário {user.email}.")
+                    
+                    # Configurar IAs selecionadas
+                    selected_ai_types = form.cleaned_data.get('ai_types', [])
+                    token.update_ai_configurations(selected_ai_types)
+                    
+                    logger.info(f"Token '{token.name}' criado para {user.email}")
                     messages.success(request, 'Token criado com sucesso!')
-                    return redirect('manage_configurations', token_id=token.id)  # Redireciona para configurações
+                    return redirect('manage_configurations', token_id=token.id)
                 except Exception as e:
-                    logger.error(f"Erro ao salvar token para o usuário {user.email}: {e}")
-                    messages.error(request, 'Erro ao criar o token. Por favor, tente novamente.')
+                    logger.error(f"Erro ao criar token para {user.email}: {e}")
+                    messages.error(request, 'Erro ao criar o token.')
             else:
-                logger.warning(f"Formulário de criação de token inválido para o usuário {user.email}: {form.errors}")
+                context['form'] = form
+        
         elif 'upload_training_file' in request.POST:
+            training_file_form = UserAITrainingFileForm(request.POST, request.FILES)
             if training_file_form.is_valid():
-                training_file = training_file_form.save(commit=False)
-                training_file.user = user
-                training_file.save()
-                logger.info(f"Arquivo de treinamento carregado pelo usuário {user.email}.")
-                messages.success(request, 'Arquivo de treinamento carregado com sucesso!')
-                return redirect('manage_tokens')
-            else:
-                logger.warning(f"Formulário de upload de arquivo de treinamento inválido: {training_file_form.errors}")
-                messages.error(request, 'Por favor, corrija os erros no formulário de upload de arquivo de treinamento.')
-    else:
-        form = TokenForm()
-        training_file_form = UserAITrainingFileForm()
+                try:
+                    training_file = training_file_form.save(commit=False)
+                    training_file.user = user
+                    training_file.save()
+                    logger.info(f"Arquivo de treinamento carregado por {user.email}")
+                    messages.success(request, 'Arquivo de treinamento carregado com sucesso!')
+                    return redirect('manage_tokens')
+                except Exception as e:
+                    logger.error(f"Erro ao carregar arquivo de treinamento: {e}")
+                    messages.error(request, 'Erro ao carregar arquivo.')
+            context['training_file_form'] = training_file_form
 
-    context = {
-        'tokens': tokens,
-        'form': form,
-        'training_files': training_files,
-        'training_file_form': training_file_form,
-        'is_approved': user.profile.is_approved
-    }
     return render(request, 'accounts/manage/manage_tokens.html', context)
 
 @login_required
@@ -135,27 +136,31 @@ def delete_token(request, token_id):
 def manage_configurations(request, token_id):
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
-
+    
     if request.method == 'POST':
-        form = UserTokenForm(request.POST, request.FILES, instance=token)  # Incluído request.FILES
+        form = UserTokenForm(request.POST, request.FILES, instance=token)
         if form.is_valid():
             try:
-                form.save()
-                logger.info(f"Configurações atualizadas para o token '{token.name}' pelo usuário {user.email}.")
+                token = form.save()
+                logger.info(f"Configurações atualizadas para token '{token.name}'")
                 messages.success(request, 'Configurações atualizadas com sucesso!')
                 return redirect('manage_configurations', token_id=token.id)
             except Exception as e:
-                logger.error(f"Erro ao salvar configurações para o token '{token.name}': {e}")
-                messages.error(request, 'Erro ao salvar as configurações. Por favor, tente novamente.')
+                logger.error(f"Erro ao atualizar configurações: {e}")
+                messages.error(request, 'Erro ao salvar as configurações.')
         else:
-            logger.warning(f"Formulário de configuração inválido para o token '{token.name}': {form.errors}")
+            logger.warning(f"Formulário inválido: {form.errors}")
             messages.error(request, 'Por favor, corrija os erros no formulário.')
     else:
         form = UserTokenForm(instance=token)
 
-    context = {'token': token, 'form': form}
-    return render(request, 'accounts/manage/manage_configurations.html', context)
+    return render(request, 'accounts/manage/manage_configurations.html', {
+        'token': token,
+        'form': form,
+        'available_ais': [(ai_type.value, ai_type.value) for ai_type in AIClientType]
+    })
 
+# Classes de redefinição de senha
 class CustomPasswordResetView(auth_views.PasswordResetView):
     email_template_name = 'accounts/registration/password_reset_email.html'
     template_name = 'accounts/registration/password_reset_form.html'
@@ -181,6 +186,7 @@ class CustomPasswordResetView(auth_views.PasswordResetView):
             logger.error(f"Erro ao enviar e-mail de redefinição de senha: {e}")
             messages.error(self.request, 'Erro ao enviar o e-mail. Por favor, tente novamente.')
 
+# Views de redefinição de senha
 def password_reset_view(request):
     return auth_views.PasswordResetView.as_view(template_name='accounts/registration/password_reset_form.html')(request)
 

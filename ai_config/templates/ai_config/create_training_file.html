@@ -5,33 +5,35 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-10">
+    <div class="col-md-10" id="main-content">
         {% if training_file %}
             <h2>Editar Arquivo de Treinamento: {{ training_file.name }}</h2>
         {% else %}
             <h2>Criar Arquivo de Treinamento</h2>
         {% endif %}
         
-        <!-- Card Colapsado para Captura de Consulta -->
-        <div class="card mb-4">
-            <div class="card-header" id="captureCardHeader">
-                <h5 class="mb-0">
-                    <button class="btn btn-link" type="button" data-bs-toggle="collapse" data-bs-target="#captureCardBody" aria-expanded="false" aria-controls="captureCardBody">
-                        Ativar Captura de Consulta
+        <!-- Barra Flutuante Colapsada para Captura de Consulta -->
+        <div id="capture-sidebar" class="sidebar {% if not active_capture or not active_capture.is_active %}collapsed{% endif %}">
+            <div class="sidebar-content">
+                <h3 class="sidebar-title">Captura de Consulta</h3>
+                <form id="capture-form" method="post">
+                    {% csrf_token %}
+                    {{ capture_form.as_p }}
+                    <button type="button" id="toggle-capture-btn" class="btn btn-primary">
+                        <i class="bi {% if active_capture and active_capture.is_active %}bi-toggle-on{% else %}bi-toggle-off{% endif %}"></i>
+                        {% if active_capture and active_capture.is_active %}
+                            Desativar Captura de Consulta
+                        {% else %}
+                            Ativar Captura de Consulta
+                        {% endif %}
                     </button>
-                </h5>
-            </div>
-            <div id="captureCardBody" class="collapse">
-                <div class="card-body">
-                    <form id="capture-form" method="post">
-                        {% csrf_token %}
-                        {{ capture_form.as_p }}
-                        <button type="button" id="toggle-capture-btn" class="btn btn-primary">Ativar Captura de Consulta</button>
-                    </form>
-                </div>
+                </form>
             </div>
         </div>
-        
+        <button id="toggle-sidebar-btn" class="btn btn-secondary">
+            <i class="bi"></i>
+        </button>
+
         <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
             {{ form.media }}
@@ -127,6 +129,53 @@
   </div>
 </div>
 
+<style>
+    .sidebar {
+        position: fixed;
+        top: 60px; /* Ajuste conforme necessário */
+        right: 0;
+        width: 300px;
+        height: calc(100% - 60px);
+        background-color: #f8f9fa;
+        border-left: 1px solid #dee2e6;
+        overflow-y: auto;
+        overflow-x: hidden;
+        transition: transform 0.3s ease;
+        z-index: 1000;
+    }
+    .sidebar.collapsed {
+        transform: translateX(100%); /* Move a sidebar completamente para fora da tela */
+        visibility: hidden;
+        pointer-events: none;
+    }
+    .sidebar .sidebar-content {
+        padding: 20px;
+    }
+    #toggle-sidebar-btn {
+        position: fixed;
+        top: 70px; /* Ajuste conforme necessário */
+        width: 40px;
+        height: 40px;
+        border-radius: 5px 0 0 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1001;
+        background-color: #6c757d;
+        color: white;
+        border: none;
+        right: 0;
+        transition: right 0.3s ease;
+    }
+    #main-content {
+        transition: margin-right 0.3s ease;
+    }
+
+    #main-content.content-shifted {
+        margin-right: 300px; /* Ajuste este valor para corresponder à largura da sua sidebar */
+    }
+</style>
+
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         var formsetContainer = document.getElementById('formset-container');
@@ -137,11 +186,58 @@
         const toggleCaptureBtn = document.getElementById('toggle-capture-btn');
         const aiClientSelect = document.getElementById('id_capture-ai_client');
         const tokenSelect = document.getElementById('id_capture-token');
-        let isCapturing = false;
+        const mainContent = document.getElementById('main-content');
+        const sidebar = document.getElementById('capture-sidebar');
+        const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
+
+        let isCapturing = {% if active_capture and active_capture.is_active %}true{% else %}false{% endif %};
         let selectedAIClientId = null;
         let selectedAIClientName = null;
-        let selectedTokenId = null;
-        
+        let selectedTokenId = null; 
+
+        // Desabilitar campos se a captura estiver ativa
+        if (isCapturing) {
+            aiClientSelect.disabled = true;
+            tokenSelect.disabled = true;
+        }
+
+        // Verifique o estado inicial da sidebar e ajuste o conteúdo principal
+        if (!sidebar.classList.contains('collapsed')) {
+            mainContent.classList.add('content-shifted');
+        } else {
+            mainContent.classList.remove('content-shifted');
+        }
+
+        // Funções para atualizar o ícone e a posição do botão
+        function updateToggleButtonIcon() {
+            const icon = toggleSidebarBtn.querySelector('i');
+            if (sidebar.classList.contains('collapsed')) {
+                icon.className = 'bi bi-chevron-left';
+            } else {
+                icon.className = 'bi bi-chevron-right';
+            }
+        }
+
+        function updateToggleButtonPosition() {
+            if (sidebar.classList.contains('collapsed')) {
+                toggleSidebarBtn.style.right = '0';
+            } else {
+                toggleSidebarBtn.style.right = '300px'; // Largura do sidebar
+            }
+        }
+
+        // Chamada inicial
+        updateToggleButtonIcon();
+        updateToggleButtonPosition();
+
+        // Evento de clique para alternar o sidebar
+        toggleSidebarBtn.addEventListener('click', function() {
+            sidebar.classList.toggle('collapsed');
+            mainContent.classList.toggle('content-shifted');
+            updateToggleButtonIcon();
+            updateToggleButtonPosition();
+        });
+
         toggleCaptureBtn.addEventListener('click', function() {
             selectedAIClientId = aiClientSelect.value;
             selectedAIClientName = aiClientSelect.options[aiClientSelect.selectedIndex].text;
@@ -175,7 +271,9 @@
                 .then(data => {
                     if (data.message) {
                         isCapturing = true;
-                        toggleCaptureBtn.textContent = 'Desativar Captura de Consulta';
+                        toggleCaptureBtn.innerHTML = '<i class="bi bi-toggle-on"></i> Desativar Captura de Consulta';
+                        aiClientSelect.disabled = true;
+                        tokenSelect.disabled = true;
                         showModal(data.message);
                     } else if (data.error) {
                         showModal(data.error);
@@ -203,7 +301,9 @@
                 .then(data => {
                     if (data.message) {
                         isCapturing = false;
-                        toggleCaptureBtn.textContent = 'Ativar Captura de Consulta';
+                        toggleCaptureBtn.innerHTML = '<i class="bi bi-toggle-off"></i> Ativar Captura de Consulta';
+                        aiClientSelect.disabled = false;
+                        tokenSelect.disabled = false;
                         showModal(data.message);
                     } else if (data.error) {
                         showModal(data.error);
@@ -318,7 +418,28 @@
         }
 
     
-        // Atualizar a lista de exemplos em tempo real
+        // Função para verificar se o último formulário está vazio
+        function isLastFormEmpty() {
+            var forms = formsetContainer.querySelectorAll('.formset-form:not([style*="display: none"])');
+            if (forms.length === 0) {
+                return false;
+            }
+            var lastForm = forms[forms.length - 1];
+            var systemMessage = lastForm.querySelector('[name$="-system_message"]').value.trim();
+            var userMessage = lastForm.querySelector('[name$="-user_message"]').value.trim();
+            var responseField = lastForm.querySelector('[name$="-response"]');
+            var response = '';
+
+            if (tinymce.get(responseField.id)) {
+                response = tinymce.get(responseField.id).getContent({ format: 'text' }).trim();
+            } else {
+                response = responseField.value.trim();
+            }
+
+            return systemMessage === '' && userMessage === '' && response === '';
+        }
+
+        // Ajuste na atualização da lista de exemplos
         setInterval(function() {
             if (isCapturing && selectedTokenId && selectedAIClientName) {
                 fetch(`/ai-config/get-training-examples/${selectedTokenId}/${selectedAIClientName}/`)
@@ -326,7 +447,24 @@
                 .then(data => {
                     if (data.examples && data.examples.length > 0) {
                         data.examples.forEach((example) => {
-                            addNewForm(example.system_message, example.user_message, example.response);
+                            if (isLastFormEmpty()) {
+                                // Preencher o último formulário vazio
+                                var forms = formsetContainer.querySelectorAll('.formset-form:not([style*="display: none"])');
+                                var lastForm = forms[forms.length - 1];
+                                lastForm.querySelector('[name$="-system_message"]').value = example.system_message;
+                                lastForm.querySelector('[name$="-user_message"]').value = example.user_message;
+
+                                var responseField = lastForm.querySelector('[name$="-response"]');
+                                if (tinymce.get(responseField.id)) {
+                                    tinymce.get(responseField.id).setContent(example.response);
+                                } else {
+                                    responseField.value = example.response;
+                                    initTinyMCE(responseField);
+                                }
+                            } else {
+                                // Adicionar um novo formulário
+                                addNewForm(example.system_message, example.user_message, example.response);
+                            }
                         });
                     }
                 })

@@ -1,9 +1,17 @@
+"""
+Este módulo fornece utilitários e clientes para interagir com diferentes APIs de IA,
+incluindo OpenAI, Google Gemini, Anthropic Claude 3 e Perplexity. Ele facilita o processamento
+de documentos, extração de texto e comunicação com os serviços de IA configurados.
+"""
 import os
 import json
 import logging
 import base64
 import tempfile
 import time
+import html
+import requests
+import markdown
 
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
@@ -28,42 +36,50 @@ logger = logging.getLogger(__name__)
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
 
-# Registry para armazenar os clientes de IA disponíveis
-AVAILABLE_AI_CLIENTS = []
 
+def parsear_html(html: str) -> str:
+    """Parseia o HTML fornecido e retorna a div mais externa.
 
-def register_ai_client(cls):
-    """
-    Decorador para registrar uma classe de cliente de IA no registry.
-    """
-    AVAILABLE_AI_CLIENTS.append(cls)
-    return cls
+    Args:
+        html (str): String contendo o HTML a ser parseado.
 
+    Returns:
+        str: HTML da div mais externa ou HTML original se nenhuma div for encontrada.
 
-def parsearHTML(html: str) -> str:
+    Raises:
+        ValueError: Se ocorrer um erro durante o parse do HTML.
     """
-    Parseia o HTML fornecido e retorna a div mais externa.
-    """
+    function_name = 'parsearHTML'
     try:
-        logger.debug("Iniciando o parseamento do HTML.")
+        logger.debug(f"{function_name}: Iniciando o parseamento do HTML.")
         soup = BeautifulSoup(html, 'html.parser')
         outer_div = soup.find('div')
-        if outer_div:
-            logger.debug("Div externa encontrada no HTML.")
+        if (outer_div):
+            logger.debug(f"{function_name}: Div externa encontrada no HTML.")
             return str(outer_div)
         else:
-            logger.warning("Nenhuma div encontrada no HTML. Retornando o HTML original.")
+            logger.warning(f"{function_name}: Nenhuma div encontrada no HTML. Retornando o HTML original.")
             return html
     except Exception as e:
-        logger.error(f"Erro ao parsear o HTML: {e}")
+        logger.error(f"{function_name}: Erro ao parsear o HTML: {e}")
         raise ValueError(f"Erro ao parsear o HTML: {e}")
 
 
 def processar_documento(conteudo_documento: bytes, nome_documento: str) -> str:
+    """Processa um documento usando o Google Cloud Document AI.
+
+    Args:
+        conteudo_documento (bytes): Conteúdo do documento em bytes.
+        nome_documento (str): Nome do arquivo do documento.
+
+    Returns:
+        str: Texto extraído do documento.
+
+    Raises:
+        FileProcessingError: Se ocorrer um erro no processamento do documento.
     """
-    Processa o documento usando o Google Cloud Document AI e retorna o texto extraído.
-    """
-    logger.debug(f"Iniciando o processamento do documento: {nome_documento}")
+    function_name = 'processar_documento'
+    logger.debug(f"{function_name}: Iniciando o processamento do documento: {nome_documento}")
 
     # Configurações do Document AI
     try:
@@ -74,7 +90,7 @@ def processar_documento(conteudo_documento: bytes, nome_documento: str) -> str:
         location = doc_ai_config.location
         processor_id = doc_ai_config.processor_id
     except Exception as e:
-        logger.error(f"Erro ao obter DocumentAIConfiguration: {e}")
+        logger.error(f"{function_name}: Erro ao obter DocumentAIConfiguration: {e}")
         raise FileProcessingError(f"Erro ao obter DocumentAIConfiguration: {e}")
 
     try:
@@ -99,81 +115,99 @@ def processar_documento(conteudo_documento: bytes, nome_documento: str) -> str:
             temp_file.write(conteudo_documento)
             temp_file_path = temp_file.name
 
-        logger.info(f"Arquivo temporário criado: {temp_file_path}")
+        logger.info(f"{function_name}: Arquivo temporário criado: {temp_file_path}")
 
-        # Ler o conteúdo do documento
-        with open(temp_file_path, "rb") as f:
-            conteudo_documento = f.read()
+        try:
+            # Ler o conteúdo do documento
+            with open(temp_file_path, "rb") as f:
+                conteudo_documento = f.read()
 
-        # Criar a solicitação de processamento
-        request = documentai.ProcessRequest(
-            name=nome_processador,
-            raw_document=documentai.RawDocument(content=conteudo_documento, mime_type=mime_type)
-        )
+            # Criar a solicitação de processamento
+            request = documentai.ProcessRequest(
+                name=nome_processador,
+                raw_document=documentai.RawDocument(content=conteudo_documento, mime_type=mime_type)
+            )
 
-        # Processar o documento
-        resposta = client.process_document(request=request)
-        texto_extraido = resposta.document.text
-        logger.debug("Documento processado com sucesso.")
+            # Processar o documento
+            resposta = client.process_document(request=request)
+            texto_extraido = resposta.document.text
+            logger.debug(f"{function_name}: Documento processado com sucesso.")
 
-        # Remover o arquivo temporário
-        os.remove(temp_file_path)
-        logger.info(f"Arquivo temporário removido: {temp_file_path}")
+            return texto_extraido
 
-        return texto_extraido
+        finally:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+                logger.info(f"{function_name}: Arquivo temporário removido: {temp_file_path}")
 
+    except FileProcessingError as e:
+        logger.error(f"{function_name}: Erro específico ao processar o documento {nome_documento}: {e}")
+        raise
     except Exception as e:
-        logger.error(f"Erro ao processar o documento {nome_documento}: {e}")
-        raise FileProcessingError(f"Erro ao processar o documento: {e}")
+        logger.error(f"{function_name}: Erro inesperado: {e}")
+        raise FileProcessingError("Erro inesperado ao processar o documento.")
+
 
 def extract_text(data: dict) -> str:
+    """Extrai texto de um documento fornecido em formato base64.
+
+    Args:
+        data (dict): Dicionário contendo 'name' e 'content' em base64.
+
+    Returns:
+        str: Texto extraído do documento.
+
+    Raises:
+        FileProcessingError: Se ocorrer erro na extração ou processamento.
     """
-    Extrai o texto da instrução a partir dos dados fornecidos.
-    """
+    function_name = 'extract_text'
     if data is not None:
         name = data.get('name')
         content = data.get('content')
 
         if not name or not content:
-            logger.error("Dados de instrução incompletos.")
+            logger.error(f"{function_name}: Dados de instrução incompletos.")
             raise FileProcessingError("Dados de instrução incompletos.")
 
         try:
             # Decodifica o conteúdo do arquivo em Base64
             instruction_decoded = base64.b64decode(content)
-            logger.debug("Conteúdo do arquivo decodificado com sucesso.")
+            logger.debug(f"{function_name}: Conteúdo do arquivo decodificado com sucesso.")
         except Exception as e:
-            logger.error(f"Erro ao decodificar o conteúdo do arquivo: {e}")
+            logger.error(f"{function_name}: Erro ao decodificar o conteúdo do arquivo: {e}")
             raise FileProcessingError(f"Erro ao decodificar o conteúdo do arquivo: {e}")
 
         try:
             # Processa o documento e extrai o texto
             instruction_text = processar_documento(instruction_decoded, name)
-            logger.info("Texto da instrução extraído com sucesso.")
+            logger.info(f"{function_name}: Texto da instrução extraído com sucesso.")
             return instruction_text
         except Exception as e:
-            logger.error(f"Erro ao processar o documento: {e}")
+            logger.error(f"{function_name}: Erro ao processar o documento: {e}")
             raise FileProcessingError(f"Erro ao processar o documento: {e}")
 
     else:
-        logger.error("Nenhum dado de instrução fornecido.")
+        logger.error(f"{function_name}: Nenhum dado de instrução fornecido.")
         raise FileProcessingError("Nenhum dado de instrução fornecido.")
 
 
+from api.constants import AIClientType, AIClientConfig, ProcessingResult
+
 class APIClient:
-    """
-    Classe base para clientes de API.
-    """
+    """Classe base abstrata para implementação de clientes de IA."""
     name = ''
-    can_train = False 
-    def __init__(self, api_key: str = None, model_name: str = None, configurations: dict = None, base_instruction: str = None, prompt: str = None, responses: str = None):
-        self.api_key = api_key
-        self.model_name = model_name
-        self.configurations = configurations or {}
-        self.base_instruction = base_instruction or ""
-        self.prompt = prompt or ""
-        self.responses = responses or ""
-        logger.debug(f"{self.__class__.__name__} inicializado com configurações: {self.configurations}")
+    can_train = False
+    
+    def __init__(self, config: dict):
+        self.api_key = config.get('api_key')
+        self.model_name = config.get('model_name')
+        self.configurations = config.get('configurations', {})
+        self.base_instruction = config.get('base_instruction', "")
+        self.prompt = config.get('prompt', "")
+        self.responses = config.get('responses', "")
+        if not self.api_key:
+            raise MissingAPIKeyError(f"{self.name}: Chave de API não configurada.")
+        logger.debug(f"{self.__class__.__name__}.__init__: Inicializado com configurações: {self.configurations}")
 
     def _render_template(self, template: str, context: dict):
         """
@@ -193,45 +227,72 @@ class APIClient:
         """
         Prepara os prompts para as IAs com base no tipo de comparação.
         """
-        kwargs['ai_name'] = self.name
-        kwargs['answer_format'] = self.responses
-        base_instruction = self._render_template(self.base_instruction, kwargs)
-        prompt = self._render_template(self.prompt, kwargs)
-        return {
-            'base_instruction': base_instruction,
-            'user_prompt': prompt
-        }
+        try:
+            kwargs['ai_name'] = self.name
+            kwargs['answer_format'] = self.responses
+            kwargs['can_train'] = self.can_train
+            kwargs['train'] = self._prepare_train(**kwargs)
+            base_instruction = html.unescape(self._render_template(self.base_instruction, kwargs))
+            prompt = html.unescape(self._render_template(self.prompt, kwargs))
+            return {
+                'base_instruction': base_instruction,
+                'user_prompt': prompt
+            }
+        except Exception as e:
+            logger.error(f"{self.__class__.__name__}._prepare_prompts: Nenhuma mensagem retornada.")
+            raise APICommunicationError(f"{self.name}: Nenhuma mensagem retornada.")
+    
+    def _prepare_train(self, **kwargs) -> dict:
+        # Prepara os dados de treinamento
+        training_file = kwargs.get('training_file')
+        training = ''
+        if training_file:
+            try:
+                with training_file.open('r') as f:
+                    training_data = json.load(f)
+                training_examples = ""
+                for example in training_data:
+                    system_message = example.get('system_message', '')
+                    user_message = example.get('user_message', '')
+                    response = example.get('response', '')
+                    training_examples += f"Exemplo:\n Mensagem do Usuário {system_message}\n {user_message}\nResposta esperada: {response}\n\n"
+                # Adicionar os exemplos ao prompt
+                training = f"{training} \n {training_examples}"
+            except Exception as e:
+                logger.error(f"{self.__class__.__name__}._prepare_train: Erro ao ler o arquivo de treinamento: {e}")
+        return training
 
     def compare(self, data: dict) -> tuple:
         """
         Método unificado para realizar comparações com base no tipo fornecido.
         """
+        logger.debug(f"{self.__class__.__name__}.compare: Iniciando comparação.")
         prompts = self._prepare_prompts(**data)
         response = self._call_api(prompts)
         system_message = prompts.get('base_instruction', '')
         user_message = prompts.get('user_prompt', '')
+        logger.debug(f"{self.__class__.__name__}.compare: Comparação concluída com sucesso.")
         return (response, system_message, user_message)
 
     def _call_api(self, prompts: dict) -> str:
         """
         Método abstrato para chamar a API específica. Deve ser implementado pelas subclasses.
         """
-        raise NotImplementedError("Subclasses devem implementar o método _call_api.")
+        raise NotImplementedError(f"{self.name}: Subclasses devem implementar o método _call_api.")
 
-@register_ai_client
+
 class ChatGPTClient(APIClient):
+    """Cliente para interação com a API do ChatGPT.
+
+    Implementa a interface para comunicação com o modelo GPT da OpenAI,
+    incluindo suporte para fine-tuning e geração de respostas.
     """
-    Cliente para interação com a API do ChatGPT.
-    """
-    name = "ChatGPT"
+    name = AIClientType.CHATGPT.value
     can_train = True
-    def __init__(self, api_key=None, model_name=None, configurations=None, base_instruction=None, prompt=None, responses=None):
-        if not api_key:
-            logger.error("Chave de API para ChatGPT não configurada.")
-            raise MissingAPIKeyError("Chave de API para ChatGPT não configurada.")
-        super().__init__(api_key, model_name, configurations, base_instruction, prompt, responses)
+    
+    def __init__(self, config: AIClientConfig):
+        super().__init__(config)
         self.client = OpenAI(api_key=self.api_key)
-        logger.debug("ChatGPTClient inicializado.")
 
     def _call_api(self, prompts: dict) -> str:
         """
@@ -240,7 +301,7 @@ class ChatGPTClient(APIClient):
         try:
             system_messages = [
                 {
-                    "role": "system", 
+                    "role": "user", # Mudado de system para user, pois a versão 01 não aceita system
                     "content": prompts['base_instruction']
                 },
                 {
@@ -254,17 +315,17 @@ class ChatGPTClient(APIClient):
 
             response = self.client.chat.completions.create(**self.configurations)
 
-            logger.debug("Chat criado e concluído com sucesso.")
+            logger.debug(f"{self.__class__.__name__}._call_api: Chat criado e concluído com sucesso.")
 
             if not response:
-                logger.error("Nenhuma mensagem retornada pelo ChatGPT.")
-                raise APICommunicationError("Nenhuma mensagem retornada pelo ChatGPT.")
+                logger.error(f"{self.__class__.__name__}._call_api: Nenhuma mensagem retornada.")
+                raise APICommunicationError(f"{self.name}: Nenhuma mensagem retornada.")
 
-            return parsearHTML(response.choices[0].message.content)
+            return parsear_html(response.choices[0].message.content)
 
         except Exception as e:
-            logger.error(f"Erro ao comunicar com a API ChatGPT: {e}")
-            raise APICommunicationError(f"Erro ao comunicar com a API ChatGPT: {e}")
+            logger.error(f"{self.__class__.__name__}._call_api: Erro ao comunicar com a API: {e}")
+            raise APICommunicationError(f"{self.name}: Erro ao comunicar com a API: {e}")
 
     def train(self, training_file, parameters={}):
         """
@@ -319,31 +380,30 @@ class ChatGPTClient(APIClient):
 
                 # Verifique se o trabalho foi concluído
                 if status_state == 'succeeded':
-                    logger.debug("Modelo treinado")
+                    logger.debug(f"{self.__class__.__name__}.train: Modelo treinado.")
                     return status.fine_tuned_model
                 elif status_state == 'failed':
-                    raise APICommunicationError(f"{status.error}")
+                    raise APICommunicationError(f"{self.name}: {status.error}")
                 else:
                     time.sleep(5)
 
         except Exception as e:
-            logger.error(f"Erro ao treinar modelo com ChatGPT: {e}")
-            raise APICommunicationError(f"Erro ao treinar modelo com ChatGPT: {e}")
+            logger.error(f"{self.__class__.__name__}.train: Erro ao treinar o modelo: {e}")
+            raise APICommunicationError(f"{self.name}: Erro ao treinar o modelo: {e}")
 
-@register_ai_client
+
 class GeminiClient(APIClient):
+    """Cliente para interação com a API do Google Gemini.
+
+    Implementa a interface para comunicação com o modelo Gemini do Google,
+    incluindo suporte para treinamento e geração de conteúdo.
     """
-    Cliente para interação com a API do Gemini.
-    """
-    name = "Gemini"
+    name = AIClientType.GEMINI.value
     can_train = True
-    def __init__(self, api_key=None, model_name=None, configurations=None, base_instruction=None, prompt=None, responses=None):
-        if not api_key:
-            logger.error("Chave de API para Gemini não configurada.")
-            raise MissingAPIKeyError("Chave de API para Gemini não configurada.")
-        super().__init__(api_key, model_name, configurations, base_instruction, prompt, responses)
+    
+    def __init__(self, config: AIClientConfig):
+        super().__init__(config)
         genai.configure(api_key=self.api_key)
-        logger.debug("GeminiClient inicializado.")
 
     def _call_api(self, prompts: dict) -> str:
         """
@@ -353,60 +413,88 @@ class GeminiClient(APIClient):
             prompt = prompts['user_prompt']
             system = prompts['base_instruction']
 
-            logger.debug("Iniciando comparação com Gemini.")
+            logger.debug(f"{self.__class__.__name__}._call_api: Iniciando comparação.")
 
             gemini_config = genai.types.GenerationConfig(
                 **self.configurations
             )
-            logger.debug("Modelo Gemini configurado.")
+            logger.debug(f"{self.__class__.__name__}._call_api: Modelo configurado.")
 
             model = genai.GenerativeModel(
                 model_name=self.model_name, 
                 system_instruction=system
             )
-            logger.debug("Configuração de geração definida.")
+            logger.debug(f"{self.__class__.__name__}._call_api: Configuração de geração definida.")
 
-            m = model.generate_content(prompt, generation_config=gemini_config, tools='google_search_retrieval')
-            logger.debug("Conteúdo gerado com sucesso.")
+            m = model.generate_content(prompt, generation_config=gemini_config)
+            logger.debug(f"{self.__class__.__name__}._call_api: Conteúdo gerado com sucesso.")
 
             # Utiliza o método parsearHTML
-            return parsearHTML(m.text)
+            return parsear_html(m.text)
         except Exception as e:
-            logger.error(f"Erro ao comunicar com a API Gemini: {e}")
-            raise APICommunicationError(f"Erro ao comunicar com a API Gemini: {e}")
+            logger.error(f"{self.__class__.__name__}._call_api: Erro ao comunicar com a API: {e}")
+            raise APICommunicationError(f"{self.name}: Erro ao comunicar com a API: {e}")
 
-    def train(self, training_content: str) -> str:
+    def train(self, training_file, parameters={}):
         """
-        Treina o modelo com o conteúdo fornecido.
+        Implementa o treinamento para o Gemini.
         """
         try:
-            # Implementação fictícia de treinamento.
-            # Substitua este bloco com a lógica real de treinamento da API do Gemini.
-            logger.debug("Iniciando treinamento do Gemini.")
-            
-            # Exemplo: Supondo que a API permita o fine-tuning via um endpoint específico
-            # Aqui, apenas simulamos o treinamento e retornamos um nome de modelo fictício.
-            trained_model_name = f"{self.model_name}_trained_v1"
-            logger.debug(f"Treinamento concluído. Modelo treinado: {trained_model_name}")
+            # Ler o conteúdo JSON do arquivo de treinamento
+            with training_file.open('r') as f:
+                training_data_raw = json.load(f)
+
+            # Preparar os dados de treinamento no formato esperado
+            training_data = []
+            for example in training_data_raw:
+                text_input = example.get('user_message', '')
+                output = example.get('response', '')
+                training_data.append({'text_input': text_input, 'output': output})
+
+            # Obter os parâmetros de treinamento, usando valores padrão se não fornecidos
+            display_name = parameters.get('display_name', 'Fine-tuned Model')
+            epoch_count = int(parameters.get('epoch_count', 1))
+            batch_size = int(parameters.get('batch_size', 4))
+            learning_rate = float(parameters.get('learning_rate', 0.001))
+            source_model = "models/"+self.model_name  # Modelo base para fine-tuning
+
+            # Iniciar o treinamento
+            operation = genai.create_tuned_model(
+                display_name=display_name,
+                source_model=source_model,
+                epoch_count=epoch_count,
+                batch_size=batch_size,
+                learning_rate=learning_rate,
+                training_data=training_data,
+            )
+            logger.debug(f"{self.__class__.__name__}.train: Operação de treinamento iniciada com sucesso.")
+
+            # Aguardar a conclusão do treinamento
+            while not operation.done():
+                logger.debug(f"{self.__class__.__name__}.train: Treinamento em andamento...")
+                time.sleep(10)  # Aguarda 10 segundos antes de verificar novamente
+
+            result = operation.result()
+            trained_model_name = result.name  # Nome do modelo treinado
+            logger.debug(f"{self.__class__.__name__}.train: Treinamento concluído. Modelo treinado: {trained_model_name}")
             return trained_model_name
         except Exception as e:
-            logger.error(f"Erro ao treinar o modelo Gemini: {e}")
-            raise APICommunicationError(f"Erro ao treinar o modelo Gemini: {e}")
+            logger.error(f"{self.__class__.__name__}.train: Erro ao treinar o modelo: {e}")
+            raise APICommunicationError(f"{self.name}: Erro ao treinar o modelo: {e}")
 
-@register_ai_client
+
 class Claude3Client(APIClient):
+    """Cliente para interação com a API do Anthropic Claude 3.
+
+    Implementa a interface para comunicação com o modelo Claude 3,
+    focando na geração de respostas precisas.
     """
-    Cliente para interação com a API do Claude 3.
-    """
-    name = "Claude3"
+    name = AIClientType.CLAUDE3.value
     can_train = False
-    def __init__(self, api_key=None, model_name=None, configurations=None, base_instruction=None, prompt=None, responses=None):
-        if not api_key:
-            logger.error("Chave de API para Claude 3 não configurada.")
-            raise MissingAPIKeyError("Chave de API para Claude 3 não configurada.")
-        super().__init__(api_key, model_name, configurations, base_instruction, prompt, responses)
+    
+    def __init__(self, config: AIClientConfig):
+        super().__init__(config)
         self.client = anthropic.Anthropic(api_key=self.api_key)
-        logger.debug("Claude3Client inicializado.")
 
     def _call_api(self, prompts: dict) -> str:
         """
@@ -432,32 +520,91 @@ class Claude3Client(APIClient):
                 **self.configurations
             )
 
-            logger.debug("Mensagem enviada e resposta recebida com sucesso.")
+            logger.debug(f"{self.__class__.__name__}._call_api: Mensagem enviada e resposta recebida com sucesso.")
 
             if not response or not response.content or not response.content[0].text:
-                logger.error("Nenhuma mensagem retornada pelo Claude 3.")
-                raise APICommunicationError("Nenhuma mensagem retornada pelo Claude 3.")
+                logger.error(f"{self.__class__.__name__}._call_api: Nenhuma mensagem retornada.")
+                raise APICommunicationError(f"{self.name}: Nenhuma mensagem retornada.")
 
-            return parsearHTML(response.content[0].text)
+            return parsear_html(response.content[0].text)
 
         except Exception as e:
-            logger.error(f"Erro ao comunicar com a API do Claude 3: {e}")
-            raise APICommunicationError(f"Erro ao comunicar com a API do Claude 3: {e}")
+            logger.error(f"{self.__class__.__name__}._call_api: Erro ao comunicar com a API: {e}")
+            raise APICommunicationError(f"{self.name}: Erro ao comunicar com a API: {e}")
 
-    def train(self, training_content: str) -> str:
+
+class PerplexityClient(APIClient):
+    """Cliente para interação com a API da Perplexity.
+
+    Implementa a interface para comunicação com os modelos da Perplexity,
+    fornecendo capacidades de geração de texto.
+    """
+    name = AIClientType.PERPLEXITY.value
+    can_train = False
+
+    def __init__(self, config: AIClientConfig):
+        super().__init__(config)
+
+    def _call_api(self, prompts: dict) -> str:
         """
-        Treina o modelo com o conteúdo fornecido.
+        Implementa a chamada à API da Perplexity.
         """
         try:
-            # Implementação fictícia de treinamento.
-            # Substitua este bloco com a lógica real de treinamento da API do Claude 3.
-            logger.debug("Iniciando treinamento do Claude 3.")
-            
-            # Exemplo: Supondo que a API permita o fine-tuning via um endpoint específico
-            # Aqui, apenas simulamos o treinamento e retornamos um nome de modelo fictício.
-            trained_model_name = f"{self.model_name}_trained_v1"
-            logger.debug(f"Treinamento concluído. Modelo treinado: {trained_model_name}")
-            return trained_model_name
+            url = "https://api.perplexity.ai/chat/completions"
+
+            # Preparar o payload com os prompts e configurações
+            payload = {
+                "model": self.model_name,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": prompts['base_instruction']
+                    },
+                    {
+                        "role": "user",
+                        "content": prompts['user_prompt']
+                    }
+                ],
+            }
+
+            # Atualizar o payload com as configurações adicionais
+            if self.configurations:
+                payload.update(self.configurations)
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+
+            logger.debug(f"{self.__class__.__name__}._call_api: Enviando solicitação para a API.")
+            response = requests.post(url, json=payload, headers=headers)
+
+            # Verificar o status da resposta
+            if response.status_code != 200:
+                logger.error(f"{self.__class__.__name__}._call_api: API retornou o código de status {response.status_code}")
+                raise APICommunicationError(f"{self.name}: API retornou o código de status {response.status_code}")
+
+            response_json = response.json()
+
+            # Extrair o texto gerado da resposta
+            generated_text = response_json['choices'][0]['message'].get('content', '')
+
+            if not generated_text:
+                logger.error(f"{self.__class__.__name__}._call_api: Nenhum texto retornado na resposta.")
+                raise APICommunicationError(f"{self.name}: Nenhum texto retornado na resposta.")
+
+            logger.debug(f"{self.__class__.__name__}._call_api: Resposta recebida com sucesso.")
+
+            generated_text = markdown.markdown(generated_text)
+            return parsear_html(generated_text)
+
         except Exception as e:
-            logger.error(f"Erro ao treinar o modelo Claude 3: {e}")
-            raise APICommunicationError(f"Erro ao treinar o modelo Claude 3: {e}")
+            logger.error(f"{self.__class__.__name__}._call_api: Erro ao comunicar com a API: {e}")
+            raise APICommunicationError(f"{self.name}: Erro ao comunicar com a API: {e}")
+
+AI_CLIENT_MAPPING = {
+    AIClientType.CHATGPT: ChatGPTClient,
+    AIClientType.GEMINI: GeminiClient,
+    AIClientType.CLAUDE3: Claude3Client,
+    AIClientType.PERPLEXITY: PerplexityClient,
+}

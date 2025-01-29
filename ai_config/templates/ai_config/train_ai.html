@@ -4,39 +4,48 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-8">
+    <div class="col-md-10">
         <h2>Treinar IA para o Token "{{ token.name }}"</h2>
         <form method="post">
             {% csrf_token %}
-            {{ form.as_p }}
-            <button type="submit" class="btn btn-primary">Iniciar Treinamento</button>
-            <a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary">Cancelar</a>
+            <input type="hidden" name="action" id="action-field" value="">
+
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th scope="col"><input type="checkbox" id="select-all"></th>
+                        <th scope="col">Nome da IA</th>
+                        <th scope="col">Nome do Modelo Treinado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ai_client in ai_clients_trainable_details %}
+                        <tr>
+                            <td>
+                                <input type="checkbox" name="ai_clients_to_train" value="{{ ai_client.name }}" class="select-ia-checkbox">
+                            </td>
+                            <td>{{ ai_client.name }}</td>
+                            <td>
+                                {% if ai_client.trained_model_name %}
+                                    {{ ai_client.trained_model_name }}
+                                {% else %}
+                                    <span class="text-muted">Nenhum modelo treinado</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <div class="mb-3">
+                <button type="submit" class="btn btn-primary me-2" onclick="setAction('train')">Iniciar Treinamento</button>
+                <button type="submit" class="btn btn-danger me-2" onclick="setAction('remove_model')">Remover Modelo Treinado</button>
+                <a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary">Voltar</a>
+            </div>
         </form>
-        
-        {% if ai_clients_trainable_details %}
-            <hr>
-            <h4>Modelos Treinados</h4>
-            {% for ai_client in ai_clients_trainable_details %}
-                <div class="card mb-3">
-                    <div class="card-body">
-                        <h5 class="card-title">{{ ai_client.name }}</h5>
-                        {% if ai_client.trained_model_name %}
-                            <p class="card-text">
-                                <strong>Modelo Treinado:</strong> {{ ai_client.trained_model_name }}
-                            </p>
-                            <form method="post" action="{% url 'ai_config:remove_trained_model' token.id ai_client.name %}" onsubmit="return confirm('Tem certeza de que deseja remover o modelo treinado para {{ ai_client.name }}?');">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-danger">Remover Modelo Treinado</button>
-                            </form>
-                        {% else %}
-                            <p class="card-text text-muted">Nenhum modelo treinado.</p>
-                        {% endif %}
-                    </div>
-                </div>
-            {% endfor %}
-        {% endif %}
-        
+
         {% if ai_clients_not_trainable %}
+            <hr>
             <h4>IAs que não podem ser treinadas:</h4>
             <ul>
                 {% for ai_client_name in ai_clients_not_trainable %}
@@ -47,4 +56,18 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Script para Selecionar/Deselecionar Todas as IAs -->
+<script>
+    document.getElementById('select-all').addEventListener('change', function() {
+        var checkboxes = document.querySelectorAll('.select-ia-checkbox');
+        for (var checkbox of checkboxes) {
+            checkbox.checked = this.checked;
+        }
+    });
+
+    function setAction(action) {
+        document.getElementById('action-field').value = action;
+    }
+</script>
 {% endblock %}

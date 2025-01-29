@@ -4,15 +4,13 @@ import json
 import bleach
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth import get_user_model
-from django.contrib.auth import authenticate
+from django.contrib.auth import get_user_model, authenticate
 from allauth.account.models import EmailAddress
 
 from tinymce.widgets import TinyMCE
 
 from .models import UserToken
-
-from api.utils.clientsIA import AVAILABLE_AI_CLIENTS
+from api.constants import AIClientType
 
 ALLOWED_TAGS = bleach.sanitizer.ALLOWED_TAGS.union({
     'p', 'br', 'strong', 'em', 'ul', 'ol', 'li',
@@ -67,6 +65,12 @@ class TokenForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
         super(TokenForm, self).__init__(*args, **kwargs)
+        # Adicionar choices para tipos de IA disponíveis
+        self.fields['ai_types'] = forms.MultipleChoiceField(
+            choices=[(ai_type.value, ai_type.value) for ai_type in AIClientType],
+            required=False,
+            widget=forms.CheckboxSelectMultiple
+        )
 
     def clean_name(self):
         name = self.cleaned_data.get('name')
@@ -123,11 +127,14 @@ class UserTokenForm(forms.ModelForm):
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Nome do Token'})
         }
 
-    def __init__(self, *args, **kwargs):
-        super(UserTokenForm, self).__init__(*args, **kwargs)
-
     def clean_name(self):
         name = self.cleaned_data.get('name')
         if UserToken.objects.filter(user=self.instance.user, name=name).exclude(id=self.instance.id).exists():
             raise forms.ValidationError('Já existe um token com esse nome.')
         return name
+
+    def save(self, commit=True):
+        token = super().save(commit=False)
+        if commit:
+            token.save()
+        return token

@@ -16,5 +16,4 @@ urlpatterns = [
     path('toggle-capture/', views.toggle_capture, name='toggle_capture'),
     #path('receive-capture/', views.receive_capture, name='receive_capture'),
     path('get-training-examples/<uuid:token_id>/<str:ai_client_name>/', views.get_training_examples, name='get_training_examples'),
-    path('remove-trained-model/<uuid:token_id>/<str:ai_client_name>/',views.remove_trained_model,name='remove_trained_model'),
 ]

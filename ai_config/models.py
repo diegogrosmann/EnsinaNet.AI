@@ -1,12 +1,15 @@
+import logging
+import uuid
+
 from django.db import models
 from django.dispatch import receiver
 from django.db.models.signals import post_delete
-from .storage import OverwriteStorage  # Importe a classe de armazenamento personalizada
-import logging
-
-import uuid
-from accounts.models import UserToken
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+
+from accounts.models import UserToken
+
+from .storage import OverwriteStorage
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -131,6 +134,7 @@ class TrainingCapture(models.Model):
     is_active = models.BooleanField(default=False)
     temp_file = models.FileField(upload_to='training_captures/', null=True, blank=True)
     create_at = models.DateTimeField(auto_now_add=True)
+    last_activity = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ('token', 'ai_client')
