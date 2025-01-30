@@ -1,5 +1,3 @@
-# accounts/forms.py
-
 import json
 import bleach
 from django import forms
@@ -10,7 +8,7 @@ from allauth.account.models import EmailAddress
 from tinymce.widgets import TinyMCE
 
 from .models import UserToken
-from api.constants import AIClientType
+from ai_config.models import AIClientGlobalConfiguration
 
 ALLOWED_TAGS = bleach.sanitizer.ALLOWED_TAGS.union({
     'p', 'br', 'strong', 'em', 'ul', 'ol', 'li',
@@ -65,9 +63,12 @@ class TokenForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
         super(TokenForm, self).__init__(*args, **kwargs)
-        # Adicionar choices para tipos de IA disponíveis
+
+        all_clients = AIClientGlobalConfiguration.objects.all()
+        choices = [(client.api_client_class, client.api_client_class) for client in all_clients]
+
         self.fields['ai_types'] = forms.MultipleChoiceField(
-            choices=[(ai_type.value, ai_type.value) for ai_type in AIClientType],
+            choices=choices,
             required=False,
             widget=forms.CheckboxSelectMultiple
         )

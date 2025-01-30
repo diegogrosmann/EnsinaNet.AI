@@ -5,6 +5,9 @@ app_name = 'ai_config'
 
 urlpatterns = [
     path('manage-ai-configurations/<uuid:token_id>/', views.manage_ai_configurations, name='manage_ai_configurations'),
+    path('manage-ai-configurations/<uuid:token_id>/create/', views.create_ai_configuration, name='create_ai_configuration'),
+    path('manage-ai-configurations/<uuid:token_id>/edit/<int:config_id>/', views.edit_ai_configuration, name='edit_ai_configuration'),
+    path('manage-ai-configurations/<uuid:token_id>/delete/<int:config_id>/', views.delete_ai_configuration, name='delete_ai_configuration'),
     path('manage-token-configurations/<uuid:token_id>/', views.manage_token_configurations, name='manage_token_configurations'),
     path('upload-training-file/<uuid:token_id>/', views.upload_training_file, name='upload_training_file'),
     path('manage-training-configurations/<uuid:token_id>/', views.manage_training_configurations, name='manage_training_configurations'),

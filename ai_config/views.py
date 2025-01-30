@@ -16,7 +16,6 @@ from django.utils import timezone
 from datetime import timedelta
 
 from accounts.models import UserToken
-from api.constants import AIClientType
 from api.utils.clientsIA import AI_CLIENT_MAPPING
 
 from .forms import (
@@ -45,45 +44,83 @@ def manage_ai_configurations(request, token_id):
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
 
-    forms = []
-    for ai_type in AIClientType:
-        ai_client_name = ai_type.value
-        try:
-            ai_client = AIClientGlobalConfiguration.objects.get(api_client_class=ai_client_name)
-            ai_client_config = AIClientConfiguration.objects.get(token=token, ai_client=ai_client)
-        except AIClientConfiguration.DoesNotExist:
-            ai_client_config = AIClientConfiguration(token=token, ai_client=ai_client, enabled=False)
-        except AIClientGlobalConfiguration.DoesNotExist:
-            logger.error(f"AIClient com api_client_class='{ai_client_name}' não encontrado.")
-            messages.error(request, f"Cliente de IA '{ai_client_name}' não configurado. Entre em contato com o administrador.")
-            continue
+    # Buscar apenas as configurações existentes para este token
+    ai_configs = AIClientConfiguration.objects.filter(token=token)
 
-        # Prefix para evitar conflitos de campos nos formulários
-        form = AIClientConfigurationForm(instance=ai_client_config, prefix=ai_client_name)
-        forms.append({'ai_client': ai_client_name, 'form': form})
+    context = {
+        'token': token,
+        'ai_configs': ai_configs,
+    }
+    return render(request, 'ai_config/manage_ai_configurations.html', context)
+
+@login_required
+def create_ai_configuration(request, token_id):
+    user = request.user
+    token = get_object_or_404(UserToken, id=token_id, user=user)
 
     if request.method == 'POST':
-        success = True
-        for ai_form in forms:
-            form = AIClientConfigurationForm(request.POST, request.FILES, instance=ai_form['form'].instance, prefix=ai_form['ai_client'])
-            if form.is_valid():
-                try:
-                    form.save()
-                except Exception as e:
-                    success = False
-                    logger.error(f"Erro ao salvar configurações para {ai_form['ai_client']}: {e}")
-                    messages.error(request, f"Erro ao salvar configurações para {ai_form['ai_client']}. Por favor, tente novamente.")
-            else:
-                success = False
-                logger.warning(f"Formulário inválido para {ai_form['ai_client']}: {form.errors}")
-                messages.error(request, f"Por favor, corrija os erros nas configurações para {ai_form['ai_client']}.")
+        form = AIClientConfigurationForm(request.POST)
+        if form.is_valid():
+            # Criar objeto, mas não salvar ainda
+            config_obj = form.save(commit=False)
+            config_obj.token = token  # vincular ao token
+            try:
+                config_obj.save()
+                messages.success(request, "Nova configuração de IA criada com sucesso!")
+                return redirect('ai_config:manage_ai_configurations', token_id=token.id)
+            except Exception as e:
+                messages.error(request, f"Erro ao salvar: {e}")
+    else:
+        form = AIClientConfigurationForm()
 
-        if success:
-            messages.success(request, "Configurações de IA salvas com sucesso!")
-            return redirect('manage_configurations', token_id=token.id)  # Redireciona para a configuração do token
+    context = {
+        'token': token,
+        'form': form
+    }
+    return render(request, 'ai_config/create_ai_configuration.html', context)
 
-    context = {'token': token, 'forms': forms}
-    return render(request, 'ai_config/manage_ai_configurations.html', context)
+@login_required
+def edit_ai_configuration(request, token_id, config_id):
+    user = request.user
+    token = get_object_or_404(UserToken, id=token_id, user=user)
+    ai_config = get_object_or_404(AIClientConfiguration, id=config_id, token=token)
+
+    if request.method == 'POST':
+        form = AIClientConfigurationForm(request.POST, instance=ai_config)
+        if form.is_valid():
+            try:
+                form.save()
+                messages.success(request, "Configuração de IA atualizada com sucesso!")
+                return redirect('ai_config:manage_ai_configurations', token_id=token.id)
+            except Exception as e:
+                messages.error(request, f"Erro ao salvar: {e}")
+    else:
+        form = AIClientConfigurationForm(instance=ai_config)
+
+    context = {
+        'token': token,
+        'form': form,
+        'ai_config': ai_config,
+    }
+    return render(request, 'ai_config/edit_ai_configuration.html', context)
+
+@login_required
+def delete_ai_configuration(request, token_id, config_id):
+    user = request.user
+    token = get_object_or_404(UserToken, id=token_id, user=user)
+    ai_config = get_object_or_404(AIClientConfiguration, id=config_id, token=token)
+
+    if request.method == 'POST':
+        name = ai_config.name
+        ai_config.delete()
+        messages.success(request, f"A configuração '{name}' foi deletada.")
+        return redirect('ai_config:manage_ai_configurations', token_id=token.id)
+
+    context = {
+        'token': token,
+        'ai_config': ai_config,
+    }
+    return render(request, 'ai_config/delete_ai_configuration.html', context)
 
 @login_required
 def manage_token_configurations(request, token_id):

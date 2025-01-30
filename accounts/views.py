@@ -13,8 +13,7 @@ from allauth.account.utils import send_email_confirmation
 from .forms import CustomUserCreationForm, TokenForm, EmailAuthenticationForm, UserTokenForm
 from .models import UserToken, Profile
 from ai_config.forms import UserAITrainingFileForm  
-from ai_config.models import AITrainingFile
-from api.constants import AIClientType
+from ai_config.models import AITrainingFile, AIClientGlobalConfiguration
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +63,15 @@ def logout_view(request):
 @login_required
 def manage_tokens(request):
     user = request.user
+
+    all_clients = AIClientGlobalConfiguration.objects.all()
+    available_ais = [(obj.api_client_class, obj.api_client_class) for obj in all_clients]
+
     context = {
         'tokens': UserToken.objects.filter(user=user),
         'training_files': AITrainingFile.objects.filter(user=user),
         'is_approved': user.profile.is_approved,
-        'available_ais': [(ai_type.value, ai_type.value) for ai_type in AIClientType],
+        'available_ais': available_ais,
         'form': TokenForm(),
         'training_file_form': UserAITrainingFileForm()
     }
@@ -154,10 +157,14 @@ def manage_configurations(request, token_id):
     else:
         form = UserTokenForm(instance=token)
 
+    all_clients = AIClientGlobalConfiguration.objects.all()
+    available_ais = [(obj.api_client_class, obj.api_client_class) for obj in all_clients]
+
+
     return render(request, 'accounts/manage/manage_configurations.html', {
         'token': token,
         'form': form,
-        'available_ais': [(ai_type.value, ai_type.value) for ai_type in AIClientType]
+        'available_ais': available_ais
     })
 
 # Classes de redefinição de senha

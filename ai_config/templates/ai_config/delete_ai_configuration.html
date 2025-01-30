@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Excluir Configuração de IA</h2>
+<p>Tem certeza que deseja excluir "{{ ai_config.name }}"?</p>
+<form method="post">
+  {% csrf_token %}
+  <button type="submit" class="btn btn-danger">Sim, Excluir</button>
+  <a href="{% url 'ai_config:manage_ai_configurations' token.id %}" class="btn btn-secondary">Cancelar</a>
+</form>
+{% endblock %}

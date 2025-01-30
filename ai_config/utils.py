@@ -23,7 +23,7 @@ def perform_training(user, token, selected_ias=None):
 
     def train_ai(ai_client_config):
         ai_client_name = ai_client_config.ai_client.api_client_class
-        ai_client_cls = CLIENT_CLASSES.get(ai_client_name)
+        ai_client_cls = AI_CLIENT_MAPPING.get(ai_client_name)
 
         if not ai_client_cls:
             return ai_client_name, f"Erro: Cliente de IA '{ai_client_name}' não encontrado no mapeamento."
@@ -65,7 +65,7 @@ def perform_training(user, token, selected_ias=None):
 
 def perform_training_for_single_ai(user, token, ai_client_config, training_file):
     ai_client_name = ai_client_config.ai_client.api_client_class
-    ai_client_cls = CLIENT_CLASSES.get(ai_client_name)
+    ai_client_cls = AI_CLIENT_MAPPING.get(ai_client_name)
 
     if not ai_client_cls:
         return ai_client_name, f"Erro: Cliente de IA '{ai_client_name}' não encontrado no mapeamento."

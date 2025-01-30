@@ -5,7 +5,6 @@ from django.forms import formset_factory, BaseFormSet, ModelChoiceField
 from django.contrib.auth import get_user_model
 from tinymce.widgets import TinyMCE
 
-
 from .models import (
     AIClientGlobalConfiguration, 
     AIClientConfiguration, 
@@ -13,11 +12,12 @@ from .models import (
     AITrainingFile, 
     AIClientTraining, 
     TrainingCapture,
-    UserToken)
+    UserToken
+)
 
 from api.utils.clientsIA import AI_CLIENT_MAPPING
 
-API_CLIENT_CHOICES = [(client_type.value, client_type.value) for client_type in AI_CLIENT_MAPPING.keys()]
+API_CLIENT_CHOICES = [(ai_client, ai_client) for ai_client in AI_CLIENT_MAPPING.keys()]
 
 ALLOWED_TAGS = bleach.sanitizer.ALLOWED_TAGS.union({
     'p', 'br', 'strong', 'em', 'ul', 'ol', 'li',
@@ -40,6 +40,12 @@ class BaseTrainingExampleFormSet(BaseFormSet):
             self.media += form.media
 
 class AIClientGlobalConfigForm(forms.ModelForm):
+    """
+    Formulário para criar/editar AIClientGlobalConfiguration.
+    Adicionamos:
+     - 'name' para nomear o cliente
+     - 'api_url' como campo opcional
+    """
     api_client_class = forms.ChoiceField(
         choices=API_CLIENT_CHOICES,
         label='Classe do Cliente de API',
@@ -50,7 +56,7 @@ class AIClientGlobalConfigForm(forms.ModelForm):
 
     class Meta:
         model = AIClientGlobalConfiguration
-        fields = ['api_client_class', 'api_key']
+        fields = ['name', 'api_client_class', 'api_url', 'api_key']
 
     def __init__(self, *args, **kwargs):
         super(AIClientGlobalConfigForm, self).__init__(*args, **kwargs)
@@ -76,66 +82,33 @@ class AIClientGlobalConfigForm(forms.ModelForm):
             return api_key
 
 class AIClientConfigurationForm(forms.ModelForm):
-    enabled = forms.BooleanField(
-        label='IA Habilitada',
-        required=False,
-        initial=True,
-        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-        help_text='Marque esta opção para habilitar esta IA.'
-    )
-    model_name = forms.CharField(
-        label='Nome do Modelo',
-        widget=forms.TextInput(attrs={'class': 'form-control'}),
-        required=False,
-        help_text='Insira o nome do modelo para esta IA.'
-    )
-    configurations = forms.CharField(
-        label='Configurações da IA:',
-        widget=forms.Textarea(attrs={
-            'class': 'form-control',
-            'placeholder': 'Exemplo:\ntemperature=0.2\ntop_k=10',
-            'title': 'Digite as configurações no formato key=value, uma por linha.'
-        }),
-        help_text='Insira as configurações no formato key=value, uma por linha.',
-        required=False
-    )
-
     class Meta:
         model = AIClientConfiguration
-        fields = ['enabled', 'model_name', 'configurations']
+        fields = ['name', 'ai_client', 'enabled', 'model_name', 'configurations']
+        widgets = {
+            'configurations': forms.Textarea(attrs={
+                'class': 'form-control',
+                'placeholder': 'Ex: temperature=0.2\ntop_k=10'
+            })
+        }
 
-    def __init__(self, *args, **kwargs):
-        super(AIClientConfigurationForm, self).__init__(*args, **kwargs)
-        if self.instance:
-            configs = self.instance.configurations or {}
-            lines = [f"{key}={value}" for key, value in configs.items()]
-            self.initial['configurations'] = '\n'.join(lines)
-            self.initial['enabled'] = self.instance.enabled
-            self.initial['model_name'] = self.instance.model_name
+    def clean_name(self):
+        # Exemplo: se quiser garantir que "name" não tenha espaços, etc.
+        name = self.cleaned_data['name'].strip()
+        if not name:
+            raise forms.ValidationError("Nome não pode ser vazio.")
+        return name
 
     def clean_configurations(self):
-        configurations_text = self.cleaned_data.get('configurations')
-        configurations_dict = {}
-        if configurations_text.strip():
-            for line in configurations_text.strip().splitlines():
-                if '=' in line:
-                    key, value = line.split('=', 1)
-                    key = key.strip()
-                    value = value.strip()
-                    try:
-                        if '.' in value:
-                            value = float(value)
-                        else:
-                            value = int(value)
-                    except ValueError:
-                        pass
-                    configurations_dict[key] = value
-                else:
-                    raise forms.ValidationError('Cada linha deve estar no formato key=value.')
-            return configurations_dict
-        else:
-            return configurations_dict
-
+        # Converter config textual (key=value) em JSON
+        data = self.cleaned_data['configurations'] or ''
+        config_dict = {}
+        for line in data.splitlines():
+            if '=' in line:
+                k, v = line.split('=', 1)
+                config_dict[k.strip()] = v.strip()
+        return config_dict
+    
 class TokenAIConfigurationForm(forms.ModelForm):
     base_instruction = forms.CharField(
         label='Instrução Base',
@@ -378,19 +351,16 @@ class TrainingExampleForm(forms.Form):
 
     def clean_user_message(self):
         user_message = self.cleaned_data.get('user_message', '')
-        # Substitui \n por quebras de linha reais
         user_message = user_message.replace('\\n', '\n')
         return user_message
 
     def clean_system_message(self):
         system_message = self.cleaned_data.get('system_message', '')
-        # Substitui \n por quebras de linha reais, se necessário
         system_message = system_message.replace('\\n', '\n')
         return system_message
 
     def clean_response(self):
         response = self.cleaned_data.get('response', '')
-        # Substitui \n por quebras de linha reais, se necessário
         response = response.replace('\\n', '\n')
         return response
 

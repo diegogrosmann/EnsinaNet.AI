@@ -19,16 +19,18 @@ from .models import (
     TokenAIConfiguration, 
     AITrainingFile, 
     AIClientTraining,
-    DocumentAIConfiguration)
+    DocumentAIConfiguration
+)
 from .forms import (
     AIClientGlobalConfigForm, 
     AIClientConfigurationForm, 
     TokenAIConfigurationForm, 
     AITrainingFileForm, 
-    AIClientTrainingForm)
+    AIClientTrainingForm
+)
+
 
 from .utils import perform_training
-from api.constants import AIClientType
 
 logger = logging.getLogger(__name__)
 
@@ -40,17 +42,22 @@ class AIClientTrainingInline(admin.StackedInline):
     verbose_name = "Parâmetros de Treinamento de IA"
     verbose_name_plural = "Parâmetros de Treinamento de IA"
     fields = ['training_parameters', 'trained_model_name']
-    readonly_fields = ['trained_model_name'] 
+    readonly_fields = ['trained_model_name']
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
         return formset
 
 class AIClientGlobalConfigAdmin(admin.ModelAdmin):
+    """
+    Removemos o método has_add_permission original que impedia criar 
+    múltiplas instâncias da mesma 'api_client_class'. Agora podemos 
+    criar quantas quisermos.
+    """
     form = AIClientGlobalConfigForm
-    list_display = ('api_client_class', 'masked_api_key')
-    search_fields = ('api_client_class',)
-    list_filter = ('api_client_class',)
+    list_display = ('name', 'api_client_class', 'api_url', 'masked_api_key')
+    search_fields = ('name', 'api_client_class')
+    list_filter = ('name',)
 
     def masked_api_key(self, obj):
         if obj.api_key:
@@ -61,42 +68,27 @@ class AIClientGlobalConfigAdmin(admin.ModelAdmin):
         return ""
     masked_api_key.short_description = 'API Key'
 
+    # Removido o método "has_add_permission" que checava se ainda faltava algum AIClientType.
+    # Agora é permitido adicionar vários registros para a mesma classe de IA.
+
     def get_readonly_fields(self, request, obj=None):
-        if obj:  # Se 'obj' não for None, é uma edição
+        # Você pode manter este comportamento ou remover, dependendo da sua necessidade:
+        if obj:  # Se 'obj' não for None, é edição
             return self.readonly_fields + ('api_client_class',)
         return self.readonly_fields
 
-    def has_add_permission(self, request):
-        existing_clients = AIClientGlobalConfiguration.objects.values_list('api_client_class', flat=True)
-        all_ai_classes = [client_type.value for client_type in AIClientType]
-        missing_clients = set(all_ai_classes) - set(existing_clients)
-        return bool(missing_clients)
-
-    def get_form(self, request, obj=None, **kwargs):
-        form = super().get_form(request, obj, **kwargs)
-        if not obj:  # Se estiver criando uma nova instância
-            existing_clients = AIClientGlobalConfiguration.objects.values_list('api_client_class', flat=True)
-            available_choices = [
-                (client_type.value, client_type.value) 
-                for client_type in AIClientType 
-                if client_type.value not in existing_clients
-            ]
-            form.base_fields['api_client_class'].choices = available_choices
-        return form
-
-class AIClientConfigurationAdmin(admin.ModelAdmin):  # Atualizado
+class AIClientConfigurationAdmin(admin.ModelAdmin):
     form = AIClientConfigurationForm
-    list_display = ('token', 'ai_client', 'enabled')
-    list_filter = ('ai_client', 'enabled')
-    search_fields = ('token__user__email', 'ai_client__api_client_class')
-    fields = ('token', 'ai_client', 'enabled', 'model_name', 'configurations')
+    list_display = ('token', 'name', 'ai_client', 'enabled')
+    list_filter = ('name', 'ai_client', 'enabled')
+    search_fields = ('token__user__email', 'ai_client__api_client_class', 'name')
+    fields = ('token', 'name', 'ai_client', 'enabled', 'model_name', 'configurations')
     inlines = [AIClientTrainingInline]
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "ai_client":
-            kwargs["queryset"] = AIClientGlobalConfiguration.objects.filter(
-                api_client_class__in=[client_type.value for client_type in AIClientType]
-            )
+            # Agora não filtramos mais para limitar
+            kwargs["queryset"] = AIClientGlobalConfiguration.objects.all()
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 class TokenAIConfigurationAdmin(admin.ModelAdmin):
@@ -104,12 +96,6 @@ class TokenAIConfigurationAdmin(admin.ModelAdmin):
     list_display = ('token', 'base_instruction', 'prompt', 'responses')
     search_fields = ('token__name', 'token__user__email')
     list_filter = ('token',)
-
-class AIClientGlobalConfigurationForm(admin.ModelAdmin):
-    form = AIClientGlobalConfigForm
-    list_display = ('api_client_class', 'original_api_key')
-    search_fields = ('api_client_class')
-    list_filter = ('api_client_class',)
 
 class AITrainingFileAdmin(admin.ModelAdmin):
     form = AITrainingFileForm
@@ -135,8 +121,8 @@ class AITrainingFileAdmin(admin.ModelAdmin):
         if request.method == 'POST':
             # Filtra apenas IAs que suportam treinamento
             trainable_ias = [
-                ai_type.value for ai_type in AIClientType 
-                if AI_CLIENT_MAPPING[ai_type].can_train
+                name for name, client_class in AI_CLIENT_MAPPING.items()
+                if client_class.can_train
             ]
             results = perform_training(request.user, training_file.token, trainable_ias)
             
@@ -149,8 +135,8 @@ class AITrainingFileAdmin(admin.ModelAdmin):
             'opts': self.model._meta,
             'title': 'Confirmar Treinamento das IAs',
             'trainable_ias': [
-                ai_type.value for ai_type in AIClientType 
-                if AI_CLIENT_MAPPING[ai_type].can_train
+                name for name, client_class in AI_CLIENT_MAPPING.items()
+                if client_class.can_train
             ]
         }
         return TemplateResponse(
@@ -200,7 +186,7 @@ class DocumentAIConfigurationForm(forms.ModelForm):
 class DocumentAIConfigurationAdmin(admin.ModelAdmin):
     form = DocumentAIConfigurationForm
     list_display = ('project_id', 'location', 'processor_id')
-    readonly_fields = ()  # Nenhum campo somente leitura
+    readonly_fields = ()
 
     def has_add_permission(self, request):
         if DocumentAIConfiguration.objects.exists():

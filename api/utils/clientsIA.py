@@ -191,7 +191,7 @@ def extract_text(data: dict) -> str:
         raise FileProcessingError("Nenhum dado de instrução fornecido.")
 
 
-from api.constants import AIClientType, AIClientConfig, ProcessingResult
+from api.constants import AIClientConfig, ProcessingResult
 
 class APIClient:
     """Classe base abstrata para implementação de clientes de IA."""
@@ -199,12 +199,13 @@ class APIClient:
     can_train = False
     
     def __init__(self, config: dict):
-        self.api_key = config.get('api_key')
-        self.model_name = config.get('model_name')
-        self.configurations = config.get('configurations', {})
-        self.base_instruction = config.get('base_instruction', "")
-        self.prompt = config.get('prompt', "")
-        self.responses = config.get('responses', "")
+        self.api_key = config.api_key
+        self.model_name = config.model_name
+        self.configurations = config.configurations.copy() if config.configurations else {}
+        self.base_instruction = config.base_instruction or ""
+        self.prompt = config.prompt or ""
+        self.responses = config.responses or ""
+        self.api_url = config.api_url or ""
         if not self.api_key:
             raise MissingAPIKeyError(f"{self.name}: Chave de API não configurada.")
         logger.debug(f"{self.__class__.__name__}.__init__: Inicializado com configurações: {self.configurations}")
@@ -287,12 +288,21 @@ class ChatGPTClient(APIClient):
     Implementa a interface para comunicação com o modelo GPT da OpenAI,
     incluindo suporte para fine-tuning e geração de respostas.
     """
-    name = AIClientType.CHATGPT.value
+    name = "ChatGPT"
     can_train = True
     
     def __init__(self, config: AIClientConfig):
         super().__init__(config)
-        self.client = OpenAI(api_key=self.api_key)
+        args = {
+            'api_key': self.api_key
+        }
+
+        # Verifica se base_url não é nulo e adiciona ao dicionário
+        if self.api_url is not None:
+            args['base_url'] = self.api_url
+
+        # Cria a instância do cliente OpenAI com os argumentos apropriados
+        self.client = OpenAI(**args)
 
     def _call_api(self, prompts: dict) -> str:
         """
@@ -301,7 +311,7 @@ class ChatGPTClient(APIClient):
         try:
             system_messages = [
                 {
-                    "role": "user", # Mudado de system para user, pois a versão 01 não aceita system
+                    "role": "system",
                     "content": prompts['base_instruction']
                 },
                 {
@@ -398,7 +408,7 @@ class GeminiClient(APIClient):
     Implementa a interface para comunicação com o modelo Gemini do Google,
     incluindo suporte para treinamento e geração de conteúdo.
     """
-    name = AIClientType.GEMINI.value
+    name = "Gemini"
     can_train = True
     
     def __init__(self, config: AIClientConfig):
@@ -489,7 +499,7 @@ class Claude3Client(APIClient):
     Implementa a interface para comunicação com o modelo Claude 3,
     focando na geração de respostas precisas.
     """
-    name = AIClientType.CLAUDE3.value
+    name = "Claude3"
     can_train = False
     
     def __init__(self, config: AIClientConfig):
@@ -539,7 +549,7 @@ class PerplexityClient(APIClient):
     Implementa a interface para comunicação com os modelos da Perplexity,
     fornecendo capacidades de geração de texto.
     """
-    name = AIClientType.PERPLEXITY.value
+    name = "Perplexity"
     can_train = False
 
     def __init__(self, config: AIClientConfig):
@@ -603,8 +613,8 @@ class PerplexityClient(APIClient):
             raise APICommunicationError(f"{self.name}: Erro ao comunicar com a API: {e}")
 
 AI_CLIENT_MAPPING = {
-    AIClientType.CHATGPT: ChatGPTClient,
-    AIClientType.GEMINI: GeminiClient,
-    AIClientType.CLAUDE3: Claude3Client,
-    AIClientType.PERPLEXITY: PerplexityClient,
+    "ChatGPT": ChatGPTClient,
+    "Gemini": GeminiClient,
+    "Claude3": Claude3Client,
+    "Perplexity": PerplexityClient,
 }

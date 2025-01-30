@@ -17,7 +17,16 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 class AIClientGlobalConfiguration(models.Model):
-    api_client_class = models.CharField(max_length=255, unique=True)
+    """
+    Agora é possível ter múltiplos registros para a mesma classe de IA, pois
+    removemos a constraint de 'unique=True'. 
+    Adicionamos também:
+     - 'name' (opcional) para nomear o cliente
+     - 'api_url' (opcional) para armazenar uma URL específica para essa IA.
+    """
+    name = models.CharField(max_length=255, unique=True)
+    api_client_class = models.CharField(max_length=255)  
+    api_url = models.URLField(blank=True, null=True)     
     api_key = models.CharField(max_length=255)
 
     class Meta:
@@ -25,22 +34,27 @@ class AIClientGlobalConfiguration(models.Model):
         verbose_name_plural = "Global - Clientes de IA"
 
     def __str__(self):
+        # Exibimos o nome (se existir) ou então o api_client_class
+        if self.name:
+            return f"({self.api_client_class}) {self.name}"
         return f"Cliente de IA para {self.api_client_class}"
 
-class AIClientConfiguration(models.Model):  # Renomeado de TokenConfiguration
+class AIClientConfiguration(models.Model):
     token = models.ForeignKey('accounts.UserToken', related_name='configurations', on_delete=models.CASCADE)
     ai_client = models.ForeignKey('AIClientGlobalConfiguration', on_delete=models.CASCADE)
+    name = models.CharField("Nome da IA (personalizado)", max_length=100)
     enabled = models.BooleanField(default=False)
     model_name = models.CharField(max_length=255, blank=True, null=True)
     configurations = models.JSONField(default=dict, blank=True)
 
     class Meta:
-        unique_together = ('token', 'ai_client')  # Cada combinação de token e cliente deve ser única
+        unique_together = ('token', 'name')
         verbose_name = "Token - Configuração de Cliente de IA"
         verbose_name_plural = "Token - Configurações de Cliente de IA"
 
     def __str__(self):
-        return f"Configuração para {self.ai_client.api_client_class} do Token {self.token.name}"
+        return f"[{self.token.name}] {self.name} -> {self.ai_client.api_client_class}"
+
 
 class AITrainingFile(models.Model):
     """
@@ -55,7 +69,7 @@ class AITrainingFile(models.Model):
         return f"Arquivo de Treinamento de {self.user.email} carregado em {self.uploaded_at}"
 
     class Meta:
-        unique_together = ('user', 'name')  # Garante que cada usuário tenha nomes únicos para seus arquivos
+        unique_together = ('user', 'name')  # Garante nomes únicos para cada usuário
         verbose_name = "Arquivo de Treinamento"
         verbose_name_plural = "Arquivos de Treinamento"
 
@@ -103,7 +117,8 @@ class TokenAIConfiguration(models.Model):
 
 class AIClientTraining(models.Model):
     """
-    Model para armazenar parâmetros de treinamento e nome do modelo treinado para cada AIClientConfiguration.
+    Model para armazenar parâmetros de treinamento e nome do modelo treinado 
+    para cada AIClientConfiguration.
     """
     ai_client_configuration = models.OneToOneField(AIClientConfiguration, on_delete=models.CASCADE, related_name='training')
     training_parameters = models.JSONField(default=dict, blank=True, help_text="Parâmetros de treinamento para esta configuração de cliente de IA.")
