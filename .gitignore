@@ -4,7 +4,7 @@
 .gcloudignore
 db.sqlite3
 app.yaml
-doutorado.json
 logs/
 __pycache__/
 .vscode/
+*.json

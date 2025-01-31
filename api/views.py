@@ -3,6 +3,10 @@ import json
 import time
 
 from django.http import JsonResponse
+from django.shortcuts import redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
+
 from rest_framework.decorators import api_view
 from rest_framework import status
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,8 +18,30 @@ from api.utils.clientsIA import AI_CLIENT_MAPPING, extract_text
 from accounts.models import UserToken
 from ai_config.models import TrainingCapture, AIClientConfiguration
 
-
 logger = logging.getLogger(__name__)
+
+@api_view(['POST'])
+def compare(request):
+    """View principal para comparação de textos usando múltiplos modelos de IA."""
+    logger.info("Iniciando operação compare.")
+    
+    # Validar token
+    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+    token_key = auth_header.split(' ')[-1] if ' ' in auth_header else auth_header
+    try:
+        user_token = UserToken.objects.get(key=token_key)
+    except UserToken.DoesNotExist:
+        logger.error("Token inválido.")
+        return JsonResponse({"error": "Token inválido."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    try:
+        processed_data = process_request_data(request.data)
+        response_ias = process_all_clients(processed_data, user_token)
+        logger.info("Operação compare finalizada com sucesso.")
+        return JsonResponse({'IAs': response_ias}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erro na operação compare: {e}")
+        return JsonResponse({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 def process_client(ai_config, processed_data, user_token):
     """Processa a requisição para uma configuração específica de cliente IA."""
@@ -57,7 +83,12 @@ def process_client(ai_config, processed_data, user_token):
         handle_training_capture(user_token, ai_config.ai_client, system_message, user_message, comparison_result)
 
         processing_time = round(time.perf_counter() - start_time, 2)
-        result = ai_config, {"response": comparison_result, "processing_time": processing_time}
+        result = ai_config, {
+            "response": comparison_result,
+            "model_name": config.model_name,
+            "configurations": config.configurations,
+            "processing_time": processing_time
+        }
         return result
 
     except MissingAPIKeyError as e:
@@ -90,29 +121,6 @@ def handle_training_capture(user_token, ai_client, system_message, user_message,
             logger.info(f"Exemplo capturado para treinamento: {ai_client.api_client_class}")
     except TrainingCapture.DoesNotExist:
         pass
-
-@api_view(['POST'])
-def compare(request):
-    """View principal para comparação de textos usando múltiplos modelos de IA."""
-    logger.info("Iniciando operação compare.")
-    
-    # Validar token
-    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-    token_key = auth_header.split(' ')[-1] if ' ' in auth_header else auth_header
-    try:
-        user_token = UserToken.objects.get(key=token_key)
-    except UserToken.DoesNotExist:
-        logger.error("Token inválido.")
-        return JsonResponse({"error": "Token inválido."}, status=status.HTTP_401_UNAUTHORIZED)
-
-    try:
-        processed_data = process_request_data(request.data)
-        response_ias = process_all_clients(processed_data, user_token)
-        logger.info("Operação compare finalizada com sucesso.")
-        return JsonResponse({'IAs': response_ias}, status=status.HTTP_200_OK)
-    except Exception as e:
-        logger.error(f"Erro na operação compare: {e}")
-        return JsonResponse({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 def process_request_data(data):
     """Processa e extrai texto de arquivos nos dados da requisição."""
@@ -149,3 +157,4 @@ def process_all_clients(processed_data, user_token):
             response_ias[ai_config.name] = result  # Usa o nome personalizado para identificar
 
     return response_ias
+

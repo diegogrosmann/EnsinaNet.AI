@@ -562,3 +562,20 @@ def get_training_examples(request, token_id, ai_client_name):
     except Exception as e:
         logger.error(f"Erro ao carregar os exemplos: {e}")
         return JsonResponse({'error': 'Erro ao carregar os exemplos.'}, status=500)
+    
+@login_required
+@require_POST
+def toggle_ai_configuration(request, token_id, config_id):
+    user = request.user
+    token = get_object_or_404(UserToken, id=token_id, user=user)
+    ai_config = get_object_or_404(AIClientConfiguration, id=config_id, token=token)
+    
+    data = json.loads(request.body)
+    ai_config.enabled = data.get('enabled', False)
+    ai_config.save()
+    
+    return JsonResponse({
+        'status': 'success',
+        'enabled': ai_config.enabled,
+        'config_id': config_id
+    })

@@ -12,7 +12,7 @@ class AIClientConfig:
     configurations: Dict = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
     enabled: bool = True,
-    api_url: str = ""
+    api_url: str = None
 
 @dataclass
 class ProcessingResult:

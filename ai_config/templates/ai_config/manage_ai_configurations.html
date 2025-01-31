@@ -23,7 +23,11 @@
         <td>{{ cfg.name }}</td>
         <td>{{ cfg.ai_client.name }} ({{ cfg.ai_client.api_client_class }})</td>
         <td>{{ cfg.model_name }}</td>
-        <td>{{ cfg.enabled|yesno:"Sim,Não" }}</td>
+        <td>
+          <input type="checkbox" class="enable-checkbox" 
+                 data-config-id="{{ cfg.id }}"
+                 {% if cfg.enabled %}checked{% endif %}>
+        </td>
         <td>
           <a href="{% url 'ai_config:edit_ai_configuration' token.id cfg.id %}" class="btn btn-sm btn-warning">Editar</a>
           <a href="{% url 'ai_config:delete_ai_configuration' token.id cfg.id %}" class="btn btn-sm btn-danger">Excluir</a>
@@ -37,4 +41,55 @@
 {% endif %}
 
 <a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary mt-3">Voltar</a>
+
+<script>
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.startsWith(name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+document.querySelectorAll('.enable-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('change', function() {
+        const configId = this.dataset.configId;
+        const isEnabled = this.checked;
+        
+        const tokenId = "{{ token.id }}";
+        const url = `/ai-config/manage-ai-configurations/${tokenId}/toggle/${configId}/`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enabled: isEnabled }),
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Erro na requisição');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.status !== 'success') {
+                throw new Error('Erro na resposta');
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            this.checked = !isEnabled; // Reverte o estado em caso de erro
+        });
+    });
+});
+</script>
 {% endblock %}
