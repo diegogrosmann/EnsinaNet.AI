@@ -7,18 +7,24 @@
 
 <ul class="nav nav-tabs" id="manageTabs" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="tokens-tab" data-bs-toggle="tab" data-bs-target="#tokens" type="button" role="tab" aria-controls="tokens" aria-selected="true">Tokens</button>
+        <button class="nav-link active" id="tokens-tab" data-bs-toggle="tab" data-bs-target="#tokens" type="button" role="tab" aria-controls="tokens" aria-selected="true">
+            <i class="bi bi-key-fill"></i> Tokens
+        </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="training-files-tab" data-bs-toggle="tab" data-bs-target="#training-files" type="button" role="tab" aria-controls="training-files" aria-selected="false">Arquivos de Treinamento</button>
+        <button class="nav-link" id="training-files-tab" data-bs-toggle="tab" data-bs-target="#training-files" type="button" role="tab" aria-controls="training-files" aria-selected="false">
+            <i class="bi bi-file-earmark-text"></i> Arquivos de Treinamento
+        </button>
     </li>
 </ul>
-<div class="tab-content" id="manageTabsContent">
+
+<!-- Card para envolver o conteúdo das tabs -->
+<div class="card p-3 tab-content" id="manageTabsContent" style="margin-top: -1px;">
     <!-- Tokens Tab -->
     <div class="tab-pane fade show active" id="tokens" role="tabpanel" aria-labelledby="tokens-tab">
         <div class="mt-4">
             {% if is_approved %}
-                <h4>Criar Novo Token</h4>
+                <h4 class="mb-3">Criar Novo Token</h4>
                 <form method="post" class="mb-4">
                     {% csrf_token %}
                     <input type="hidden" name="create_token" value="1">
@@ -29,7 +35,9 @@
                             <small class="text-danger">{{ error }}</small>
                         {% endfor %}
                     </div>
-                    <button type="submit" class="btn btn-success">Criar Token</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-plus-circle"></i> Criar Token
+                    </button>
                 </form>
             {% else %}
                 <div class="alert alert-warning">
@@ -37,11 +45,11 @@
                 </div>
             {% endif %}
 
-            <h4>Tokens Existentes</h4>
+            <h4 class="mt-4">Tokens Existentes</h4>
             {% if tokens %}
                 <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
+                    <table class="table table-striped table-hover table-bordered">
+                        <thead class="table-dark">
                             <tr>
                                 <th>Nome</th>
                                 <th>Chave</th>
@@ -83,17 +91,22 @@
                         <small class="text-danger">{{ error }}</small>
                     {% endfor %}
                 </div>
-                <button type="submit" class="btn btn-primary">Upload Arquivo</button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-upload"></i> Upload Arquivo
+                </button>
             </form>
+
             <div class="mb-3">
-                <a href="{% url 'ai_config:create_training_file'%}" class="btn btn-primary">Criar Novo Arquivo de Treinamento</a>
+                <a href="{% url 'ai_config:create_training_file'%}" class="btn btn-primary">
+                    <i class="bi bi-file-earmark-plus"></i> Criar Novo Arquivo de Treinamento
+                </a>
             </div>
 
             <h4>Arquivos de Treinamento</h4>
             {% if training_files %}
                 <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
+                    <table class="table table-striped table-hover table-bordered">
+                        <thead class="table-dark">
                             <tr>
                                 <th>Nome do Arquivo</th>
                                 <th>Data de Upload</th>
@@ -106,11 +119,17 @@
                                     <td>{{ training_file.file.name|basename }}</td>
                                     <td>{{ training_file.uploaded_at|date:"d/m/Y H:i" }}</td>
                                     <td>
-                                        <a href="{% url 'ai_config:edit_training_file' training_file.id %}" class="btn btn-primary btn-sm">Editar</a>
-                                        <a href="{% url 'ai_config:download_training_file' training_file.id %}" class="btn btn-success btn-sm">Baixar</a>
+                                        <a href="{% url 'ai_config:edit_training_file' training_file.id %}" class="btn btn-sm btn-primary">
+                                            <i class="bi bi-pencil"></i> Editar
+                                        </a>
+                                        <a href="{% url 'ai_config:download_training_file' training_file.id %}" class="btn btn-sm btn-success">
+                                            <i class="bi bi-download"></i> Baixar
+                                        </a>
                                         <form action="{% url 'ai_config:delete_training_file' training_file.id %}" method="post" style="display:inline;">
                                             {% csrf_token %}
-                                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Tem certeza que deseja excluir este arquivo?');">Excluir</button>
+                                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Tem certeza que deseja excluir este arquivo?');">
+                                                <i class="bi bi-trash"></i> Excluir
+                                            </button>
                                         </form>
                                     </td>
                                 </tr>

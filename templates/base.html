@@ -5,16 +5,21 @@
 <head>
     <meta charset="UTF-8">
     <title>ComparadorIA</title>
+    <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
-    <!-- Inclua Bootstrap Icons se for usar ícones -->
+    <!-- Bootstrap Icons (opcional) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <!-- Seu CSS customizado -->
+    <link rel="stylesheet" href="{% static 'css/custom.css' %}">
     {{ form.media }}
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <!-- Navbar escura -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/accounts/manage-tokens/">ComparadorIA</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Alternar navegação">
+            <a class="navbar-brand" href="{% url 'manage_tokens' %}">ComparadorIA</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                    aria-controls="navbarNav" aria-expanded="false" aria-label="Alternar navegação">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
@@ -38,27 +43,29 @@
             </div>
         </div>
     </nav>
-    <div class="container mt-4">
+
+    <!-- Conteúdo principal -->
+    <div class="container my-4">
         {% if messages %}
             {% for message in messages %}
                 <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                    {{ message }}
+                    <i class="bi bi-info-circle-fill"></i> {{ message }}
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
                 </div>
             {% endfor %}
         {% endif %}
+
         {% block content %}
         {% endblock %}
     </div>
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+
+    <!-- Rodapé simples -->
+    <footer class="bg-light text-center py-3 mt-auto">
+        <p class="mb-0">© {{ SITE_NAME }} - {{ SITE_DOMAIN }} - Todos os direitos reservados.</p>
+    </footer>
+
+    <!-- Bootstrap JS (Bundle) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Inicializar Tooltips do Bootstrap -->
-    <script>
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl)
-        })
-    </script>
     {{ block.super }}
 </body>
 </html>

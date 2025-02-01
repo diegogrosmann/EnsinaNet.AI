@@ -3,13 +3,20 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8">
-        <h2 class="mb-4">Configurações para o Token "{{ token.name }}"</h2>
-        <form method="post" enctype="multipart/form-data">
-            {% csrf_token %}
-            {{ form.as_p }}
-            <button type="submit" class="btn btn-primary">Salvar Configurações</button>
-        </form>
-        <a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary mt-3">Voltar para Configurações do Token</a>
+        <h2 class="mb-4 text-center">Configurações para o Token "{{ token.name }}"</h2>
+        <div class="card p-3 mb-3">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                {{ form.as_p }}
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save"></i> Salvar Configurações
+                </button>
+            </form>
+        </div>
+
+        <a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Voltar para Configurações do Token
+        </a>
     </div>
 </div>
 {% endblock %}

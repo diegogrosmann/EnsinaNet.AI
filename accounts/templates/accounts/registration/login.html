@@ -3,7 +3,8 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-6">
-        <h2 class="mb-4">Login</h2>
+        <h2 class="mb-4 text-center">Login</h2>
+
         {% if form.non_field_errors %}
             <div class="alert alert-danger">
                 {% for error in form.non_field_errors %}
@@ -11,24 +12,30 @@
                 {% endfor %}
             </div>
         {% endif %}
-        <form method="post">
+
+        <form method="post" class="needs-validation" novalidate>
             {% csrf_token %}
-            <div class="mb-3">
-                {{ form.email.label_tag }}
+            
+            <!-- Exemplo com form-floating também -->
+            <div class="form-floating mb-3">
                 {{ form.email }}
+                <label for="{{ form.email.id_for_label }}">Email</label>
                 {% for error in form.email.errors %}
-                    <small class="text-danger">{{ error }}</small>
+                    <div class="invalid-feedback d-block">{{ error }}</div>
                 {% endfor %}
             </div>
-            <div class="mb-3">
-                {{ form.password.label_tag }}
+
+            <div class="form-floating mb-3">
                 {{ form.password }}
+                <label for="{{ form.password.id_for_label }}">Senha</label>
                 {% for error in form.password.errors %}
-                    <small class="text-danger">{{ error }}</small>
+                    <div class="invalid-feedback d-block">{{ error }}</div>
                 {% endfor %}
             </div>
+
             <button type="submit" class="btn btn-primary w-100">Login</button>
         </form>
+
         <div class="mt-3 text-center">
             <a href="{% url 'register' %}">Criar uma nova conta</a> |
             <a href="{% url 'password_reset' %}">Esqueci minha senha</a>

@@ -1,46 +1,59 @@
 {% extends 'base.html' %}
-{% block content %}
-<h2>Configurações de IA para o Token "{{ token.name }}"</h2>
 
-<a href="{% url 'ai_config:create_ai_configuration' token.id %}" class="btn btn-primary mb-3">
-  Criar Nova IA
-</a>
+{% block content %}
+<h2 class="mb-4">Configurações de IA para o Token "{{ token.name }}"</h2>
+
+<div class="mb-3">
+    <a href="{% url 'ai_config:create_ai_configuration' token.id %}" class="btn btn-success">
+        <i class="bi bi-plus-circle"></i> Criar Nova IA
+    </a>
+</div>
 
 {% if ai_configs %}
-  <table class="table table-striped">
-    <thead>
-      <tr>
-        <th>Nome</th>
-        <th>AI Global</th>
-        <th>Modelo</th>
-        <th>Habilitada</th>
-        <th>Ações</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for cfg in ai_configs %}
-      <tr>
-        <td>{{ cfg.name }}</td>
-        <td>{{ cfg.ai_client.name }} ({{ cfg.ai_client.api_client_class }})</td>
-        <td>{{ cfg.model_name }}</td>
-        <td>
-          <input type="checkbox" class="enable-checkbox" 
-                 data-config-id="{{ cfg.id }}"
-                 {% if cfg.enabled %}checked{% endif %}>
-        </td>
-        <td>
-          <a href="{% url 'ai_config:edit_ai_configuration' token.id cfg.id %}" class="btn btn-sm btn-warning">Editar</a>
-          <a href="{% url 'ai_config:delete_ai_configuration' token.id cfg.id %}" class="btn btn-sm btn-danger">Excluir</a>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div class="table-responsive card p-3">
+    <table class="table table-striped table-hover table-bordered">
+        <thead class="table-dark">
+            <tr>
+                <th>Nome</th>
+                <th>IA Global</th>
+                <th>Modelo</th>
+                <th>Habilitada</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cfg in ai_configs %}
+            <tr>
+                <td>{{ cfg.name }}</td>
+                <td>{{ cfg.ai_client.name }} ({{ cfg.ai_client.api_client_class }})</td>
+                <td>{{ cfg.model_name }}</td>
+                <td>
+                    <input type="checkbox" class="enable-checkbox"
+                           data-config-id="{{ cfg.id }}"
+                           {% if cfg.enabled %}checked{% endif %}>
+                </td>
+                <td>
+                    <a href="{% url 'ai_config:edit_ai_configuration' token.id cfg.id %}" class="btn btn-sm btn-warning">
+                        <i class="bi bi-pencil"></i> Editar
+                    </a>
+                    <a href="{% url 'ai_config:delete_ai_configuration' token.id cfg.id %}" class="btn btn-sm btn-danger">
+                        <i class="bi bi-trash"></i> Excluir
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% else %}
-  <p>Nenhuma configuração de IA criada para este token.</p>
+<div class="alert alert-info">
+    Nenhuma configuração de IA criada para este token.
+</div>
 {% endif %}
 
-<a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary mt-3">Voltar</a>
+<a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary mt-3">
+    <i class="bi bi-arrow-left"></i> Voltar
+</a>
 
 <script>
 function getCookie(name) {
@@ -62,7 +75,6 @@ document.querySelectorAll('.enable-checkbox').forEach(checkbox => {
     checkbox.addEventListener('change', function() {
         const configId = this.dataset.configId;
         const isEnabled = this.checked;
-        
         const tokenId = "{{ token.id }}";
         const url = `/ai-config/manage-ai-configurations/${tokenId}/toggle/${configId}/`;
 

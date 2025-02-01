@@ -1,10 +1,21 @@
 {% extends 'base.html' %}
+
 {% block content %}
-<h2>Editar Configuração de IA "{{ ai_config.name }}"</h2>
-<form method="post">
-  {% csrf_token %}
-  {{ form.as_p }}
-  <button type="submit" class="btn btn-primary">Salvar Alterações</button>
-  <a href="{% url 'ai_config:manage_ai_configurations' token.id %}" class="btn btn-secondary">Cancelar</a>
-</form>
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h2 class="mb-4 text-center">Editar Configuração de IA "{{ ai_config.name }}"</h2>
+        <div class="card p-3">
+            <form method="post">
+                {% csrf_token %}
+                {{ form.as_p }}
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save"></i> Salvar Alterações
+                </button>
+                <a href="{% url 'ai_config:manage_ai_configurations' token.id %}" class="btn btn-secondary ms-2">
+                    <i class="bi bi-arrow-left"></i> Cancelar
+                </a>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}

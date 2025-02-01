@@ -82,31 +82,101 @@ class AIClientGlobalConfigForm(forms.ModelForm):
             return api_key
 
 class AIClientConfigurationForm(forms.ModelForm):
+    """
+    Formulário para AIClientConfiguration,
+    com o campo 'configurations' em formato chave=valor, um por linha.
+    """
+
+    # Campo de texto onde o usuário digita as configurações como "key=value" multiline
+    configurations = forms.CharField(
+        label='Configurações',
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 5,
+            'placeholder': 'Exemplo:\ntemperature=0.2\ntop_k=10'
+        }),
+        help_text='Insira os parâmetros no formato chave=valor, um por linha.',
+        required=False
+    )
+
     class Meta:
         model = AIClientConfiguration
         fields = ['name', 'ai_client', 'enabled', 'model_name', 'configurations']
-        widgets = {
-            'configurations': forms.Textarea(attrs={
-                'class': 'form-control',
-                'placeholder': 'Ex: temperature=0.2\ntop_k=10'
-            })
-        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        """
+        Se já houver algo salvo no JSONField configurations,
+        convertemos de dict -> multiline 'key=value'.
+        Se for vazio ou None, deixamos o campo em branco.
+        """
+        if self.instance and self.instance.configurations:
+            # Se for um dict e tiver pelo menos 1 item, convertemos
+            if isinstance(self.instance.configurations, dict) and len(self.instance.configurations) > 0:
+                lines = []
+                for k, v in self.instance.configurations.items():
+                    lines.append(f"{k}={v}")
+                self.initial['configurations'] = "\n".join(lines)
+            else:
+                # Se for um dict vazio ou qualquer outra coisa "falsa", deixa vazio
+                self.initial['configurations'] = ""
+        else:
+            # Se não existir ou for None, também deixamos vazio
+            self.initial['configurations'] = ""
 
     def clean_name(self):
-        # Exemplo: se quiser garantir que "name" não tenha espaços, etc.
-        name = self.cleaned_data['name'].strip()
+        """
+        Exemplo simples para garantir que 'name' não esteja vazio
+        ou tenha espaços em excesso.
+        """
+        name = self.cleaned_data.get('name', '').strip()
         if not name:
             raise forms.ValidationError("Nome não pode ser vazio.")
         return name
 
     def clean_configurations(self):
-        # Converter config textual (key=value) em JSON
-        data = self.cleaned_data['configurations'] or ''
+        """
+        Converte o texto multiline (key=value) em dicionário:
+          - cada linha deve ter formato chave=valor
+          - ignora linhas vazias
+          - converte int/float sempre que possível
+        """
+        data = self.cleaned_data.get('configurations', '').strip()
         config_dict = {}
-        for line in data.splitlines():
-            if '=' in line:
-                k, v = line.split('=', 1)
-                config_dict[k.strip()] = v.strip()
+
+        if data:
+            for line_number, line in enumerate(data.splitlines(), start=1):
+                line = line.strip()
+                if not line:
+                    continue  # ignora linha vazia
+                if '=' not in line:
+                    raise forms.ValidationError(
+                        f"Linha {line_number}: '{line}' não está no formato chave=valor."
+                    )
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                if not key:
+                    raise forms.ValidationError(
+                        f"Linha {line_number}: Chave vazia."
+                    )
+                if not value:
+                    raise forms.ValidationError(
+                        f"Linha {line_number}: Valor vazio para a chave '{key}'."
+                    )
+
+                # Tenta converter para int ou float
+                try:
+                    if '.' in value:
+                        value = float(value)
+                    else:
+                        value = int(value)
+                except ValueError:
+                    pass  # Mantém string caso não seja número
+
+                config_dict[key] = value
+
         return config_dict
     
 class TokenAIConfigurationForm(forms.ModelForm):

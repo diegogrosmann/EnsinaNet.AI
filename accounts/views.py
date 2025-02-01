@@ -90,10 +90,6 @@ def manage_tokens(request):
                     token.user = user
                     token.save()
                     
-                    # Configurar IAs selecionadas
-                    selected_ai_types = form.cleaned_data.get('ai_types', [])
-                    token.update_ai_configurations(selected_ai_types)
-                    
                     logger.info(f"Token '{token.name}' criado para {user.email}")
                     messages.success(request, 'Token criado com sucesso!')
                     return redirect('manage_configurations', token_id=token.id)

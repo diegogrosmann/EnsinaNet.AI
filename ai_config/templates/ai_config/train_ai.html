@@ -1,48 +1,57 @@
-<!-- ai_config/templates/ai_config/train_ai.html -->
-
 {% extends 'base.html' %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-10">
-        <h2>Treinar IA para o Token "{{ token.name }}"</h2>
-        <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" id="action-field" value="">
+        <h2 class="mb-4 text-center">Treinar IA para o Token "{{ token.name }}"</h2>
 
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th scope="col"><input type="checkbox" id="select-all"></th>
-                        <th scope="col">Nome da IA</th>
-                        <th scope="col">Nome do Modelo Treinado</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for ai_client in ai_clients_trainable_details %}
+        <div class="card p-3 mb-3">
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" id="action-field" value="">
+
+                <table class="table table-striped table-hover table-bordered">
+                    <thead class="table-dark">
                         <tr>
-                            <td>
-                                <input type="checkbox" name="ai_clients_to_train" value="{{ ai_client.name }}" class="select-ia-checkbox">
-                            </td>
-                            <td>{{ ai_client.name }}</td>
-                            <td>
-                                {% if ai_client.trained_model_name %}
-                                    {{ ai_client.trained_model_name }}
-                                {% else %}
-                                    <span class="text-muted">Nenhum modelo treinado</span>
-                                {% endif %}
-                            </td>
+                            <th scope="col">
+                                <input type="checkbox" id="select-all">
+                            </th>
+                            <th scope="col">Nome da IA</th>
+                            <th scope="col">Nome do Modelo Treinado</th>
                         </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {% for ai_client in ai_clients_trainable_details %}
+                            <tr>
+                                <td>
+                                    <input type="checkbox" name="ai_clients_to_train" value="{{ ai_client.name }}" class="select-ia-checkbox">
+                                </td>
+                                <td>{{ ai_client.name }}</td>
+                                <td>
+                                    {% if ai_client.trained_model_name %}
+                                        {{ ai_client.trained_model_name }}
+                                    {% else %}
+                                        <span class="text-muted">Nenhum modelo treinado</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
 
-            <div class="mb-3">
-                <button type="submit" class="btn btn-primary me-2" onclick="setAction('train')">Iniciar Treinamento</button>
-                <button type="submit" class="btn btn-danger me-2" onclick="setAction('remove_model')">Remover Modelo Treinado</button>
-                <a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary">Voltar</a>
-            </div>
-        </form>
+                <div class="mb-3 d-flex flex-wrap gap-2">
+                    <button type="submit" class="btn btn-primary" onclick="setAction('train')">
+                        <i class="bi bi-play-fill"></i> Iniciar Treinamento
+                    </button>
+                    <button type="submit" class="btn btn-danger" onclick="setAction('remove_model')">
+                        <i class="bi bi-x-circle"></i> Remover Modelo Treinado
+                    </button>
+                    <a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary">
+                        <i class="bi bi-arrow-left"></i> Voltar
+                    </a>
+                </div>
+            </form>
+        </div>
 
         {% if ai_clients_not_trainable %}
             <hr>
@@ -52,22 +61,22 @@
                     <li>{{ ai_client_name }}</li>
                 {% endfor %}
             </ul>
-            <p>Estas IAs não suportam o treinamento. Por favor, inclua o arquivo de treinamento no prompt.</p>
+            <p class="text-muted">Estas IAs não suportam treinamento. Por favor, inclua o arquivo de treinamento no prompt ou utilize outro método.</p>
         {% endif %}
     </div>
 </div>
 
 <!-- Script para Selecionar/Deselecionar Todas as IAs -->
 <script>
-    document.getElementById('select-all').addEventListener('change', function() {
-        var checkboxes = document.querySelectorAll('.select-ia-checkbox');
-        for (var checkbox of checkboxes) {
-            checkbox.checked = this.checked;
-        }
-    });
-
-    function setAction(action) {
-        document.getElementById('action-field').value = action;
+document.getElementById('select-all').addEventListener('change', function() {
+    var checkboxes = document.querySelectorAll('.select-ia-checkbox');
+    for (var checkbox of checkboxes) {
+        checkbox.checked = this.checked;
     }
+});
+
+function setAction(action) {
+    document.getElementById('action-field').value = action;
+}
 </script>
 {% endblock %}

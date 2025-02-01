@@ -706,26 +706,21 @@ class PerplexityClient(APIClient):
         """
         function_name = '_call_api'
         try:
-            url = "https://api.perplexity.ai/chat/completions"
+            url = self.api_url if self.api_url else "https://api.perplexity.ai/chat/completions"
 
-            # Preparar o payload com os prompts e configurações
-            payload = {
-                "model": self.model_name,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": prompts['base_instruction']
-                    },
-                    {
-                        "role": "user",
-                        "content": prompts['user_prompt']
-                    }
-                ],
-            }
+            system_messages = [
+                {
+                    "role": "user", #mudar para system
+                    "content": prompts['base_instruction']
+                },
+                {
+                    "role": "user", 
+                    "content": prompts['user_prompt']
+                }
+            ]
 
-            # Atualizar o payload com as configurações adicionais
-            if self.configurations:
-                payload.update(self.configurations)
+            self.configurations['model'] = self.model_name
+            self.configurations['messages'] = system_messages
 
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
@@ -733,7 +728,7 @@ class PerplexityClient(APIClient):
             }
 
             logger.debug(f"{self.__class__.__name__}.{function_name}: Enviando solicitação para a API.")
-            response = requests.post(url, json=payload, headers=headers)
+            response = requests.post(url, json= self.configurations, headers=headers)
 
             # Verificar o status da resposta
             if response.status_code != 200:
@@ -793,7 +788,7 @@ class LlamaClient(APIClient):
 
             self.configurations['model'] = self.model_name
             self.configurations['messages'] = system_messages
-            self.configurations['stream'] = False
+            self.configurations['stream'] = self.configurations.get('stream', False)
 
             response = self.client.run(self.configurations)          
 

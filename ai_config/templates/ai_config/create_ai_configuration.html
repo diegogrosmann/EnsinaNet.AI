@@ -1,10 +1,23 @@
 {% extends 'base.html' %}
+
 {% block content %}
-<h2>Criar Nova Configuração de IA para o Token "{{ token.name }}"</h2>
-<form method="post">
-  {% csrf_token %}
-  {{ form.as_p }}
-  <button type="submit" class="btn btn-success">Salvar</button>
-  <a href="{% url 'ai_config:manage_ai_configurations' token.id %}" class="btn btn-secondary">Cancelar</a>
-</form>
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h2 class="mb-4 text-center">
+            Criar Nova Configuração de IA para o Token "{{ token.name }}"
+        </h2>
+        <div class="card p-3">
+            <form method="post">
+                {% csrf_token %}
+                {{ form.as_p }}
+                <button type="submit" class="btn btn-success">
+                    <i class="bi bi-plus-circle"></i> Salvar
+                </button>
+                <a href="{% url 'ai_config:manage_ai_configurations' token.id %}" class="btn btn-secondary ms-2">
+                    <i class="bi bi-arrow-left"></i> Cancelar
+                </a>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}

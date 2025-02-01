@@ -1,0 +1,35 @@
+/* custom.css */
+
+/* Ajusta a fonte do site */
+body {
+    font-family: "Inter", Arial, sans-serif;
+}
+
+/* Navbar brand em destaque */
+.navbar-brand {
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* Ajustes para form-floating (se quiser reduzir a label) */
+.form-floating > label {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+/* Ajuste de rodapé simples */
+footer {
+    background-color: #f8f9fa; 
+    color: #6c757d;
+}
+
+/* Exemplo de classes extras para títulos */
+h2, h3, h4 {
+    font-weight: 500;
+}
+
+/* Sidebar do create_training_file.html */
+.sidebar.collapsed {
+    transition: transform 0.3s ease, visibility 0.3s, opacity 0.3s ease;
+    /* Ajuda a suavizar quando a sidebar é colapsada/expadida */
+}
