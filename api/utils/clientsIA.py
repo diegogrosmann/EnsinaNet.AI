@@ -13,10 +13,8 @@ Funções:
     processar_documento: Processamento de documentos via Google Document AI
     extract_text: Extração de texto de documentos codificados em base64
 """
-import os
 import json
 import logging
-import base64
 import tempfile
 import time
 import html
@@ -33,16 +31,10 @@ import anthropic
 from llamaapi import LlamaAPI
 from azure.ai.inference import ChatCompletionsClient
 from azure.core.credentials import AzureKeyCredential
-from azure.core.pipeline.transport import RequestsTransport
 
-from django.conf import settings
-from api.exceptions import FileProcessingError, APICommunicationError, MissingAPIKeyError
+from api.exceptions import APICommunicationError, MissingAPIKeyError
 
 from django.template import engines
-
-# Importando o client do Document AI
-from google.cloud import documentai_v1 as documentai
-from ai_config.models import DocumentAIConfiguration
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -82,139 +74,12 @@ def parsear_html(html: str) -> str:
         else:
             logger.warning(f"{function_name}: Nenhuma div encontrada no HTML. Retornando o HTML original.")
             return html
+
     except Exception as e:
         logger.error(f"{function_name}: Erro ao parsear o HTML: {e}")
         raise ValueError(f"Erro ao parsear o HTML: {e}")
-    logger.info(f"{function_name}: Parseamento do HTML finalizado com sucesso.")
 
-
-def processar_documento(conteudo_documento: bytes, nome_documento: str) -> str:
-    """Processa um documento usando o Google Cloud Document AI.
-
-    Args:
-        conteudo_documento (bytes): Conteúdo do documento em bytes.
-        nome_documento (str): Nome do arquivo do documento.
-
-    Returns:
-        str: Texto extraído do documento.
-
-    Raises:
-        FileProcessingError: Se ocorrer um erro no processamento do documento.
-    """
-    function_name = 'processar_documento'
-    logger.debug(f"{function_name}: Iniciando o processamento do documento: {nome_documento}")
-
-    # Configurações do Document AI
-    try:
-        doc_ai_config = DocumentAIConfiguration.objects.first()
-        if not doc_ai_config:
-            raise FileProcessingError("Configuração do DocumentAI não encontrada.")
-        project_id = doc_ai_config.project_id
-        location = doc_ai_config.location
-        processor_id = doc_ai_config.processor_id
-    except Exception as e:
-        logger.error(f"{function_name}: Erro ao obter DocumentAIConfiguration: {e}")
-        raise FileProcessingError(f"Erro ao obter DocumentAIConfiguration: {e}")
-
-    try:
-        # Instanciar o cliente
-        client = documentai.DocumentProcessorServiceClient()
-
-        # Construir o caminho do processador
-        nome_processador = client.processor_path(project_id, location, processor_id)
-
-        # Determinar o tipo MIME com base na extensão do arquivo
-        _, ext = os.path.splitext(nome_documento)
-        ext = ext.lower()
-        if ext == '.pdf':
-            mime_type = 'application/pdf'
-        elif ext in ['.png', '.jpg', '.jpeg']:
-            mime_type = f'image/{ext[1:]}'
-        else:
-            mime_type = 'application/octet-stream'  # Tipo genérico
-
-        # Criar um arquivo temporário para armazenar o conteúdo
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
-            temp_file.write(conteudo_documento)
-            temp_file_path = temp_file.name
-
-        logger.info(f"{function_name}: Arquivo temporário criado: {temp_file_path}")
-
-        try:
-            # Ler o conteúdo do documento
-            with open(temp_file_path, "rb") as f:
-                conteudo_documento = f.read()
-
-            # Criar a solicitação de processamento
-            request = documentai.ProcessRequest(
-                name=nome_processador,
-                raw_document=documentai.RawDocument(content=conteudo_documento, mime_type=mime_type)
-            )
-
-            # Processar o documento
-            resposta = client.process_document(request=request)
-            texto_extraido = resposta.document.text
-            logger.debug(f"{function_name}: Documento processado com sucesso.")
-
-            return texto_extraido
-
-        finally:
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-                logger.info(f"{function_name}: Arquivo temporário removido: {temp_file_path}")
-
-    except FileProcessingError as e:
-        logger.error(f"{function_name}: Erro específico ao processar o documento {nome_documento}: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"{function_name}: Erro inesperado: {e}")
-        raise FileProcessingError("Erro inesperado ao processar o documento.")
-
-
-def extract_text(data: dict) -> str:
-    """Extrai texto de um documento fornecido em formato base64.
-
-    Args:
-        data (dict): Dicionário contendo 'name' e 'content' em base64.
-
-    Returns:
-        str: Texto extraído do documento.
-
-    Raises:
-        FileProcessingError: Se ocorrer erro na extração ou processamento.
-    """
-    function_name = 'extract_text'
-    if data is not None:
-        name = data.get('name')
-        content = data.get('content')
-
-        if not name or not content:
-            logger.error(f"{function_name}: Dados de instrução incompletos.")
-            raise FileProcessingError("Dados de instrução incompletos.")
-
-        try:
-            # Decodifica o conteúdo do arquivo em Base64
-            instruction_decoded = base64.b64decode(content)
-            logger.debug(f"{function_name}: Conteúdo do arquivo decodificado com sucesso.")
-        except Exception as e:
-            logger.error(f"{function_name}: Erro ao decodificar o conteúdo do arquivo: {e}")
-            raise FileProcessingError(f"Erro ao decodificar o conteúdo do arquivo: {e}")
-
-        try:
-            # Processa o documento e extrai o texto
-            instruction_text = processar_documento(instruction_decoded, name)
-            logger.info(f"{function_name}: Texto da instrução extraído com sucesso.")
-            return instruction_text
-        except Exception as e:
-            logger.error(f"{function_name}: Erro ao processar o documento: {e}")
-            raise FileProcessingError(f"Erro ao processar o documento: {e}")
-
-    else:
-        logger.error(f"{function_name}: Nenhum dado de instrução fornecido.")
-        raise FileProcessingError("Nenhum dado de instrução fornecido.")
-
-
-from api.constants import AIClientConfig, ProcessingResult
+from api.constants import AIClientConfig
 
 class APIClient:
     """
@@ -385,15 +250,18 @@ class ChatGPTClient(APIClient):
                 logger.error(f"{self.__class__.__name__}.{function_name}: Nenhuma mensagem retornada.")
                 raise APICommunicationError("Nenhuma mensagem retornada.")
 
-            if not isinstance(response.choices, list):
-                error_message = response[0].model_extra.get('error', 'Unknown error')
+            if isinstance(response, list) and response:
+                response = response[0]
+
+            if not hasattr(response, 'choices') or not isinstance(response.choices, list):
+                error_message = getattr(response, 'model_extra', {}).get('error', 'Unknown error')
                 raise APICommunicationError(f"{error_message}")
-            
+
             return parsear_html(response.choices[0].message.content)
 
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e.message}")
-            raise APICommunicationError(f"Erro ao comunicar com a API: {e.message}")
+            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
+            raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
 
     def train(self, training_file, parameters={}):
         """
@@ -498,15 +366,18 @@ class ChatGTPNotSysClient(ChatGPTClient):
                 logger.error(f"{self.__class__.__name__}.{function_name}: Nenhuma mensagem retornada.")
                 raise APICommunicationError("Nenhuma mensagem retornada.")
 
-            if not isinstance(response.choices, list):
-                error_message = response[0].model_extra.get('error', 'Unknown error')
+            if isinstance(response, list) and response:
+                response = response[0]
+
+            if not hasattr(response, 'choices') or not isinstance(response.choices, list):
+                error_message = getattr(response, 'model_extra', {}).get('error', 'Unknown error')
                 raise APICommunicationError(f"{error_message}")
             
             return parsear_html(response.choices[0].message.content)
 
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e.message}")
-            raise APICommunicationError(f"Erro ao comunicar com a API: {e.message}")
+            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
+            raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
 
 
 @register_ai_client
@@ -710,7 +581,7 @@ class PerplexityClient(APIClient):
 
             system_messages = [
                 {
-                    "role": "user", #mudar para system
+                    "role": "system",
                     "content": prompts['base_instruction']
                 },
                 {
@@ -914,7 +785,7 @@ class AzureClient(APIClient):
             return parsear_html(response.choices[0].message.content)
 
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e.message}")
-            raise APICommunicationError(f"Erro ao comunicar com a API: {e.message}")
+            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
+            raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
 
 

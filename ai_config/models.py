@@ -159,3 +159,36 @@ class TrainingCapture(models.Model):
     def __str__(self):
         status = "Ativa" if self.is_active else "Inativa"
         return f"Captura {status} para {self.ai_client} do Token {self.token.name}"
+
+class DoclingConfiguration(models.Model):
+    do_ocr = models.BooleanField(default=False, verbose_name="Executar OCR")
+    do_table_structure = models.BooleanField(default=False, verbose_name="Extrair Estrutura de Tabela")
+    do_cell_matching = models.BooleanField(default=False, verbose_name="Ativar Correspondência de Células")
+    
+    ACCELERATOR_CHOICES = [
+        ("auto", "Auto"),
+        ("cpu", "CPU"),
+        ("cuda", "CUDA"),
+        ("mps", "MPS"),
+    ]
+    accelerator_device = models.CharField(
+        max_length=10,
+        choices=ACCELERATOR_CHOICES,
+        default="auto",
+        verbose_name="Dispositivo de Aceleração"
+    )
+    
+    # Campo opcional para permitir configurações adicionais
+    custom_options = models.JSONField(
+        blank=True,
+        null=True,
+        verbose_name="Opções Customizadas",
+        help_text="Insira opções adicionais em formato JSON (por exemplo, {'images_scale': 1.2})."
+    )
+    
+    class Meta:
+        verbose_name = "Configuração Docling"
+        verbose_name_plural = "Configurações Docling"
+    
+    def __str__(self):
+        return "Configuração Docling"

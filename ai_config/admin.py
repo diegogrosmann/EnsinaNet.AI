@@ -19,7 +19,8 @@ from .models import (
     TokenAIConfiguration, 
     AITrainingFile, 
     AIClientTraining,
-    DocumentAIConfiguration
+    DocumentAIConfiguration,
+    DoclingConfiguration
 )
 from .forms import (
     AIClientGlobalConfigForm, 
@@ -199,3 +200,4 @@ admin.site.register(TokenAIConfiguration, TokenAIConfigurationAdmin)
 admin.site.register(AITrainingFile, AITrainingFileAdmin)
 admin.site.register(AIClientTraining, AIClientTrainingAdmin)
 admin.site.register(DocumentAIConfiguration, DocumentAIConfigurationAdmin)
+admin.site.register(DoclingConfiguration)

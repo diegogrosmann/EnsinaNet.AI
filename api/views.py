@@ -13,19 +13,31 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from api.constants import AIClientConfig
 from api.exceptions import APICommunicationError, MissingAPIKeyError
-from api.utils.clientsIA import AI_CLIENT_MAPPING, extract_text
+from api.utils.clientsIA import AI_CLIENT_MAPPING
 
 from accounts.models import UserToken
 from ai_config.models import TrainingCapture, AIClientConfiguration
+
+from api.utils.doc_extractor import extract_text
 
 logger = logging.getLogger(__name__)
 
 @api_view(['POST'])
 def compare(request):
-    """View principal para comparação de textos usando múltiplos modelos de IA."""
+    """
+    View principal para comparação de textos usando múltiplos modelos de IA.
+    
+    Agora, se o payload contiver a chave "students", entende-se que se trata de um
+    processamento em lote, no qual:
+      - "instructor" possui a instrução/configuração base do professor
+      - "students" é uma lista de objetos, cada um com um ID e (opcionalmente)
+        sua própria instrução (arquivo) e/ou configuração de laboratório.
+    
+    O resultado retornado é um dicionário com as respostas para cada aluno, identificadas pelo seu "id".
+    """
     logger.info("Iniciando operação compare.")
     
-    # Validar token
+    # Validação do token de autenticação
     auth_header = request.META.get('HTTP_AUTHORIZATION', '')
     token_key = auth_header.split(' ')[-1] if ' ' in auth_header else auth_header
     try:
@@ -33,28 +45,67 @@ def compare(request):
     except UserToken.DoesNotExist:
         logger.error("Token inválido.")
         return JsonResponse({"error": "Token inválido."}, status=status.HTTP_401_UNAUTHORIZED)
-
+    
     try:
-        processed_data = process_request_data(request.data)
-        response_ias = process_all_clients(processed_data, user_token)
-        logger.info("Operação compare finalizada com sucesso.")
-        return JsonResponse({'IAs': response_ias}, status=status.HTTP_200_OK)
+        data = request.data
+        # Se houver processamento em lote (chave "students" presente)
+        if "students" in data:
+            instructor_data = data.get("instructor", {})
+            students_data = data["students"]
+            batch_results = {}
+            
+            # Processa cada aluno em paralelo
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {}
+                for student in students_data:
+                    student_id = student.get("id")
+                    # Constrói o payload para o aluno mesclando a instrução do professor e os dados do aluno
+                    payload = {
+                        "instruction": instructor_data.get("instruction"),
+                        "instructor_lab": instructor_data.get("lab"),
+                        "student_instruction": student.get("instruction"),
+                        "student_lab": student.get("lab")
+                    }
+                    # Processa recursivamente o payload (por exemplo, extrai conteúdo de arquivos em base64)
+                    processed_payload = process_request_data(payload)
+                    # Envia a comparação para todas as IAs configuradas para o token
+                    futures[executor.submit(process_all_clients, processed_payload, user_token)] = student_id
+                
+                # Coleta os resultados conforme cada tarefa for concluída
+                for future in as_completed(futures):
+                    student_id = futures[future]
+                    try:
+                        result = future.result()
+                        batch_results[student_id] = result
+                    except Exception as e:
+                        logger.error(f"Erro ao processar o aluno {student_id}: {e}")
+                        batch_results[student_id] = {"error": str(e)}
+            
+            logger.info("Operação compare em lote finalizada com sucesso.")
+            return JsonResponse({"students": batch_results}, status=status.HTTP_200_OK)
+        else:
+            # Processamento individual (não em lote)
+            processed_data = process_request_data(data)
+            response_ias = process_all_clients(processed_data, user_token)
+            logger.info("Operação compare finalizada com sucesso.")
+            return JsonResponse({'IAs': response_ias}, status=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f"Erro na operação compare: {e}")
         return JsonResponse({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 def process_client(ai_config, processed_data, user_token):
-    """Processa a requisição para uma configuração específica de cliente IA."""
-    
+    """
+    Processa a requisição para uma configuração específica de cliente de IA.
+    """
     try:
         start_time = time.perf_counter()  # Início da medição
         
-        # Verificar se a configuração está habilitada
+        # Verifica se a configuração está habilitada
         if not ai_config.enabled:
             logger.info(f"{ai_config.name} está desabilitada para este token.")
             return ai_config, {"message": "Esta IA está desabilitada."}
 
-        # Preparar configurações do cliente
+        # Prepara as configurações do cliente usando dados do user_token e do payload
         config = AIClientConfig(
             api_key=ai_config.ai_client.api_key,
             api_url=ai_config.ai_client.api_url,
@@ -66,12 +117,12 @@ def process_client(ai_config, processed_data, user_token):
             enabled=ai_config.enabled
         )
 
-        # Adicionar arquivo de treinamento aos dados processados, se existir
+        # Se existir um arquivo de treinamento na configuração do token, adiciona-o ao payload
         training_file = user_token.ai_configuration.training_file.file if user_token.ai_configuration.training_file else None
         if training_file:
             processed_data['training_file'] = training_file
 
-        # Inicializar e executar o cliente
+        # Recupera a classe de cliente baseada na configuração
         client_class = AI_CLIENT_MAPPING.get(ai_config.ai_client.api_client_class)
         if not client_class:
             raise APICommunicationError(f"Cliente de IA '{ai_config.ai_client.api_client_class}' não está mapeado.")
@@ -79,7 +130,7 @@ def process_client(ai_config, processed_data, user_token):
         ai_client_instance = client_class(config)
         comparison_result, system_message, user_message = ai_client_instance.compare(processed_data)
 
-        # Gerenciar captura de treinamento
+        # Gerencia a captura de treinamento (se houver captura ativa)
         handle_training_capture(user_token, ai_config.ai_client, system_message, user_message, comparison_result)
 
         processing_time = round(time.perf_counter() - start_time, 2)
@@ -97,9 +148,11 @@ def process_client(ai_config, processed_data, user_token):
     except Exception as e:
         logger.error(f"Erro ao processar {ai_config.ai_client.api_client_class}: {e}")
         return ai_config, {"error": str(e)}
-    
+
 def handle_training_capture(user_token, ai_client, system_message, user_message, comparison_result):
-    """Gerencia a captura de dados de treinamento."""
+    """
+    Gerencia a captura de dados de treinamento, adicionando exemplos ao arquivo temporário se houver captura ativa.
+    """
     try:
         capture = TrainingCapture.objects.get(token=user_token, ai_client=ai_client)
         if capture.is_active and capture.temp_file:
@@ -123,11 +176,16 @@ def handle_training_capture(user_token, ai_client, system_message, user_message,
         pass
 
 def process_request_data(data):
-    """Processa e extrai texto de arquivos nos dados da requisição."""
+    """
+    Processa e extrai texto de arquivos nos dados da requisição.
+    Percorre recursivamente dicionários e listas; quando encontra um objeto do tipo arquivo
+    (quando 'type' == "file"), substitui pelo texto extraído.
+    """
     def process_file_content(obj):
         if isinstance(obj, dict):
             for key, value in obj.items():
                 if isinstance(value, dict) and value.get("type") == "file":
+                    # Utiliza a função extract_text para converter o conteúdo base64 em texto
                     obj[key] = extract_text(value)
                 else:
                     process_file_content(value)
@@ -135,26 +193,27 @@ def process_request_data(data):
             for item in obj:
                 process_file_content(item)
 
-    processed_data = data.copy()
-    process_file_content(processed_data)
-    return processed_data
+    processed = data.copy()
+    process_file_content(processed)
+    return processed
 
 def process_all_clients(processed_data, user_token):
-    """Processa a requisição para todos os clientes IA configurados para o usuário."""
+    """
+    Processa a requisição para todos os clientes de IA (configurados para o token)
+    em paralelo. Retorna um dicionário com os resultados (usando o nome da configuração).
+    """
     response_ias = {}
-    # Filtra apenas as configurações de IA vinculadas ao user_token
+    # Filtra as configurações de IA vinculadas ao token e habilitadas
     user_ai_configs = AIClientConfiguration.objects.filter(token=user_token, enabled=True)
     
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = []
-        for ai_config in user_ai_configs:
-            futures.append(
-                executor.submit(process_client, ai_config, processed_data, user_token)
-            )
-
+    with ThreadPoolExecutor() as executor:
+        futures = {
+            executor.submit(process_client, ai_config, processed_data, user_token): ai_config
+            for ai_config in user_ai_configs
+        }
+        
         for future in as_completed(futures):
             ai_config, result = future.result()
-            response_ias[ai_config.name] = result  # Usa o nome personalizado para identificar
+            response_ias[ai_config.name] = result  # Usa o nome personalizado para identificar cada configuração
 
     return response_ias
-
