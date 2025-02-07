@@ -22,9 +22,16 @@ logger = logging.getLogger(__name__)
 
 @api_view(['POST'])
 def compare(request: HttpRequest) -> HttpResponse:
-    """
-    Realiza a comparação em lote utilizando múltiplos clientes de IA.
-    O JSON deve conter as chaves 'instructor' e 'students'.
+    """Realiza a comparação em lote utilizando múltiplos clientes de IA.
+
+    Args:
+        request (HttpRequest): Requisição HTTP contendo as informações do instrutor e dos alunos.
+
+    Returns:
+        HttpResponse: Resposta JSON com os resultados da comparação ou mensagem de erro.
+
+    Raises:
+        Exception: Caso o prompt não esteja configurado na configuração do usuário.
     """
     logger.info("Iniciando operação compare em lote.")
     auth_header = request.META.get('HTTP_AUTHORIZATION', '')
@@ -74,8 +81,20 @@ def compare(request: HttpRequest) -> HttpResponse:
 
 
 def process_client(ai_config: AIClientConfiguration, processed_data: Dict[str, Any], user_token: UserToken) -> Tuple[AIClientConfiguration, Dict[str, Any]]:
-    """
-    Processa a requisição para uma configuração de IA específica.
+    """Processa a requisição para uma configuração de IA específica.
+
+    Args:
+        ai_config (AIClientConfiguration): Configuração da IA a ser processada.
+        processed_data (Dict[str, Any]): Dados processados da requisição.
+        user_token (UserToken): Token do usuário que efetuou a requisição.
+
+    Returns:
+        Tuple[AIClientConfiguration, Dict[str, Any]]:
+            Uma tupla contendo a configuração de IA e o resultado processado.
+
+    Raises:
+        MissingAPIKeyError: Se a chave de API estiver ausente.
+        Exception: Em caso de outros erros durante o processamento.
     """
     try:
         start_time = time.perf_counter()
@@ -119,8 +138,17 @@ def process_client(ai_config: AIClientConfiguration, processed_data: Dict[str, A
 
 
 def handle_training_capture(user_token: UserToken, ai_client: Any, system_message: str, user_message: str, comparison_result: str) -> None:
-    """
-    Gerencia a captura de dados de treinamento, adicionando exemplos ao arquivo se houver captura ativa.
+    """Gerencia a captura de dados de treinamento, adicionando exemplos ao arquivo se houver captura ativa.
+
+    Args:
+        user_token (UserToken): Token do usuário.
+        ai_client (Any): Instância do cliente de IA.
+        system_message (str): Mensagem retornada pelo sistema.
+        user_message (str): Mensagem retornada ao usuário.
+        comparison_result (str): Resultado da comparação efetuada.
+
+    Returns:
+        None
     """
     try:
         capture = TrainingCapture.objects.get(token=user_token, ai_client=ai_client)
@@ -143,8 +171,13 @@ def handle_training_capture(user_token: UserToken, ai_client: Any, system_messag
 
 
 def process_request_data(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Processa os dados recursivamente para extrair texto de arquivos (quando o campo 'type' for 'file').
+    """Processa os dados recursivamente para extrair texto de arquivos quando o campo 'type' é 'file'.
+
+    Args:
+        data (Dict[str, Any]): Dados originais da requisição.
+
+    Returns:
+        Dict[str, Any]: Dados com o conteúdo dos arquivos extraído.
     """
     def process_file_content(obj: Any) -> None:
         if isinstance(obj, dict):
@@ -162,9 +195,14 @@ def process_request_data(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def process_all_clients(processed_data: Dict[str, Any], user_token: UserToken) -> Dict[str, Any]:
-    """
-    Processa a requisição para todos os clientes de IA vinculados ao token.
-    Retorna um dicionário com os resultados indexados pelo nome da configuração.
+    """Processa a requisição para todos os clientes de IA vinculados ao token.
+
+    Args:
+        processed_data (Dict[str, Any]): Dados da requisição já processados.
+        user_token (UserToken): Token do usuário efetuando a requisição.
+
+    Returns:
+        Dict[str, Any]: Dicionário com os resultados indexados pelo nome da configuração.
     """
     results: Dict[str, Any] = {}
     user_ai_configs = AIClientConfiguration.objects.filter(token=user_token, enabled=True)

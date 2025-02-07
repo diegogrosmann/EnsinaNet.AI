@@ -6,20 +6,18 @@ from api.utils.docling_doc_converter import convert_pdf_bytes_to_text, convert_w
 logger = logging.getLogger(__name__)
 
 def extract_text(data: dict) -> str:
-    """
-    Extrai o texto de um documento enviado em formato base64, utilizando
-    o docling. Suporta arquivos PDF e Word (DOCX).
+    """Extrai o texto de um documento codificado em base64 utilizando o docling.
 
-    O dicionário 'data' deve conter:
-      - 'name': nome do arquivo (para identificar a extensão)
-      - 'content': conteúdo do arquivo em base64
+    Args:
+        data (dict): Dicionário com os seguintes itens:
+            - name (str): Nome do arquivo (para identificar a extensão);
+            - content (str): Conteúdo do arquivo em base64.
 
     Returns:
         str: Texto extraído do documento.
 
     Raises:
-        FileProcessingError: Se os dados estiverem incompletos ou se ocorrer
-                             algum erro na conversão.
+        FileProcessingError: Se os dados estiverem incompletos ou ocorrer erro na conversão.
     """
     function_name = 'extract_text'
     if not data:

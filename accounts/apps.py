@@ -5,4 +5,9 @@ class MyappConfig(AppConfig):
     name = 'accounts'
 
     def ready(self):
+        """Realiza configurações de inicialização ao registrar os signals.
+        
+        Retorna:
+            None
+        """
         import accounts.signals

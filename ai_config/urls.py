@@ -1,3 +1,8 @@
+"""URLs do aplicativo ai_config.
+
+Define os endpoints para gerenciamento de configurações, treinamento, upload/download de arquivos, etc.
+"""
+
 from django.urls import path
 from . import views
 

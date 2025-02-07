@@ -42,18 +42,24 @@ load_dotenv()
 AI_CLIENT_MAPPING = {}
 
 def register_ai_client(cls):
-    """Decorador para registrar automaticamente classes de clientes de IA."""
+    """Decorador para registrar automaticamente classes de clientes de IA.
+
+    Args:
+        cls (class): Classe do cliente de IA.
+
+    Returns:
+        class: A mesma classe registrada.
+    """
     AI_CLIENT_MAPPING[cls.name] = cls
     return cls
 
 class APIClient:
-    """
-    Classe base abstrata para implementação de clientes de IA.
+    """Classe base abstrata para implementação de clientes de IA.
 
     Attributes:
         name (str): Nome identificador do cliente.
         can_train (bool): Indica se o cliente suporta treinamento.
-        supports_system_message (bool): Indica se a API suporta envio de mensagem do sistema.
+        supports_system_message (bool): Indica se a API suporta envio de System Message.
         api_key (str): Chave de API para autenticação.
         model_name (str): Nome do modelo de IA a ser usado.
         configurations (dict): Configurações específicas do cliente.
@@ -76,8 +82,14 @@ class APIClient:
         logger.debug(f"{self.__class__.__name__}.__init__: Inicializado com configurações: {self.configurations}")
 
     def _render_template(self, template: str, context: dict):
-        """
-        Carrega o prompt de um arquivo de template e renderiza com o contexto fornecido.
+        """Renderiza um template utilizando a engine do Django.
+
+        Args:
+            template (str): Template em formato de string.
+            context (dict): Dicionário de contexto para renderização.
+
+        Returns:
+            str: Template renderizado.
         """
         # Obtenha a engine de templates padrão do Django
         django_engine = engines['django']
@@ -90,8 +102,16 @@ class APIClient:
 
 
     def _prepare_prompts(self, **kwargs) -> dict:
-        """
-        Prepara os prompts para as IAs com base no tipo de comparação.
+        """Prepara os prompts para a API de IA.
+
+        Args:
+            **kwargs: Parâmetros para a preparação do prompt.
+
+        Returns:
+            dict: Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+
+        Raises:
+            APICommunicationError: Se ocorrer algum erro na preparação dos prompts.
         """
         try:
             kwargs['ai_name'] = self.name
@@ -117,6 +137,14 @@ class APIClient:
             raise APICommunicationError("Nenhuma mensagem retornada.")
     
     def _prepare_train(self, **kwargs) -> dict:
+        """Prepara os dados de treinamento.
+
+        Args:
+            **kwargs: Parâmetros que podem incluir um arquivo de treinamento.
+
+        Returns:
+            dict: Dados de treinamento processados.
+        """
         # Prepara os dados de treinamento
         training_file = kwargs.get('training_file')
         training = ''
@@ -137,14 +165,16 @@ class APIClient:
         return training
 
     def compare(self, data: dict) -> tuple:
-        """
-        Executa a comparação baseada nos dados fornecidos.
+        """Compara dados utilizando a API de IA.
 
         Args:
-            data (dict): Dicionário com parâmetros para construção dos prompts.
+            data (dict): Dados para comparação dos prompts.
 
         Returns:
-            tuple: Retorna (resposta da IA, mensagem do sistema, mensagem do usuário).
+            tuple: (Resposta da IA, instrução do sistema, prompt do usuário).
+
+        Raises:
+            APICommunicationError: Se ocorrer erro durante a comunicação.
         """
         function_name = 'compare'
         logger.debug(f"{self.__class__.__name__}.{function_name}: Iniciando comparação.")
@@ -156,17 +186,24 @@ class APIClient:
         return (response, system_message, user_message)
 
     def _call_api(self, prompts: dict) -> str:
-        """
-        Método abstrato para chamar a API específica. Deve ser implementado pelas subclasses.
+        """Método abstrato para chamada da API específico a cada cliente.
+
+        Args:
+            prompts (dict): Prompts preparados para a API.
+
+        Returns:
+            str: Resposta da API.
+
+        Raises:
+            NotImplementedError: Se não implementado pela subclasse.
         """
         raise NotImplementedError(f"{self.name}: Subclasses devem implementar o método _call_api.")
 
 @register_ai_client
 class OpenAiClient(APIClient):  # Renomeado de ChatGPTClient para OpenAiClient
-    """Cliente para interação com a API do ChatGPT.
+    """Cliente para interação com a API da OpenAI.
 
-    Implementa a interface para comunicação com o modelo GPT da OpenAI,
-    incluindo suporte para fine-tuning e geração de respostas.
+    Implementa a comunicação com o modelo GPT da OpenAI, permitindo também fine-tuning.
     """
     name = "OpenAi"
     can_train = True
@@ -199,8 +236,16 @@ class OpenAiClient(APIClient):  # Renomeado de ChatGPTClient para OpenAiClient
         self.client = OpenAI(**args)
 
     def _call_api(self, prompts: dict) -> str:
-        """
-        Implementa a chamada à API do ChatGPT.
+        """Realiza a chamada à API do OpenAI.
+
+        Args:
+            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+
+        Returns:
+            str: Conteúdo da mensagem de resposta da API.
+
+        Raises:
+            APICommunicationError: Se ocorrer erro na comunicação com a API.
         """
         function_name = '_call_api'
         try:
@@ -240,8 +285,17 @@ class OpenAiClient(APIClient):  # Renomeado de ChatGPTClient para OpenAiClient
             raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
 
     def train(self, training_file, parameters={}):
-        """
-        Implementa o treinamento para o ChatGPT.
+        """Realiza o treinamento do modelo utilizando fine-tuning.
+
+        Args:
+            training_file: Arquivo com dados de treinamento em formato JSON.
+            parameters (dict, optional): Parâmetros para o fine-tuning.
+
+        Returns:
+            str: Nome do modelo treinado.
+
+        Raises:
+            APICommunicationError: Se ocorrer erro durante o treinamento.
         """        
         function_name = 'train'
         logger.info(f"{self.__class__.__name__}.{function_name}: Treinamento iniciado.")
@@ -309,8 +363,7 @@ class OpenAiClient(APIClient):  # Renomeado de ChatGPTClient para OpenAiClient
 class GeminiClient(APIClient):
     """Cliente para interação com a API do Google Gemini.
 
-    Implementa a interface para comunicação com o modelo Gemini do Google,
-    incluindo suporte para treinamento e geração de conteúdo.
+    Permite treinamento e geração de conteúdo utilizando o modelo Gemini.
     """
     name = "Gemini"
     can_train = True
@@ -328,8 +381,16 @@ class GeminiClient(APIClient):
         genai.configure(api_key=self.api_key)
 
     def _call_api(self, prompts: dict) -> str:
-        """
-        Implementa a chamada à API do Gemini.
+        """Realiza a chamada à API do Gemini.
+
+        Args:
+            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+
+        Returns:
+            str: Texto gerado pela API do Gemini.
+
+        Raises:
+            APICommunicationError: Se ocorrer erro na comunicação com a API.
         """
         function_name = '_call_api'
         try:
@@ -358,16 +419,17 @@ class GeminiClient(APIClient):
             raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
 
     def train(self, training_file, parameters={}):
-        """
-        Executa o treinamento do modelo Gemini com base nos dados e parâmetros
-        fornecidos.
+        """Executa o treinamento do modelo Gemini.
 
         Args:
-            training_file: Arquivo contendo dados em formato JSON.
-            parameters (dict): Parâmetros de configuração para o treinamento.
+            training_file: Arquivo com os dados de treinamento em formato JSON.
+            parameters (dict, optional): Parâmetros de configuração para o treinamento.
 
         Returns:
             str: Nome do modelo treinado.
+
+        Raises:
+            APICommunicationError: Se ocorrer erro durante o treinamento.
         """
         function_name = 'train'
         logger.info(f"{self.__class__.__name__}.{function_name}: Treinamento iniciado.")
@@ -418,8 +480,7 @@ class GeminiClient(APIClient):
 class AnthropicClient(APIClient):  # Renomeado de Claude3Client para AnthropicClient
     """Cliente para interação com a API do Anthropic Claude 3.
 
-    Implementa a interface para comunicação com o modelo Claude 3,
-    focando na geração de respostas precisas.
+    Foca na geração de respostas precisas utilizando o modelo Claude 3.
     """
     name = "Anthropic"
     can_train = False
@@ -437,8 +498,16 @@ class AnthropicClient(APIClient):  # Renomeado de Claude3Client para AnthropicCl
         self.client = anthropic.Anthropic(api_key=self.api_key)
 
     def _call_api(self, prompts: dict) -> str:
-        """
-        Implementa a chamada à API do Claude 3.
+        """Realiza a chamada à API do Claude 3.
+
+        Args:
+            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+
+        Returns:
+            str: Texto de resposta retornado pela API do Claude 3.
+
+        Raises:
+            APICommunicationError: Se ocorrer erro na comunicação com a API.
         """
         function_name = '_call_api'
         try:
@@ -478,8 +547,7 @@ class AnthropicClient(APIClient):  # Renomeado de Claude3Client para AnthropicCl
 class PerplexityClient(APIClient):
     """Cliente para interação com a API da Perplexity.
 
-    Implementa a interface para comunicação com os modelos da Perplexity,
-    fornecendo capacidades de geração de texto.
+    Fornece capacidades de geração de texto através dos modelos da Perplexity.
     """
     name = "Perplexity"
     can_train = False
@@ -496,8 +564,16 @@ class PerplexityClient(APIClient):
         super().__init__(config)
 
     def _call_api(self, prompts: dict) -> str:
-        """
-        Implementa a chamada à API da Perplexity.
+        """Realiza a chamada à API da Perplexity.
+
+        Args:
+            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+
+        Returns:
+            str: Texto gerado pela API da Perplexity.
+
+        Raises:
+            APICommunicationError: Se a API retornar erro ou nenhum texto.
         """
         function_name = '_call_api'
         try:
@@ -510,8 +586,8 @@ class PerplexityClient(APIClient):
                     "content": prompts['base_instruction']
                 })
             messages.append({
-                "role": "user",
-                "content": prompts['user_prompt']
+                    "role": "user",
+                    "content": prompts['user_prompt']
             })
 
             self.configurations['model'] = self.model_name
@@ -549,11 +625,9 @@ class PerplexityClient(APIClient):
 
 @register_ai_client
 class LlamaClient(APIClient):
-    """
-    Cliente para interação com a API do Llama.
+    """Cliente para interação com a API do Llama.
 
-    Implementa a interface para comunicação com o modelo Llama,
-    fornecendo capacidades de geração de texto.
+    Fornece capacidades de geração de texto utilizando o modelo Llama.
     """
     name = "Llama"
     can_train = False
@@ -570,6 +644,17 @@ class LlamaClient(APIClient):
         self.client = LlamaAPI(self.api_key)
 
     def _call_api(self, prompts: dict) -> str:
+        """Realiza a chamada à API do Llama.
+
+        Args:
+            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+
+        Returns:
+            str: Conteúdo da resposta gerada pela API do Llama.
+
+        Raises:
+            APICommunicationError: Se ocorrer erro na comunicação com a API.
+        """
         function_name = '_call_api'
         try:
             messages = []
@@ -621,11 +706,9 @@ class LlamaClient(APIClient):
 
 @register_ai_client
 class AzureOpenAIClient(OpenAiClient):  # Atualizado para herdar de OpenAiClient
-    """
-    Cliente para interação com a API do Azure OpenAI.
+    """Cliente para interação com a API do Azure OpenAI.
 
-    Implementa a interface para comunicação com o modelo OpenAI
-    hospedado no Azure, fornecendo capacidades de geração de texto.
+    Comunica-se com o OpenAI hospedado no Azure usando os parâmetros apropriados.
     """
     name = "AzureOpenAI"
     can_train = False
@@ -649,11 +732,9 @@ class AzureOpenAIClient(OpenAiClient):  # Atualizado para herdar de OpenAiClient
 
 @register_ai_client
 class AzureClient(APIClient):
-    """
-    Cliente para interação com a API do Azure.
+    """Cliente para interação com a API do Azure.
 
-    Implementa a interface para comunicação com o modelo de IA
-    hospedado no Azure, fornecendo capacidades de geração de texto.
+    Configura o cliente para comunicação com o serviço Azure de IA.
     """
     name = "Azure"
     can_train = False
@@ -680,6 +761,17 @@ class AzureClient(APIClient):
         )
 
     def _call_api(self, prompts: dict) -> str:
+        """Realiza a chamada à API do Azure.
+
+        Args:
+            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+
+        Returns:
+            str: Conteúdo da resposta retornada pelo Azure.
+
+        Raises:
+            APICommunicationError: Se ocorrer erro na comunicação com a API.
+        """
         function_name = '_call_api'
         try:
             messages = []

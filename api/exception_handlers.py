@@ -3,6 +3,15 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.response import Response
 
 def custom_exception_handler(exc, context):
+    """Manipulador customizado de exceções para a API.
+
+    Args:
+        exc (Exception): A exceção ocorrida.
+        context (dict): Contexto adicional da exceção.
+
+    Returns:
+        Response: Resposta HTTP formatada com a mensagem de erro em português.
+    """
     # Chama o manipulador de exceções padrão para obter a resposta inicial
     response = exception_handler(exc, context)
     

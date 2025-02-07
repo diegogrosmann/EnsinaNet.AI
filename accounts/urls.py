@@ -1,3 +1,8 @@
+"""Configuração de URLs para a aplicação accounts.
+
+Este módulo mapeia os padrões de URL para as views de registro, login, logout,
+gerenciamento de tokens, configurações e fluxos de redefinição de senha.
+"""
 from django.urls import path
 from . import views
 
@@ -9,7 +14,7 @@ urlpatterns = [
     path('manage-tokens/delete/<uuid:token_id>/', views.delete_token, name='delete_token'),
     path('manage-tokens/<uuid:token_id>/configurations/', views.manage_configurations, name='manage_configurations'),
 
-    # Rotas de redefinição de senha
+    # Rotas para redefinição de senha
     path('password_reset/', views.CustomPasswordResetView.as_view(), name='password_reset'),
     path('password_reset/done/', views.password_reset_done_view, name='password_reset_done'),
     path('reset/<uidb64>/<token>/', views.password_reset_confirm_view, name='password_reset_confirm'),

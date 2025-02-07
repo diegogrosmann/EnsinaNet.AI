@@ -12,12 +12,34 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):
+    """Cria o perfil para um novo usuário.
+    
+    Argumentos:
+        sender (Model): A classe do model.
+        instance (User): Instância do usuário.
+        created (bool): Indica se o usuário foi criado.
+        **kwargs: Argumentos adicionais.
+    
+    Retorna:
+        None
+    """
     if created:
         Profile.objects.create(user=instance)
         logger.info(f"Perfil criado para o usuário: {instance.email}")
 
 @receiver(post_save, sender=Profile)
 def handle_user_approval(sender, instance, created, **kwargs):
+    """Gerencia a aprovação do perfil do usuário.
+    
+    Argumentos:
+        sender (Model): A classe do model.
+        instance (Profile): Instância do perfil.
+        created (bool): Indica se o perfil foi criado.
+        **kwargs: Argumentos adicionais.
+    
+    Retorna:
+        None
+    """
     if not created:
         if instance.is_approved:
             user = instance.user

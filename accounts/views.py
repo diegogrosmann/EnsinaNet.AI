@@ -1,9 +1,14 @@
+"""Views para a aplicação accounts.
+
+Este módulo contém funções e classes que gerenciam o registro, login, logout,
+gerenciamento de tokens, configuração, redefinição de senha e confirmação de email.
+"""
 import logging
 from typing import Any, Dict
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
-from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.sites.shortcuts import get_current_site
 from django.core.mail import send_mail
@@ -28,8 +33,13 @@ logger = logging.getLogger(__name__)
 
 
 def register_view(request: HttpRequest) -> HttpResponse:
-    """
-    Registra um novo usuário e envia email de confirmação.
+    """Registra um novo usuário e envia email de confirmação.
+
+    Args:
+        request (HttpRequest): Objeto de requisição HTTP.
+
+    Returns:
+        HttpResponse: Página renderizada ou redirecionamento para a página de login.
     """
     if request.method == 'POST':
         form = CustomUserCreationForm(request.POST)
@@ -51,8 +61,13 @@ def register_view(request: HttpRequest) -> HttpResponse:
 
 
 def login_view(request: HttpRequest) -> HttpResponse:
-    """
-    Efetua o login do usuário.
+    """Realiza autenticação e login do usuário.
+
+    Args:
+        request (HttpRequest): Objeto de requisição HTTP.
+
+    Returns:
+        HttpResponse: Página renderizada ou redirecionamento após login.
     """
     if request.method == 'POST':
         form = EmailAuthenticationForm(request, data=request.POST)
@@ -71,8 +86,13 @@ def login_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def logout_view(request: HttpRequest) -> HttpResponse:
-    """
-    Realiza o logout do usuário.
+    """Realiza o logout do usuário atual.
+
+    Args:
+        request (HttpRequest): Objeto de requisição HTTP.
+
+    Returns:
+        HttpResponse: Redirecionamento para a página de login.
     """
     logger.info(f"Logout do usuário: {request.user.email}")
     logout(request)
@@ -82,8 +102,13 @@ def logout_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def manage_tokens(request: HttpRequest) -> HttpResponse:
-    """
-    Gerencia os tokens do usuário, permitindo criar tokens e fazer upload de arquivos de treinamento.
+    """Gerencia tokens e arquivos de treinamento do usuário.
+
+    Args:
+        request (HttpRequest): Objeto de requisição HTTP.
+
+    Returns:
+        HttpResponse: Página renderizada com o contexto atualizado.
     """
     user = request.user
     tokens = UserToken.objects.filter(user=user)
@@ -140,8 +165,14 @@ def manage_tokens(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def delete_token(request: HttpRequest, token_id: str) -> HttpResponse:
-    """
-    Exclui um token específico.
+    """Exclui o token especificado.
+
+    Args:
+        request (HttpRequest): Objeto de requisição HTTP.
+        token_id (str): Identificador do token a ser excluído.
+
+    Returns:
+        HttpResponse: Página renderizada ou redirecionamento após exclusão.
     """
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
@@ -159,8 +190,14 @@ def delete_token(request: HttpRequest, token_id: str) -> HttpResponse:
 
 @login_required
 def manage_configurations(request: HttpRequest, token_id: str) -> HttpResponse:
-    """
-    Gerencia as configurações específicas de um token.
+    """Gerencia as configurações específicas de um token.
+
+    Args:
+        request (HttpRequest): Objeto de requisição HTTP.
+        token_id (str): Identificador do token a ser configurado.
+
+    Returns:
+        HttpResponse: Página renderizada com as configurações atualizadas.
     """
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
@@ -193,14 +230,25 @@ def manage_configurations(request: HttpRequest, token_id: str) -> HttpResponse:
 
 
 class CustomPasswordResetView(ConfirmEmailView):
+    """View customizada para redefinição de senha no padrão Google.
+
+    Attributes:
+        template_name (str): Caminho do template para o formulário de reset de senha.
+        email_template_name (str): Caminho do template utilizado no envio do email.
     """
-    View customizada para redefinição de senha.
-    (Aqui, você pode integrar ou derivar da view padrão do Django.)
-    """
+
     template_name = 'accounts/registration/password_reset_form.html'
     email_template_name = 'accounts/registration/password_reset_email.html'
 
     def get_context_data(self, **kwargs: Any) -> Dict[str, Any]:
+        """Retorna o contexto atualizado com informações do site.
+
+        Args:
+            **kwargs: Argumentos adicionais do contexto.
+
+        Returns:
+            Dict[str, Any]: Contexto atualizado com domínio, nome do site e protocolo.
+        """
         context = super().get_context_data(**kwargs)
         current_site = get_current_site(self.request)
         context.update({
@@ -211,6 +259,15 @@ class CustomPasswordResetView(ConfirmEmailView):
         return context
 
     def send_mail(self, *args: Any, **kwargs: Any) -> None:
+        """Envia o email de redefinição de senha e registra o log da operação.
+
+        Args:
+            *args: Argumentos posicionais para o envio do email.
+            **kwargs: Argumentos nomeados para o envio do email.
+
+        Raises:
+            Exception: Em caso de falha no envio do email.
+        """
         try:
             super().send_mail(*args, **kwargs)
             logger.info(f"E-mail de redefinição enviado para {kwargs.get('context', {}).get('email')}.")
@@ -220,11 +277,29 @@ class CustomPasswordResetView(ConfirmEmailView):
 
 
 def password_reset_done_view(request: HttpRequest) -> HttpResponse:
+    """Exibe a página de confirmação após solicitar o reset de senha.
+
+    Args:
+        request (HttpRequest): Objeto de requisição HTTP.
+
+    Returns:
+        HttpResponse: Página renderizada de confirmação.
+    """
     from django.contrib.auth.views import PasswordResetDoneView
     return PasswordResetDoneView.as_view(template_name='accounts/registration/password_reset_done.html')(request)
 
 
 def password_reset_confirm_view(request: HttpRequest, uidb64: str, token: str) -> HttpResponse:
+    """Exibe a página para confirmação do reset de senha.
+
+    Args:
+        request (HttpRequest): Objeto de requisição HTTP.
+        uidb64 (str): UID do usuário codificado.
+        token (str): Token de confirmação.
+
+    Returns:
+        HttpResponse: Página renderizada para confirmação do reset.
+    """
     from django.contrib.auth.views import PasswordResetConfirmView
     return PasswordResetConfirmView.as_view(template_name='accounts/registration/password_reset_confirm.html')(
         request, uidb64=uidb64, token=token
@@ -232,15 +307,37 @@ def password_reset_confirm_view(request: HttpRequest, uidb64: str, token: str) -
 
 
 def password_reset_complete_view(request: HttpRequest) -> HttpResponse:
+    """Exibe a página informando a conclusão do reset de senha.
+
+    Args:
+        request (HttpRequest): Objeto de requisição HTTP.
+
+    Returns:
+        HttpResponse: Página renderizada indicando a conclusão.
+    """
     from django.contrib.auth.views import PasswordResetCompleteView
     return PasswordResetCompleteView.as_view(template_name='accounts/registration/password_reset_complete.html')(request)
 
 
 class CustomConfirmEmailView(ConfirmEmailView):
+    """View customizada para confirmação de email no padrão Google.
+
+    Esta view personaliza o processo de confirmação de email, ativando o usuário
+    e enviando notificação para o administrador.
     """
-    View customizada para confirmação de email.
-    """
+
     def get(self, request: HttpRequest, key: str, *args: Any, **kwargs: Any) -> HttpResponse:
+        """Realiza a confirmação do email e ativa o usuário.
+
+        Args:
+            request (HttpRequest): Objeto de requisição HTTP.
+            key (str): Chave única para confirmação do email.
+            *args: Argumentos posicionais adicionais.
+            **kwargs: Argumentos nomeados adicionais.
+
+        Returns:
+            HttpResponse: Redirecionamento para a página de login ou registro.
+        """
         self.kwargs['key'] = key
         try:
             confirmation = self.get_object()

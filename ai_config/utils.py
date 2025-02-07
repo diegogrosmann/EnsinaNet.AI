@@ -6,6 +6,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 def perform_training(user, token, selected_ias=None):
+    """Realiza o treinamento das IAs em paralelo com base no token.
+
+    Args:
+        user: Usuário que solicitou o treinamento.
+        token: Token associado à configuração.
+        selected_ias (list, optional): Lista de nomes das IAs a serem treinadas.
+
+    Returns:
+        dict: Dicionário com os resultados do treinamento para cada IA.
+    """
     results = {}
 
     # Obter as AIClientConfigurations para o token, filtrando pelas IAs selecionadas
@@ -64,6 +74,17 @@ def perform_training(user, token, selected_ias=None):
     return results
 
 def perform_training_for_single_ai(user, token, ai_client_config, training_file):
+    """Realiza o treinamento para uma única IA.
+
+    Args:
+        user: Usuário que solicitou o treinamento.
+        token: Token associado à configuração.
+        ai_client_config: Configuração específica do cliente de IA.
+        training_file: Arquivo de treinamento associado.
+
+    Returns:
+        tuple: Par contendo o nome da IA e o resultado do treinamento.
+    """
     ai_client_name = ai_client_config.ai_client.api_client_class
     ai_client_cls = AI_CLIENT_MAPPING.get(ai_client_name)
 

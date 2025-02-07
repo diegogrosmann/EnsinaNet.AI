@@ -45,8 +45,14 @@ logger = logging.getLogger(__name__)
 
 @login_required
 def manage_ai_configurations(request: HttpRequest, token_id: str) -> HttpResponse:
-    """
-    Exibe as configurações de IA associadas a um token.
+    """Exibe as configurações de IA associadas a um token.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        token_id (str): Identificador do token.
+
+    Returns:
+        HttpResponse: Resposta renderizando a página de configurações.
     """
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
@@ -57,8 +63,14 @@ def manage_ai_configurations(request: HttpRequest, token_id: str) -> HttpRespons
 
 @login_required
 def create_ai_configuration(request: HttpRequest, token_id: str) -> HttpResponse:
-    """
-    Cria uma nova configuração de IA para o token.
+    """Cria uma nova configuração de IA para um token.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        token_id (str): Identificador do token.
+
+    Returns:
+        HttpResponse: Redireciona para a página de gerenciamento ou renderiza o formulário.
     """
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
@@ -84,8 +96,15 @@ def create_ai_configuration(request: HttpRequest, token_id: str) -> HttpResponse
 
 @login_required
 def edit_ai_configuration(request: HttpRequest, token_id: str, config_id: int) -> HttpResponse:
-    """
-    Edita uma configuração de IA existente.
+    """Edita uma configuração de IA existente.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        token_id (str): Identificador do token.
+        config_id (int): Identificador da configuração.
+
+    Returns:
+        HttpResponse: Resposta com a página de edição ou redirecionamento após salvar.
     """
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
@@ -110,8 +129,15 @@ def edit_ai_configuration(request: HttpRequest, token_id: str, config_id: int) -
 
 @login_required
 def delete_ai_configuration(request: HttpRequest, token_id: str, config_id: int) -> HttpResponse:
-    """
-    Exclui uma configuração de IA.
+    """Exclui uma configuração de IA.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        token_id (str): Identificador do token.
+        config_id (int): Identificador da configuração.
+
+    Returns:
+        HttpResponse: Resposta com a página de confirmação ou redirecionamento após exclusão.
     """
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
@@ -127,8 +153,14 @@ def delete_ai_configuration(request: HttpRequest, token_id: str, config_id: int)
 
 @login_required
 def manage_token_configurations(request: HttpRequest, token_id: str) -> HttpResponse:
-    """
-    Gerencia a configuração de prompt para o token.
+    """Gerencia as configurações de prompt para o token.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        token_id (str): Identificador do token.
+
+    Returns:
+        HttpResponse: Página com o formulário das configurações do token.
     """
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
@@ -155,8 +187,14 @@ def manage_token_configurations(request: HttpRequest, token_id: str) -> HttpResp
 
 @login_required
 def manage_training_configurations(request: HttpRequest, token_id: str) -> HttpResponse:
-    """
-    Gerencia os parâmetros de treinamento para as configurações de IA associadas ao token.
+    """Gerencia os parâmetros de treinamento das configurações de IA.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        token_id (str): Identificador do token.
+
+    Returns:
+        HttpResponse: Página com os formulários para os parâmetros de treinamento.
     """
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
@@ -196,8 +234,14 @@ def manage_training_configurations(request: HttpRequest, token_id: str) -> HttpR
 
 @login_required
 def train_ai(request: HttpRequest, token_id: str) -> HttpResponse:
-    """
-    Treina as IAs selecionadas para o token.
+    """Realiza o treinamento das IAs selecionadas para o token.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        token_id (str): Identificador do token.
+
+    Returns:
+        HttpResponse: Redirecionamento após o treinamento ou renderiza a página de treinamento.
     """
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
@@ -263,8 +307,14 @@ def train_ai(request: HttpRequest, token_id: str) -> HttpResponse:
 
 @login_required
 def upload_training_file(request: HttpRequest, token_id: str) -> HttpResponse:
-    """
-    Faz upload de um arquivo de treinamento para o token.
+    """Realiza o upload de um arquivo de treinamento para o token.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        token_id (str): Identificador do token.
+
+    Returns:
+        HttpResponse: Página de upload ou redirecionamento após o upload.
     """
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
@@ -295,8 +345,14 @@ TrainingExampleFormSetFactory = formset_factory(TrainingExampleForm, can_delete=
 
 @login_required
 def create_or_edit_training_file(request: HttpRequest, file_id: Optional[int] = None) -> HttpResponse:
-    """
-    Cria ou edita um arquivo de treinamento.
+    """Cria ou edita um arquivo de treinamento.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        file_id (Optional[int]): Identificador do arquivo de treinamento (para edição).
+
+    Returns:
+        HttpResponse: Página de criação/edição ou redirecionamento após salvar.
     """
     user = request.user
     training_file = None
@@ -418,8 +474,14 @@ def create_or_edit_training_file(request: HttpRequest, file_id: Optional[int] = 
 
 @login_required
 def download_training_file(request: HttpRequest, file_id: int) -> HttpResponse:
-    """
-    Permite o download de um arquivo de treinamento.
+    """Permite o download de um arquivo de treinamento.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        file_id (int): Identificador do arquivo de treinamento.
+
+    Returns:
+        HttpResponse: Resposta com o arquivo para download.
     """
     user = request.user
     training_file = get_object_or_404(AITrainingFile, id=file_id, user=user)
@@ -429,8 +491,14 @@ def download_training_file(request: HttpRequest, file_id: int) -> HttpResponse:
 
 @login_required
 def delete_training_file(request: HttpRequest, file_id: int) -> HttpResponse:
-    """
-    Exibe a confirmação e processa a exclusão de um arquivo de treinamento.
+    """Exibe a confirmação e processa a exclusão de um arquivo de treinamento.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        file_id (int): Identificador do arquivo de treinamento.
+
+    Returns:
+        HttpResponse: Página de confirmação ou redirecionamento após a exclusão.
     """
     user = request.user
     training_file = get_object_or_404(AITrainingFile, id=file_id, user=user)
@@ -448,8 +516,13 @@ def delete_training_file(request: HttpRequest, file_id: int) -> HttpResponse:
 @login_required
 @require_POST
 def toggle_capture(request: HttpRequest) -> JsonResponse:
-    """
-    Ativa ou desativa a captura de exemplos de treinamento.
+    """Ativa ou desativa a captura de exemplos de treinamento.
+
+    Args:
+        request (HttpRequest): Requisição HTTP contendo 'token_id', 'ai_client_id' e 'action'.
+
+    Returns:
+        JsonResponse: Mensagem de estado da captura.
     """
     token_id = request.POST.get('token_id')
     ai_client_name = request.POST.get('ai_client_id')
@@ -487,8 +560,15 @@ def toggle_capture(request: HttpRequest) -> JsonResponse:
 
 @login_required
 def get_training_examples(request: HttpRequest, token_id: str, ai_client_name: str) -> JsonResponse:
-    """
-    Retorna os exemplos de treinamento capturados para uma determinada IA.
+    """Retorna os exemplos de treinamento capturados para uma IA.
+
+    Args:
+        request (HttpRequest): Requisição HTTP.
+        token_id (str): Identificador do token.
+        ai_client_name (str): Nome da classe do cliente de IA.
+
+    Returns:
+        JsonResponse: Dados dos exemplos de treinamento ou mensagem de erro.
     """
     token = get_object_or_404(UserToken, id=token_id, user=request.user)
     ai_client = get_object_or_404(AIClientGlobalConfiguration, api_client_class=ai_client_name)
@@ -513,8 +593,15 @@ def get_training_examples(request: HttpRequest, token_id: str, ai_client_name: s
 @login_required
 @require_POST
 def toggle_ai_configuration(request: HttpRequest, token_id: str, config_id: int) -> JsonResponse:
-    """
-    Alterna o estado (enabled/disabled) de uma configuração de IA.
+    """Alterna o estado (ativado/desativado) de uma configuração de IA.
+
+    Args:
+        request (HttpRequest): Requisição HTTP contendo o novo estado.
+        token_id (str): Identificador do token.
+        config_id (int): Identificador da configuração de IA.
+
+    Returns:
+        JsonResponse: Resultado da operação com o estado atualizado.
     """
     user = request.user
     token = get_object_or_404(UserToken, id=token_id, user=user)
