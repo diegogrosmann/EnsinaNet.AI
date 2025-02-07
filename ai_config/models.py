@@ -17,14 +17,7 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 class AIClientGlobalConfiguration(models.Model):
-    """
-    Agora é possível ter múltiplos registros para a mesma classe de IA, pois
-    removemos a constraint de 'unique=True'. 
-    Adicionamos também:
-     - 'name' (opcional) para nomear o cliente
-     - 'api_url' (opcional) para armazenar uma URL específica para essa IA.
-    """
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255)
     api_client_class = models.CharField(max_length=255)  
     api_url = models.URLField(blank=True, null=True)     
     api_key = models.CharField(max_length=255)
@@ -32,6 +25,7 @@ class AIClientGlobalConfiguration(models.Model):
     class Meta:
         verbose_name = "Global - Cliente de IA"
         verbose_name_plural = "Global - Clientes de IA"
+        unique_together = (('name', 'api_client_class'),)
 
     def __str__(self):
         # Exibimos o nome (se existir) ou então o api_client_class
@@ -46,12 +40,15 @@ class AIClientConfiguration(models.Model):
     enabled = models.BooleanField(default=False)
     model_name = models.CharField(max_length=255, blank=True, null=True)
     configurations = models.JSONField(default=dict, blank=True)
-
+    use_system_message = models.BooleanField(
+         default=False,
+         verbose_name="Usar System Message",
+         help_text="Indica se deve utilizar a mensagem do sistema, se suportado pela API."
+    )
     class Meta:
         unique_together = ('token', 'name')
         verbose_name = "Token - Configuração de Cliente de IA"
         verbose_name_plural = "Token - Configurações de Cliente de IA"
-
     def __str__(self):
         return f"[{self.token.name}] {self.name} -> {self.ai_client.api_client_class}"
 
@@ -130,18 +127,6 @@ class AIClientTraining(models.Model):
     class Meta:
         verbose_name = "Token - Parâmetros de Treinamento de IA"
         verbose_name_plural = "Token - Parâmetros de Treinamento de IA"
-
-class DocumentAIConfiguration(models.Model):
-    project_id = models.CharField(max_length=100)
-    location = models.CharField(max_length=50)
-    processor_id = models.CharField(max_length=100)
-
-    class Meta:
-        verbose_name = "Configuração de Processamento de Documento"
-        verbose_name_plural = "Configurações de Processamento de Documento"
-
-    def __str__(self):
-        return f"DocumentAI Configuração ({self.project_id})"
 
 class TrainingCapture(models.Model):
     token = models.ForeignKey(UserToken, related_name='training_captures', on_delete=models.CASCADE)

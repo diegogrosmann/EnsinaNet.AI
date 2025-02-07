@@ -19,7 +19,6 @@ from .models import (
     TokenAIConfiguration, 
     AITrainingFile, 
     AIClientTraining,
-    DocumentAIConfiguration,
     DoclingConfiguration
 )
 from .forms import (
@@ -150,47 +149,11 @@ class AIClientTrainingAdmin(admin.ModelAdmin):
     form = AIClientTrainingForm
     list_display = ('ai_client_configuration', 'trained_model_name') 
     readonly_fields = ('trained_model_name',)
-
-class DocumentAIConfigurationForm(forms.ModelForm):
-    credentials_file = forms.FileField(
-        required=False,
-        label='Upload Credentials JSON',
-        help_text='Faça o upload do arquivo JSON das credenciais do DocumentAI.'
-    )
-
-    class Meta:
-        model = DocumentAIConfiguration
-        fields = ['project_id', 'location', 'processor_id', 'credentials_file']
-
-    def save(self, commit=True):
-        instance = super().save(commit=False)
-        credentials_file = self.cleaned_data.get('credentials_file')
-
-        if credentials_file:
-            credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-            if not credentials_path:
-                raise forms.ValidationError('A variável de ambiente GOOGLE_APPLICATION_CREDENTIALS não está definida.')
-
-            full_path = os.path.join(settings.BASE_DIR, credentials_path)
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
-
-            with open(full_path, 'wb+') as destination:
-                for chunk in credentials_file.chunks():
-                    destination.write(chunk)
-
-            logger.info(f"Arquivo de credenciais do DocumentAI salvo em: {full_path}")
-
-        if commit:
-            instance.save()
-        return instance
-
-class DocumentAIConfigurationAdmin(admin.ModelAdmin):
-    form = DocumentAIConfigurationForm
-    list_display = ('project_id', 'location', 'processor_id')
-    readonly_fields = ()
-
+    
+class DoclingConfigurationAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
-        if DocumentAIConfiguration.objects.exists():
+        # Permite adicionar apenas se não existir nenhuma configuração
+        if self.model.objects.exists():
             return False
         return True
 
@@ -199,5 +162,4 @@ admin.site.register(AIClientConfiguration, AIClientConfigurationAdmin)
 admin.site.register(TokenAIConfiguration, TokenAIConfigurationAdmin)
 admin.site.register(AITrainingFile, AITrainingFileAdmin)
 admin.site.register(AIClientTraining, AIClientTrainingAdmin)
-admin.site.register(DocumentAIConfiguration, DocumentAIConfigurationAdmin)
-admin.site.register(DoclingConfiguration)
+admin.site.register(DoclingConfiguration, DoclingConfigurationAdmin)

@@ -13,6 +13,7 @@ class AIClientConfig:
     created_at: datetime = field(default_factory=datetime.now)
     enabled: bool = True,
     api_url: str = None
+    use_system_message: bool = False
 
 @dataclass
 class ProcessingResult:

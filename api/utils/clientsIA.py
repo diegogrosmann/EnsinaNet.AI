@@ -9,9 +9,6 @@ Classes:
 
 Funções:
     register_ai_client: Decorador para registro de clientes
-    parsear_html: Função auxiliar para parsing de HTML
-    processar_documento: Processamento de documentos via Google Document AI
-    extract_text: Extração de texto de documentos codificados em base64
 """
 import json
 import logging
@@ -33,6 +30,7 @@ from azure.core.credentials import AzureKeyCredential
 from api.exceptions import APICommunicationError, MissingAPIKeyError
 
 from django.template import engines
+from api.constants import AIClientConfig
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -48,23 +46,23 @@ def register_ai_client(cls):
     AI_CLIENT_MAPPING[cls.name] = cls
     return cls
 
-from api.constants import AIClientConfig
-
 class APIClient:
     """
     Classe base abstrata para implementação de clientes de IA.
 
     Attributes:
-        name (str): Nome identificador do cliente
-        can_train (bool): Indica se o cliente suporta treinamento
-        api_key (str): Chave de API para autenticação
-        model_name (str): Nome do modelo de IA a ser usado
-        configurations (dict): Configurações específicas do cliente
+        name (str): Nome identificador do cliente.
+        can_train (bool): Indica se o cliente suporta treinamento.
+        supports_system_message (bool): Indica se a API suporta envio de mensagem do sistema.
+        api_key (str): Chave de API para autenticação.
+        model_name (str): Nome do modelo de IA a ser usado.
+        configurations (dict): Configurações específicas do cliente.
     """
     name = ''
     can_train = False
-    
-    def __init__(self, config: dict):
+    supports_system_message = True  # NOVO: indica suporte nativo a System Message
+
+    def __init__(self, config: AIClientConfig):
         self.api_key = config.api_key
         self.model_name = config.model_name
         self.configurations = config.configurations.copy() if config.configurations else {}
@@ -72,6 +70,7 @@ class APIClient:
         self.prompt = config.prompt or ""
         self.responses = config.responses or ""
         self.api_url = config.api_url or None
+        self.use_system_message = config.use_system_message  # NOVO: define se o usuário deseja usar System Message
         if not self.api_key:
             raise MissingAPIKeyError(f"{self.name}: Chave de API não configurada.")
         logger.debug(f"{self.__class__.__name__}.__init__: Inicializado com configurações: {self.configurations}")
@@ -101,10 +100,18 @@ class APIClient:
             kwargs['train'] = self._prepare_train(**kwargs)
             base_instruction = html.unescape(self._render_template(self.base_instruction, kwargs))
             prompt = html.unescape(self._render_template(self.prompt, kwargs))
-            return {
-                'base_instruction': base_instruction,
-                'user_prompt': prompt
-            }
+            # Lógica para combinar ou não system message
+            if self.use_system_message and self.supports_system_message:
+                return {
+                    'base_instruction': base_instruction,
+                    'user_prompt': prompt
+                }
+            else:
+                combined_prompt = (base_instruction + "\n" + prompt).strip()
+                return {
+                    'base_instruction': '',
+                    'user_prompt': combined_prompt
+                }
         except Exception as e:
             logger.error(f"{self.__class__.__name__}._prepare_prompts: Nenhuma mensagem retornada.")
             raise APICommunicationError("Nenhuma mensagem retornada.")
@@ -155,13 +162,13 @@ class APIClient:
         raise NotImplementedError(f"{self.name}: Subclasses devem implementar o método _call_api.")
 
 @register_ai_client
-class ChatGPTClient(APIClient):
+class OpenAiClient(APIClient):  # Renomeado de ChatGPTClient para OpenAiClient
     """Cliente para interação com a API do ChatGPT.
 
     Implementa a interface para comunicação com o modelo GPT da OpenAI,
     incluindo suporte para fine-tuning e geração de respostas.
     """
-    name = "ChatGPT"
+    name = "OpenAi"
     can_train = True
 
     def config(self, config: AIClientConfig):
@@ -197,19 +204,19 @@ class ChatGPTClient(APIClient):
         """
         function_name = '_call_api'
         try:
-            system_messages = [
-                {
+            messages = []
+            if prompts['base_instruction'].strip():
+                messages.append({
                     "role": "system",
                     "content": prompts['base_instruction']
-                },
-                {
-                    "role": "user", 
-                    "content": prompts['user_prompt']
-                }
-            ]
+                })
+            messages.append({
+                "role": "user", 
+                "content": prompts['user_prompt']
+            })
 
             self.configurations['model'] = self.model_name
-            self.configurations['messages'] = system_messages
+            self.configurations['messages'] = messages
 
             response = self.client.chat.completions.create(**self.configurations)
 
@@ -242,27 +249,27 @@ class ChatGPTClient(APIClient):
         try:
             # Ler o conteúdo JSON do arquivo de treinamento
             with training_file.open('r') as f:
-                training_data = json.load(f)
+                raw_training_data = json.load(f)
             
-            # Certifique-se de que training_data é uma lista de exemplos
-            if not isinstance(training_data, list):
+            # Certifique-se de que raw_training_data é uma lista de exemplos
+            if not isinstance(raw_training_data, list):
                 raise ValueError("O arquivo de treinamento deve conter uma lista de exemplos.")
             
             # Converter para JSONL no formato desejado
-            jsonl_content = "\n".join([
+            jsonl_data = "\n".join([
                 json.dumps({
                     "messages": [
-                        {"role": "system", "content": example.get("system_message", "")},
-                        {"role": "user", "content": example.get("user_message", "")},
-                        {"role": "assistant", "content": example.get("response", "")}
+                        {"role": "system", "content": training_example.get("system_message", "")},
+                        {"role": "user", "content": training_example.get("user_message", "")},
+                        {"role": "assistant", "content": training_example.get("response", "")}
                     ]
                 }) 
-                for example in training_data
+                for training_example in raw_training_data
             ])
             
             # Salvar o conteúdo JSONL em um arquivo temporário
             with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.jsonl') as temp_file:
-                temp_file.write(jsonl_content)
+                temp_file.write(jsonl_data)
                 temp_file_path = temp_file.name
             
             # Criar o arquivo de treinamento via API
@@ -297,57 +304,6 @@ class ChatGPTClient(APIClient):
         except Exception as e:
             logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao treinar o modelo: {e}")
             raise APICommunicationError("Erro ao treinar o modelo: {e}")
-        logger.info(f"{self.__class__.__name__}.{function_name}: Treinamento concluído com sucesso.")
-
-@register_ai_client
-class ChatGTPNotSysClient(ChatGPTClient):
-    """
-    Variante do ChatGPTClient que não utiliza 'system' como papel.
-    """
-    name = "ChatGTPNotSys"
-    can_train = False
-
-    def _call_api(self, prompts: dict) -> str:
-        """
-        Implementa a chamada à API do ChatGPT.
-        """
-        function_name = '_call_api'
-        try:
-            system_messages = [
-                {
-                    "role": "user",
-                    "content": prompts['base_instruction']
-                },
-                {
-                    "role": "user", 
-                    "content": prompts['user_prompt']
-                }
-            ]
-
-            self.configurations['model'] = self.model_name
-            self.configurations['messages'] = system_messages
-
-            response = self.client.chat.completions.create(**self.configurations)
-
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Chat criado e concluído com sucesso.")
-
-            if not response:
-                logger.error(f"{self.__class__.__name__}.{function_name}: Nenhuma mensagem retornada.")
-                raise APICommunicationError("Nenhuma mensagem retornada.")
-
-            if isinstance(response, list) and response:
-                response = response[0]
-
-            if not hasattr(response, 'choices') or not isinstance(response.choices, list):
-                error_message = getattr(response, 'model_extra', {}).get('error', 'Unknown error')
-                raise APICommunicationError(f"{error_message}")
-            
-            return response.choices[0].message.content
-
-        except Exception as e:
-            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
-            raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
-
 
 @register_ai_client
 class GeminiClient(APIClient):
@@ -377,25 +333,25 @@ class GeminiClient(APIClient):
         """
         function_name = '_call_api'
         try:
-            prompt = prompts['user_prompt']
-            system = prompts['base_instruction']
-
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Iniciando comparação.")
-
-            gemini_config = genai.types.GenerationConfig(
-                **self.configurations
-            )
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Modelo configurado.")
-
+            messages = []
+            if prompts['base_instruction'].strip():
+                messages.append({
+                    "role": "system",
+                    "content": prompts['base_instruction']
+                })
+            messages.append({
+                "role": "user",
+                "content": prompts['user_prompt']
+            })
+            combined_prompt = ""
+            for m in messages:
+                combined_prompt += f"{m['role'].upper()}: {m['content']}\n"
+            gemini_config = genai.types.GenerationConfig(**self.configurations)
             model = genai.GenerativeModel(
-                model_name=self.model_name, 
-                system_instruction=system
+                model_name=self.model_name,
+                system_instruction=None  # removido para usar combined_prompt
             )
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Configuração de geração definida.")
-
-            m = model.generate_content(prompt, generation_config=gemini_config)
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Conteúdo gerado com sucesso.")
-
+            m = model.generate_content(combined_prompt, generation_config=gemini_config)
             return m.text
         except Exception as e:
             logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
@@ -418,13 +374,13 @@ class GeminiClient(APIClient):
         try:
             # Ler o conteúdo JSON do arquivo de treinamento
             with training_file.open('r') as f:
-                training_data_raw = json.load(f)
+                raw_training_data = json.load(f)
 
             # Preparar os dados de treinamento no formato esperado
             training_data = []
-            for example in training_data_raw:
-                text_input = example.get('user_message', '')
-                output = example.get('response', '')
+            for training_example in raw_training_data:
+                text_input = training_example.get('user_message', '')
+                output = training_example.get('response', '')
                 training_data.append({'text_input': text_input, 'output': output})
 
             # Obter os parâmetros de treinamento, usando valores padrão se não fornecidos
@@ -457,16 +413,15 @@ class GeminiClient(APIClient):
         except Exception as e:
             logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao treinar o modelo: {e}")
             raise APICommunicationError("Erro ao treinar o modelo: {e}")
-        logger.info(f"{self.__class__.__name__}.{function_name}: Treinamento concluído com sucesso.")
 
 @register_ai_client
-class Claude3Client(APIClient):
+class AnthropicClient(APIClient):  # Renomeado de Claude3Client para AnthropicClient
     """Cliente para interação com a API do Anthropic Claude 3.
 
     Implementa a interface para comunicação com o modelo Claude 3,
     focando na geração de respostas precisas.
     """
-    name = "Claude3"
+    name = "Anthropic"
     can_train = False
     
     def __init__(self, config: AIClientConfig):
@@ -498,7 +453,8 @@ class Claude3Client(APIClient):
             ]
 
             self.configurations['model'] = self.model_name
-            self.configurations['system'] = system
+            if system.strip():
+                self.configurations['system'] = system
             self.configurations['messages'] = messages
             self.configurations['max_tokens'] = self.configurations.get('max_tokens', 1024)
 
@@ -547,19 +503,19 @@ class PerplexityClient(APIClient):
         try:
             url = self.api_url if self.api_url else "https://api.perplexity.ai/chat/completions"
 
-            system_messages = [
-                {
+            messages = []
+            if prompts['base_instruction'].strip():
+                messages.append({
                     "role": "system",
                     "content": prompts['base_instruction']
-                },
-                {
-                    "role": "user", 
-                    "content": prompts['user_prompt']
-                }
-            ]
+                })
+            messages.append({
+                "role": "user",
+                "content": prompts['user_prompt']
+            })
 
             self.configurations['model'] = self.model_name
-            self.configurations['messages'] = system_messages
+            self.configurations['messages'] = messages
 
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
@@ -616,16 +572,19 @@ class LlamaClient(APIClient):
     def _call_api(self, prompts: dict) -> str:
         function_name = '_call_api'
         try:
-
-            system_messages = [
-                {"role": "system", "content": prompts['base_instruction']},
-                {"role": "user", "content": prompts['user_prompt']}
-                #{"role": "system", "content": "Responda como Lord Voldemor!"},
-                #{"role": "user", "content": "Olá, tudo bem?"}
-            ]
+            messages = []
+            if prompts['base_instruction'].strip():
+                messages.append({
+                    "role": "system",
+                    "content": prompts['base_instruction']
+                })
+            messages.append({
+                "role": "user",
+                    "content": prompts['user_prompt']
+            })
 
             self.configurations['model'] = self.model_name
-            self.configurations['messages'] = system_messages
+            self.configurations['messages'] = messages
             self.configurations['stream'] = self.configurations.get('stream', False)
 
             response = self.client.run(self.configurations)          
@@ -661,7 +620,7 @@ class LlamaClient(APIClient):
             raise APICommunicationError(f"{e}")
 
 @register_ai_client
-class AzureOpenAIClient(ChatGPTClient):
+class AzureOpenAIClient(OpenAiClient):  # Atualizado para herdar de OpenAiClient
     """
     Cliente para interação com a API do Azure OpenAI.
 
@@ -723,19 +682,18 @@ class AzureClient(APIClient):
     def _call_api(self, prompts: dict) -> str:
         function_name = '_call_api'
         try:
-            system_messages = [
-                {
-                    "role": "user", #mudar para system
+            messages = []
+            if prompts['base_instruction'].strip():
+                messages.append({
+                    "role": "system",
                     "content": prompts['base_instruction']
-                },
-                {
-                    "role": "user", 
-                    "content": prompts['user_prompt']
-                }
-            ]
+                })
+            messages.append({
+                "role": "user", 
+                "content": prompts['user_prompt']
+            })
 
-            #self.configurations['model'] = self.model_name
-            self.configurations['messages'] = system_messages
+            self.configurations['messages'] = messages
 
             response = self.client.complete(**self.configurations)
 

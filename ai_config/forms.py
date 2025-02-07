@@ -101,7 +101,7 @@ class AIClientConfigurationForm(forms.ModelForm):
 
     class Meta:
         model = AIClientConfiguration
-        fields = ['name', 'ai_client', 'enabled', 'model_name', 'configurations']
+        fields = ['name', 'ai_client', 'enabled', 'model_name', 'configurations', 'use_system_message']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -123,7 +123,22 @@ class AIClientConfigurationForm(forms.ModelForm):
         else:
             # Se não existir ou for None, também deixamos vazio
             self.initial['configurations'] = ""
+        
+        if self.instance and not self.instance._state.adding and self.instance.ai_client_id:
+            client_class = AI_CLIENT_MAPPING.get(self.instance.ai_client.api_client_class)
+            if client_class and not getattr(client_class, "supports_system_message", False):
+                self.fields['use_system_message'].initial = False
+                self.fields['use_system_message'].disabled = True
 
+    def clean(self):
+        cleaned_data = super().clean()
+        ai_client = cleaned_data.get('ai_client')
+        if ai_client:
+            client_class = AI_CLIENT_MAPPING.get(ai_client.api_client_class)
+            if client_class and not getattr(client_class, "supports_system_message", False):
+                cleaned_data['use_system_message'] = False
+        return cleaned_data
+    
     def clean_name(self):
         """
         Exemplo simples para garantir que 'name' não esteja vazio
