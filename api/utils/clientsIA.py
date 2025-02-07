@@ -19,11 +19,9 @@ import tempfile
 import time
 import html
 import requests
-import markdown
 import ast
 
 from dotenv import load_dotenv
-from bs4 import BeautifulSoup
 
 from openai import OpenAI, AzureOpenAI
 import google.generativeai as genai
@@ -49,35 +47,6 @@ def register_ai_client(cls):
     """Decorador para registrar automaticamente classes de clientes de IA."""
     AI_CLIENT_MAPPING[cls.name] = cls
     return cls
-
-def parsear_html(html: str) -> str:
-    """
-    Parseia o HTML fornecido e retorna a div mais externa.
-
-    Args:
-        html (str): String contendo o HTML a ser parseado
-
-    Returns:
-        str: HTML da div mais externa ou HTML original se nenhuma div for encontrada
-
-    Raises:
-        ValueError: Se ocorrer um erro durante o parse do HTML
-    """
-    function_name = 'parsear_html'
-    try:
-        logger.debug(f"{function_name}: Iniciando o parseamento do HTML.")
-        soup = BeautifulSoup(html, 'html.parser')
-        outer_div = soup.find('div')
-        if (outer_div):
-            logger.debug(f"{function_name}: Div externa encontrada no HTML.")
-            return str(outer_div)
-        else:
-            logger.warning(f"{function_name}: Nenhuma div encontrada no HTML. Retornando o HTML original.")
-            return html
-
-    except Exception as e:
-        logger.error(f"{function_name}: Erro ao parsear o HTML: {e}")
-        raise ValueError(f"Erro ao parsear o HTML: {e}")
 
 from api.constants import AIClientConfig
 
@@ -257,7 +226,7 @@ class ChatGPTClient(APIClient):
                 error_message = getattr(response, 'model_extra', {}).get('error', 'Unknown error')
                 raise APICommunicationError(f"{error_message}")
 
-            return parsear_html(response.choices[0].message.content)
+            return response.choices[0].message.content
 
         except Exception as e:
             logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
@@ -373,7 +342,7 @@ class ChatGTPNotSysClient(ChatGPTClient):
                 error_message = getattr(response, 'model_extra', {}).get('error', 'Unknown error')
                 raise APICommunicationError(f"{error_message}")
             
-            return parsear_html(response.choices[0].message.content)
+            return response.choices[0].message.content
 
         except Exception as e:
             logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
@@ -427,8 +396,7 @@ class GeminiClient(APIClient):
             m = model.generate_content(prompt, generation_config=gemini_config)
             logger.debug(f"{self.__class__.__name__}.{function_name}: Conteúdo gerado com sucesso.")
 
-            # Utiliza o método parsearHTML
-            return parsear_html(m.text)
+            return m.text
         except Exception as e:
             logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
@@ -544,7 +512,7 @@ class Claude3Client(APIClient):
                 logger.error(f"{self.__class__.__name__}.{function_name}: Nenhuma mensagem retornada.")
                 raise APICommunicationError("Nenhuma mensagem retornada.")
 
-            return parsear_html(response.content[0].text)
+            return response.content[0].text
 
         except Exception as e:
             logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
@@ -617,8 +585,7 @@ class PerplexityClient(APIClient):
 
             logger.debug(f"{self.__class__.__name__}.{function_name}: Resposta recebida com sucesso.")
 
-            generated_text = markdown.markdown(generated_text)
-            return parsear_html(generated_text)
+            return generated_text
 
         except Exception as e:
             logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
@@ -688,7 +655,7 @@ class LlamaClient(APIClient):
 
                 raise APICommunicationError(f"{error_message}")
 
-            return parsear_html(response["choices"][0]["message"]["content"])
+            return response["choices"][0]["message"]["content"]
         except Exception as e:
             logger.error(f"{self.__class__.__name__}._call_api: Erro ao comunicar com a API: {e}")
             raise APICommunicationError(f"{e}")
@@ -782,7 +749,7 @@ class AzureClient(APIClient):
                 error_message = response[0].model_extra.get('error', 'Unknown error')
                 raise APICommunicationError(f"{error_message}")
             
-            return parsear_html(response.choices[0].message.content)
+            return response.choices[0].message.content
 
         except Exception as e:
             logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")

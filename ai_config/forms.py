@@ -204,10 +204,11 @@ class TokenAIConfigurationForm(forms.ModelForm):
     )
     responses = forms.CharField(
         label='Respostas',
-        widget=TinyMCE(attrs={
-            'class': 'tinymce', 
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
             'cols': 100, 
-            'rows': 20
+            'rows': 20,
+            'placeholder': 'Insira o prompt personalizado para este token.'
         }),
         required=False,
         help_text='Insira as respostas para todas as comparações.'
@@ -411,9 +412,11 @@ class TrainingExampleForm(forms.Form):
     )
     response = forms.CharField(
         label='Resposta',
-        widget=TinyMCE(attrs={ 
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
             'cols': 100, 
-            'rows': 20
+            'rows': 20,
+            'placeholder': 'Insira o prompt personalizado para este token.'
         }),
         required=False,
         help_text='Insira as respostas para todas as comparações.'
