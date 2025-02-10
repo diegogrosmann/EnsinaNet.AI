@@ -33,6 +33,10 @@ def compare(request: HttpRequest) -> HttpResponse:
     Raises:
         Exception: Caso o prompt não esteja configurado na configuração do usuário.
     """
+    # Obtenha a versão definida na URL
+    version = request.version  
+
+    logger.info(f"Versão da API: {version}")
     logger.info("Iniciando operação compare em lote.")
     auth_header = request.META.get('HTTP_AUTHORIZATION', '')
     token_key = auth_header.split(' ')[-1] if ' ' in auth_header else auth_header
