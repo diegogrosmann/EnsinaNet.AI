@@ -271,17 +271,30 @@ class OpenAiClient(APIClient):
         attempt_call(self.name)
 
         try:
+
+                        # Verifica se existe a chave 'base_instruction', se não existir, usa string vazia
+            base_instruction = prompts.get('base_instruction', '').strip()
+            prompt = prompts.get('prompt', '').strip()
+            
+            # Monta o prompt final
+            final_prompt = f"{base_instruction}\n{prompt}" if base_instruction else prompt
+
             messages = []
-            if prompts['base_instruction'].strip():
-                messages.append({"role": "system", "content": prompts['base_instruction']})
+            if final_prompt.strip():
+                messages.append({"role": "system", "content": final_prompt})
             messages.append({"role": "user", "content": prompts['user_prompt']})
 
             self.configurations['model'] = self.model_name
             self.configurations['messages'] = messages
 
-            response = self.client.chat.completions.create(**self.configurations)
+            try:
+                response = self.client.chat.completions.create(**self.configurations)
+            except Exception as e:
+                logger.error(f"{self.__class__.__name__}._call_api: Erro na chamada da API do OpenAI: {e}", exc_info=True)
+                raise APICommunicationError(f"Erro ao comunicar com a API: {e}") from e
 
             if not response:
+                logger.error(f"{self.__class__.__name__}._call_api: Nenhuma mensagem retornada do OpenAI.")
                 raise APICommunicationError("Nenhuma mensagem retornada do OpenAI.")
 
             if hasattr(response, 'choices') and response.choices:
@@ -289,6 +302,7 @@ class OpenAiClient(APIClient):
                 record_success(self.name)
                 return response.choices[0].message.content
             else:
+                logger.error(f"{self.__class__.__name__}._call_api: Resposta do OpenAI inválida: {response}")
                 raise APICommunicationError("Resposta do OpenAI inválida.")
 
         except Exception as e:

@@ -1,6 +1,8 @@
 """
-Módulo responsável por implementar um circuit breaker básico em memória, 
-de modo a controlar falhas sucessivas ao chamar serviços externos de IA.
+Módulo responsável por implementar um circuit breaker básico em memória.
+
+Este módulo controla falhas sucessivas ao chamar serviços externos de IA,
+evitando chamadas desnecessárias quando um serviço está indisponível.
 
 Classes:
     CircuitOpenError: Exceção levantada quando o circuito está aberto.
@@ -15,6 +17,10 @@ Funções:
 
 import time
 import threading
+import logging  # Adicionado import do logging
+
+# Configuração do logger
+logger = logging.getLogger(__name__)
 
 class CircuitOpenError(Exception):
     """Exceção lançada quando o circuito está aberto para determinado cliente."""
@@ -35,83 +41,68 @@ FAILURE_THRESHOLD = 3   # Número máximo de falhas para "abrir" o circuito
 OPEN_SECONDS = 30       # Tempo (segundos) que o circuito permanece aberto antes de 'half_open'
 
 def attempt_call(client_name: str):
-    """
-    Verifica se podemos chamar a IA ou se o circuito está aberto.
-    Lança CircuitOpenError se o circuito ainda estiver aberto ou 
-    se não for possível prosseguir.
+    """Verifica se é possível chamar o cliente de IA.
 
     Args:
-        client_name (str): Nome do cliente de IA (por ex. "OpenAi", "Gemini", etc.).
+        client_name (str): Nome do cliente de IA.
+
+    Raises:
+        CircuitOpenError: Se o circuito estiver aberto ou não puder prosseguir.
     """
     with CIRCUIT_LOCK:
-        state = CIRCUIT_STATE.get(client_name, {
-            "state": "closed",
-            "failure_count": 0,
-            "opened_at": 0.0
-        })
+        if client_name not in CIRCUIT_STATE:
+            CIRCUIT_STATE[client_name] = {
+                "state": "closed",
+                "failure_count": 0,
+                "opened_at": 0
+            }
+            return
 
-        # Se o estado for 'open', checar se podemos migrar para 'half_open'
+        state = CIRCUIT_STATE[client_name]
+        
+        # Se estiver aberto, verifica timeout
         if state["state"] == "open":
-            elapsed = time.time() - state["opened_at"]
-            if elapsed < OPEN_SECONDS:
-                # Ainda dentro do período de 'open'
-                raise CircuitOpenError(f"Circuito para {client_name} está aberto.")
-            else:
-                # Tenta mudar para half_open
+            if time.time() - state["opened_at"] > OPEN_SECONDS:
                 state["state"] = "half_open"
-                CIRCUIT_STATE[client_name] = state
-        # Se estiver 'closed' ou 'half_open', deixamos prosseguir.
-        # Sem retorno = sucesso.
+                logger.info(f"Circuito em half-open para {client_name}")
+            else:
+                raise CircuitOpenError(f"Circuito aberto para {client_name}")
 
 def record_failure(client_name: str):
-    """
-    Registra uma falha na chamada do cliente de IA.
-    Se o número de falhas atingir ou exceder FAILURE_THRESHOLD,
-    abre o circuito e marca o timestamp de abertura.
+    """Registra uma falha na chamada do cliente de IA.
 
     Args:
         client_name (str): Nome do cliente de IA.
     """
     with CIRCUIT_LOCK:
-        state = CIRCUIT_STATE.get(client_name, {
-            "state": "closed",
-            "failure_count": 0,
-            "opened_at": 0.0
-        })
+        if client_name not in CIRCUIT_STATE:
+            CIRCUIT_STATE[client_name] = {
+                "state": "closed",
+                "failure_count": 0,
+                "opened_at": 0
+            }
+        
+        state = CIRCUIT_STATE[client_name]
         state["failure_count"] += 1
 
-        # Se estava half_open, com 1 falha abrimos imediatamente
-        # ou se estava closed e atingiu o threshold, abre também
-        if state["state"] in ["half_open", "closed"]:
-            if state["failure_count"] >= FAILURE_THRESHOLD:
-                state["state"] = "open"
-                state["opened_at"] = time.time()
-
-        CIRCUIT_STATE[client_name] = state
+        if state["failure_count"] >= FAILURE_THRESHOLD:
+            state["state"] = "open"
+            state["opened_at"] = time.time()
+            logger.warning(f"Circuito aberto para {client_name} após {state['failure_count']} falhas")
 
 def record_success(client_name: str):
-    """
-    Registra sucesso na chamada do cliente de IA.
-    Se o circuito estiver em half_open, fecha (reseta contagem).
-    Caso esteja closed, apenas zera contagem de falhas.
+    """Registra sucesso na chamada do cliente de IA.
 
     Args:
         client_name (str): Nome do cliente de IA.
     """
     with CIRCUIT_LOCK:
-        state = CIRCUIT_STATE.get(client_name, {
-            "state": "closed",
-            "failure_count": 0,
-            "opened_at": 0.0
-        })
-
+        if client_name not in CIRCUIT_STATE:
+            return
+            
+        state = CIRCUIT_STATE[client_name]
+        
         if state["state"] == "half_open":
-            # Sucesso no modo half_open => volta a 'closed'
             state["state"] = "closed"
             state["failure_count"] = 0
-        else:
-            # Se está 'closed', apenas zera falhas
-            if state["state"] == "closed":
-                state["failure_count"] = 0
-
-        CIRCUIT_STATE[client_name] = state
+            logger.info(f"Circuito fechado para {client_name} após sucesso")
