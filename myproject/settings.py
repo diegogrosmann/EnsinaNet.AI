@@ -105,6 +105,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'api.middleware.GlobalExceptionMiddleware',
+    'api.middleware.MonitoringMiddleware', 
 ]
 
 ROOT_URLCONF = 'myproject.urls'

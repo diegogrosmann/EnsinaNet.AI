@@ -3,13 +3,18 @@ Este módulo fornece utilitários e clientes para interagir com diferentes APIs 
 
 Classes:
     APIClient: Classe base para todos os clientes de IA
-    ChatGPTClient: Cliente para OpenAI GPT
+    OpenAiClient: Cliente para OpenAI GPT
     GeminiClient: Cliente para Google Gemini
-    ...
+    AnthropicClient: Cliente para Anthropic Claude
+    PerplexityClient: Cliente para Perplexity
+    LlamaClient: Cliente para Llama
+    AzureOpenAIClient: Cliente para Azure OpenAI
+    AzureClient: Cliente para Azure
 
 Funções:
     register_ai_client: Decorador para registro de clientes
 """
+
 import json
 import logging
 import tempfile
@@ -28,9 +33,16 @@ from azure.ai.inference import ChatCompletionsClient
 from azure.core.credentials import AzureKeyCredential
 
 from api.exceptions import APICommunicationError, MissingAPIKeyError
-
 from django.template import engines
 from api.constants import AIClientConfig
+
+# (NOVO) Import do circuito
+from api.utils.circuit_breaker import (
+    attempt_call,
+    record_failure,
+    record_success,
+    CircuitOpenError
+)
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -38,7 +50,7 @@ logger = logging.getLogger(__name__)
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
 
-# Decorador para registrar automaticamente os clientes de IA
+# Decorador para registrar automaticamente classes de clientes de IA
 AI_CLIENT_MAPPING = {}
 
 def register_ai_client(cls):
@@ -63,12 +75,23 @@ class APIClient:
         api_key (str): Chave de API para autenticação.
         model_name (str): Nome do modelo de IA a ser usado.
         configurations (dict): Configurações específicas do cliente.
+        base_instruction (str): Instrução base (opcional).
+        prompt (str): Prompt personalizado (opcional).
+        responses (str): Respostas personalizadas (opcional).
+        api_url (str): URL da API (opcional).
+        use_system_message (bool): Se deve usar "system message" (caso suportado).
     """
     name = ''
     can_train = False
     supports_system_message = True  # NOVO: indica suporte nativo a System Message
 
     def __init__(self, config: AIClientConfig):
+        """
+        Construtor para a classe base de clientes de IA.
+
+        Args:
+            config (AIClientConfig): Configurações de IA (api_key, model_name etc.).
+        """
         self.api_key = config.api_key
         self.model_name = config.model_name
         self.configurations = config.configurations.copy() if config.configurations else {}
@@ -76,30 +99,25 @@ class APIClient:
         self.prompt = config.prompt or ""
         self.responses = config.responses or ""
         self.api_url = config.api_url or None
-        self.use_system_message = config.use_system_message  # NOVO: define se o usuário deseja usar System Message
+        self.use_system_message = config.use_system_message
+
         if not self.api_key:
             raise MissingAPIKeyError(f"{self.name}: Chave de API não configurada.")
         logger.debug(f"{self.__class__.__name__}.__init__: Inicializado com configurações: {self.configurations}")
 
     def _render_template(self, template: str, context: dict):
-        """Renderiza um template utilizando a engine do Django.
+        """Renderiza um template usando a engine do Django.
 
         Args:
             template (str): Template em formato de string.
-            context (dict): Dicionário de contexto para renderização.
+            context (dict): Dicionário de contexto.
 
         Returns:
             str: Template renderizado.
         """
-        # Obtenha a engine de templates padrão do Django
         django_engine = engines['django']
-
-        # Crie um template a partir da string
         template_engine = django_engine.from_string(template)
-
-        # Renderize o template com o contexto
         return template_engine.render(context)
-
 
     def _prepare_prompts(self, **kwargs) -> dict:
         """Prepara os prompts para a API de IA.
@@ -108,18 +126,20 @@ class APIClient:
             **kwargs: Parâmetros para a preparação do prompt.
 
         Returns:
-            dict: Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+            dict: Dicionário com 'base_instruction' e 'user_prompt'.
 
         Raises:
-            APICommunicationError: Se ocorrer algum erro na preparação dos prompts.
+            APICommunicationError: Se houver erro na preparação.
         """
         try:
             kwargs['ai_name'] = self.name
             kwargs['answer_format'] = self.responses
             kwargs['can_train'] = self.can_train
             kwargs['train'] = self._prepare_train(**kwargs)
+
             base_instruction = html.unescape(self._render_template(self.base_instruction, kwargs))
             prompt = html.unescape(self._render_template(self.prompt, kwargs))
+
             # Lógica para combinar ou não system message
             if self.use_system_message and self.supports_system_message:
                 return {
@@ -133,19 +153,19 @@ class APIClient:
                     'user_prompt': combined_prompt
                 }
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}._prepare_prompts: Nenhuma mensagem retornada.")
+            logger.error(f"{self.__class__.__name__}._prepare_prompts: Nenhuma mensagem retornada. Detalhe: {e}")
             raise APICommunicationError("Nenhuma mensagem retornada.")
-    
-    def _prepare_train(self, **kwargs) -> dict:
-        """Prepara os dados de treinamento.
+
+    def _prepare_train(self, **kwargs) -> str:
+        """
+        Prepara dados de treinamento para fine-tuning, caso exista um arquivo de treinamento.
 
         Args:
-            **kwargs: Parâmetros que podem incluir um arquivo de treinamento.
+            **kwargs: Pode conter 'training_file'.
 
         Returns:
-            dict: Dados de treinamento processados.
+            str: String com exemplos, pronta para ser anexada ao prompt.
         """
-        # Prepara os dados de treinamento
         training_file = kwargs.get('training_file')
         training = ''
         if training_file:
@@ -157,302 +177,276 @@ class APIClient:
                     system_message = example.get('system_message', '')
                     user_message = example.get('user_message', '')
                     response = example.get('response', '')
-                    training_examples += f"Exemplo:\n Mensagem do Usuário {system_message}\n {user_message}\nResposta esperada: {response}\n\n"
-                # Adicionar os exemplos ao prompt
-                training = f"{training} \n {training_examples}"
+                    training_examples += f"Exemplo:\n Mensagem do Sistema: {system_message}\n"\
+                                         f"Mensagem do Usuário: {user_message}\n"\
+                                         f"Resposta esperada: {response}\n\n"
+                training = training_examples
             except Exception as e:
                 logger.error(f"{self.__class__.__name__}._prepare_train: Erro ao ler o arquivo de treinamento: {e}")
         return training
 
     def compare(self, data: dict) -> tuple:
-        """Compara dados utilizando a API de IA.
+        """
+        Compara dados usando a API de IA.
 
         Args:
-            data (dict): Dados para comparação dos prompts.
+            data (dict): Dados para comparação.
 
         Returns:
-            tuple: (Resposta da IA, instrução do sistema, prompt do usuário).
-
-        Raises:
-            APICommunicationError: Se ocorrer erro durante a comunicação.
+            tuple: (resposta da IA, system_message, user_message).
         """
-        function_name = 'compare'
-        logger.debug(f"{self.__class__.__name__}.{function_name}: Iniciando comparação.")
         prompts = self._prepare_prompts(**data)
         response = self._call_api(prompts)
         system_message = prompts.get('base_instruction', '')
         user_message = prompts.get('user_prompt', '')
-        logger.debug(f"{self.__class__.__name__}.{function_name}: Comparação concluída com sucesso.")
         return (response, system_message, user_message)
 
     def _call_api(self, prompts: dict) -> str:
-        """Método abstrato para chamada da API específico a cada cliente.
+        """
+        Método abstrato para chamar a API. 
+        As subclasses devem implementar.
 
         Args:
-            prompts (dict): Prompts preparados para a API.
+            prompts (dict): Com 'base_instruction' e 'user_prompt'.
 
         Returns:
-            str: Resposta da API.
+            str: Resposta da IA.
 
         Raises:
-            NotImplementedError: Se não implementado pela subclasse.
+            NotImplementedError: Se não for sobrescrito pela subclasse.
         """
         raise NotImplementedError(f"{self.name}: Subclasses devem implementar o método _call_api.")
 
-@register_ai_client
-class OpenAiClient(APIClient):  # Renomeado de ChatGPTClient para OpenAiClient
-    """Cliente para interação com a API da OpenAI.
+    def train(self, training_file, parameters={}):
+        """
+        Realiza o treinamento do modelo (fine-tuning) se suportado.
 
-    Implementa a comunicação com o modelo GPT da OpenAI, permitindo também fine-tuning.
-    """
+        Args:
+            training_file: Arquivo de treinamento.
+            parameters (dict): Parâmetros de treinamento (opcional).
+
+        Returns:
+            str: Nome do modelo treinado.
+
+        Raises:
+            NotImplementedError: Se a IA não suportar treinamento.
+        """
+        raise NotImplementedError("Este cliente não suporta treinamento.")
+
+
+@register_ai_client
+class OpenAiClient(APIClient):
+    """Cliente para interação com a API da OpenAI."""
+
     name = "OpenAi"
     can_train = True
 
-    def config(self, config: AIClientConfig):
-        """
-        Recebe as configurações específicas para o ChatGPT
-        e inicializa os atributos necessários do cliente.
-        """
-        super().__init__(config)
-    
     def __init__(self, config: AIClientConfig):
         """
-        Construtor para ChatGPTClient.
+        Construtor para OpenAiClient.
 
         Args:
-            config (AIClientConfig): Objeto de configuração com informações
-            como api_key, model_name e api_url.
+            config (AIClientConfig): Configurações necessárias (api_key, api_url, etc.).
         """
-        self.config(config)
-        args = {
-            'api_key': self.api_key
-        }
-
-        # Verifica se base_url não é nulo e adiciona ao dicionário
+        super().__init__(config)
+        args = {'api_key': self.api_key}
         if self.api_url is not None:
             args['base_url'] = self.api_url
-
-        # Cria a instância do cliente OpenAI com os argumentos apropriados
         self.client = OpenAI(**args)
 
     def _call_api(self, prompts: dict) -> str:
-        """Realiza a chamada à API do OpenAI.
+        """
+        Realiza a chamada à API do OpenAI.
 
         Args:
-            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+            prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
 
         Returns:
-            str: Conteúdo da mensagem de resposta da API.
+            str: Conteúdo de resposta.
 
         Raises:
-            APICommunicationError: Se ocorrer erro na comunicação com a API.
+            APICommunicationError: Em caso de falha na comunicação.
         """
-        function_name = '_call_api'
+        # (NOVO) Tenta "fechar" o circuito se estiver aberto
+        attempt_call(self.name)
+
         try:
             messages = []
             if prompts['base_instruction'].strip():
-                messages.append({
-                    "role": "system",
-                    "content": prompts['base_instruction']
-                })
-            messages.append({
-                "role": "user", 
-                "content": prompts['user_prompt']
-            })
+                messages.append({"role": "system", "content": prompts['base_instruction']})
+            messages.append({"role": "user", "content": prompts['user_prompt']})
 
             self.configurations['model'] = self.model_name
             self.configurations['messages'] = messages
 
             response = self.client.chat.completions.create(**self.configurations)
 
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Chat criado e concluído com sucesso.")
-
             if not response:
-                logger.error(f"{self.__class__.__name__}.{function_name}: Nenhuma mensagem retornada.")
-                raise APICommunicationError("Nenhuma mensagem retornada.")
+                raise APICommunicationError("Nenhuma mensagem retornada do OpenAI.")
 
-            if isinstance(response, list) and response:
-                response = response[0]
-
-            if not hasattr(response, 'choices') or not isinstance(response.choices, list):
-                error_message = getattr(response, 'model_extra', {}).get('error', 'Unknown error')
-                raise APICommunicationError(f"{error_message}")
-
-            return response.choices[0].message.content
+            if hasattr(response, 'choices') and response.choices:
+                # (NOVO) Deu certo => registra success no circuit
+                record_success(self.name)
+                return response.choices[0].message.content
+            else:
+                raise APICommunicationError("Resposta do OpenAI inválida.")
 
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
+            # (NOVO) Qualquer falha => registra failure
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                # Se for especificamente o circuito aberto, relançamos
+                raise e
+            logger.error(f"{self.__class__.__name__}._call_api: Erro ao comunicar com OpenAI: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
 
     def train(self, training_file, parameters={}):
-        """Realiza o treinamento do modelo utilizando fine-tuning.
+        """
+        Realiza fine-tuning do modelo OpenAI.
 
         Args:
-            training_file: Arquivo com dados de treinamento em formato JSON.
-            parameters (dict, optional): Parâmetros para o fine-tuning.
+            training_file: Arquivo de treinamento em JSON.
+            parameters (dict): Parâmetros de fine-tuning.
 
         Returns:
             str: Nome do modelo treinado.
 
         Raises:
-            APICommunicationError: Se ocorrer erro durante o treinamento.
-        """        
+            APICommunicationError: Em caso de erro no processo de fine-tuning.
+        """
         function_name = 'train'
         logger.info(f"{self.__class__.__name__}.{function_name}: Treinamento iniciado.")
-        temp_file_path = None  # Inicializa a variável para garantir que exista no finalmente
+        temp_file_path = None
         try:
-            # Ler o conteúdo JSON do arquivo de treinamento
             with training_file.open('r') as f:
                 raw_training_data = json.load(f)
-            
-            # Certifique-se de que raw_training_data é uma lista de exemplos
+
             if not isinstance(raw_training_data, list):
                 raise ValueError("O arquivo de treinamento deve conter uma lista de exemplos.")
-            
-            # Converter para JSONL no formato desejado
+
             jsonl_data = "\n".join([
                 json.dumps({
                     "messages": [
-                        {"role": "system", "content": training_example.get("system_message", "")},
-                        {"role": "user", "content": training_example.get("user_message", "")},
-                        {"role": "assistant", "content": training_example.get("response", "")}
+                        {"role": "system", "content": ex.get("system_message", "")},
+                        {"role": "user", "content": ex.get("user_message", "")},
+                        {"role": "assistant", "content": ex.get("response", "")}
                     ]
-                }) 
-                for training_example in raw_training_data
+                })
+                for ex in raw_training_data
             ])
-            
-            # Salvar o conteúdo JSONL em um arquivo temporário
+
             with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.jsonl') as temp_file:
                 temp_file.write(jsonl_data)
                 temp_file_path = temp_file.name
-            
-            # Criar o arquivo de treinamento via API
+
             with open(temp_file_path, 'rb') as f:
-                ai_training_file = self.client.files.create(
-                    file=f,
-                    purpose='fine-tune'
-                )
-            
-            # Criar o trabalho de fine-tuning
-            fine_tuning_job = self.client.fine_tuning.jobs.create(
-                training_file=ai_training_file.id,
+                ai_file = self.client.files.create(file=f, purpose='fine-tune')
+
+            job = self.client.fine_tuning.jobs.create(
+                training_file=ai_file.id,
                 model=self.model_name,
                 hyperparameters=parameters
             )
 
-            # Loop para verificar o status do ajuste fino
             while True:
-                # Recupere o status atual do trabalho
-                status = self.client.fine_tuning.jobs.retrieve(fine_tuning_job.id)
-                status_state = status.status
-
-                # Verifique se o trabalho foi concluído
-                if status_state == 'succeeded':
-                    logger.debug(f"{self.__class__.__name__}.{function_name}: Modelo treinado.")
+                status = self.client.fine_tuning.jobs.retrieve(job.id)
+                if status.status == 'succeeded':
+                    logger.debug(f"{self.__class__.__name__}.{function_name}: Modelo treinado com sucesso.")
                     return status.fine_tuned_model
-                elif status_state == 'failed':
+                elif status.status == 'failed':
                     raise APICommunicationError(f"{status.error}")
-                else:
-                    time.sleep(5)
+                time.sleep(5)
 
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao treinar o modelo: {e}")
-            raise APICommunicationError("Erro ao treinar o modelo: {e}")
+            logger.error(f"Erro ao treinar OpenAi: {e}")
+            raise APICommunicationError(f"Erro ao treinar o modelo: {e}")
+
 
 @register_ai_client
 class GeminiClient(APIClient):
-    """Cliente para interação com a API do Google Gemini.
+    """Cliente para interação com a API do Google Gemini."""
 
-    Permite treinamento e geração de conteúdo utilizando o modelo Gemini.
-    """
     name = "Gemini"
     can_train = True
-    
+
     def __init__(self, config: AIClientConfig):
         """
-        Construtor para GeminiClient, inicializando e configurando o cliente
-        generativeai com a api_key fornecida.
+        Construtor para GeminiClient, 
+        inicializando e configurando generativeai com a api_key.
 
         Args:
-            config (AIClientConfig): Objeto de configuração que contém a api_key
-            e outras configurações necessárias.
+            config (AIClientConfig): Contém api_key, model_name etc.
         """
         super().__init__(config)
         genai.configure(api_key=self.api_key)
 
     def _call_api(self, prompts: dict) -> str:
-        """Realiza a chamada à API do Gemini.
+        """
+        Realiza a chamada à API do Gemini.
 
         Args:
-            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+            prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
 
         Returns:
-            str: Texto gerado pela API do Gemini.
+            str: Texto gerado pela API.
 
         Raises:
-            APICommunicationError: Se ocorrer erro na comunicação com a API.
+            APICommunicationError: Em caso de falha na comunicação com Gemini.
         """
-        function_name = '_call_api'
+        attempt_call(self.name)
         try:
             messages = []
             if prompts['base_instruction'].strip():
-                messages.append({
-                    "role": "system",
-                    "content": prompts['base_instruction']
-                })
-            messages.append({
-                "role": "user",
-                "content": prompts['user_prompt']
-            })
+                messages.append({"role": "system", "content": prompts['base_instruction']})
+            messages.append({"role": "user", "content": prompts['user_prompt']})
+
             combined_prompt = ""
             for m in messages:
                 combined_prompt += f"{m['role'].upper()}: {m['content']}\n"
+
             gemini_config = genai.types.GenerationConfig(**self.configurations)
-            model = genai.GenerativeModel(
-                model_name=self.model_name,
-                system_instruction=None  # removido para usar combined_prompt
-            )
+            model = genai.GenerativeModel(model_name=self.model_name, system_instruction=None)
             m = model.generate_content(combined_prompt, generation_config=gemini_config)
+
+            record_success(self.name)
             return m.text
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"GeminiClient _call_api: Erro ao comunicar com Gemini: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
 
     def train(self, training_file, parameters={}):
-        """Executa o treinamento do modelo Gemini.
+        """
+        Executa o treinamento do modelo Gemini.
 
         Args:
-            training_file: Arquivo com os dados de treinamento em formato JSON.
-            parameters (dict, optional): Parâmetros de configuração para o treinamento.
+            training_file: Arquivo com dados de treinamento em formato JSON.
+            parameters (dict): Parâmetros adicionais (epoch_count, batch_size etc.).
 
         Returns:
             str: Nome do modelo treinado.
 
         Raises:
-            APICommunicationError: Se ocorrer erro durante o treinamento.
+            APICommunicationError: Em caso de erro no treinamento.
         """
-        function_name = 'train'
-        logger.info(f"{self.__class__.__name__}.{function_name}: Treinamento iniciado.")
         try:
-            # Ler o conteúdo JSON do arquivo de treinamento
             with training_file.open('r') as f:
                 raw_training_data = json.load(f)
 
-            # Preparar os dados de treinamento no formato esperado
             training_data = []
-            for training_example in raw_training_data:
-                text_input = training_example.get('user_message', '')
-                output = training_example.get('response', '')
+            for example in raw_training_data:
+                text_input = example.get('user_message', '')
+                output = example.get('response', '')
                 training_data.append({'text_input': text_input, 'output': output})
 
-            # Obter os parâmetros de treinamento, usando valores padrão se não fornecidos
             display_name = parameters.get('display_name', 'Fine-tuned Model')
             epoch_count = int(parameters.get('epoch_count', 1))
             batch_size = int(parameters.get('batch_size', 4))
             learning_rate = float(parameters.get('learning_rate', 0.001))
-            source_model = "models/"+self.model_name  # Modelo base para fine-tuning
+            source_model = "models/" + self.model_name
 
-            # Iniciar o treinamento
             operation = genai.create_tuned_model(
                 display_name=display_name,
                 source_model=source_model,
@@ -461,134 +455,111 @@ class GeminiClient(APIClient):
                 learning_rate=learning_rate,
                 training_data=training_data,
             )
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Operação de treinamento iniciada com sucesso.")
 
-            # Aguardar a conclusão do treinamento
             while not operation.done():
-                logger.debug(f"{self.__class__.__name__}.{function_name}: Treinamento em andamento...")
-                time.sleep(10)  # Aguarda 10 segundos antes de verificar novamente
+                time.sleep(10)
 
             result = operation.result()
-            trained_model_name = result.name  # Nome do modelo treinado
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Treinamento concluído. Modelo treinado: {trained_model_name}")
-            return trained_model_name
+            return result.name
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao treinar o modelo: {e}")
-            raise APICommunicationError("Erro ao treinar o modelo: {e}")
+            logger.error(f"Erro ao treinar Gemini: {e}")
+            raise APICommunicationError(f"Erro ao treinar o modelo: {e}")
+
 
 @register_ai_client
-class AnthropicClient(APIClient):  # Renomeado de Claude3Client para AnthropicClient
-    """Cliente para interação com a API do Anthropic Claude 3.
+class AnthropicClient(APIClient):
+    """Cliente para interação com a API do Anthropic (Claude 3)."""
 
-    Foca na geração de respostas precisas utilizando o modelo Claude 3.
-    """
     name = "Anthropic"
     can_train = False
-    
+
     def __init__(self, config: AIClientConfig):
         """
-        Construtor para Claude3Client, que configura o cliente anthropic
-        utilizando a api_key fornecida.
+        Construtor para AnthropicClient, configurando anthropic.Anthropic.
 
         Args:
-            config (AIClientConfig): Configurações necessárias para inicializar
-            o cliente Anthropic.
+            config (AIClientConfig): Contém api_key, model_name etc.
         """
         super().__init__(config)
         self.client = anthropic.Anthropic(api_key=self.api_key)
 
     def _call_api(self, prompts: dict) -> str:
-        """Realiza a chamada à API do Claude 3.
+        """
+        Realiza a chamada à API do Claude 3.
 
         Args:
-            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+            prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
 
         Returns:
-            str: Texto de resposta retornado pela API do Claude 3.
+            str: Texto de resposta do Claude.
 
         Raises:
-            APICommunicationError: Se ocorrer erro na comunicação com a API.
+            APICommunicationError: Em caso de falha de rede ou resposta inválida.
         """
-        function_name = '_call_api'
+        attempt_call(self.name)
         try:
             system = prompts['base_instruction']
             user_prompt = prompts['user_prompt']
 
-            messages = [
-                {
-                    "role": "user",
-                    "content": user_prompt
-                }
-            ]
-
             self.configurations['model'] = self.model_name
             if system.strip():
                 self.configurations['system'] = system
-            self.configurations['messages'] = messages
+            self.configurations['messages'] = [{"role": "user", "content": user_prompt}]
             self.configurations['max_tokens'] = self.configurations.get('max_tokens', 1024)
 
-            response = self.client.messages.create(
-                **self.configurations
-            )
-
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Mensagem enviada e resposta recebida com sucesso.")
+            response = self.client.messages.create(**self.configurations)
 
             if not response or not response.content or not response.content[0].text:
-                logger.error(f"{self.__class__.__name__}.{function_name}: Nenhuma mensagem retornada.")
-                raise APICommunicationError("Nenhuma mensagem retornada.")
+                raise APICommunicationError("Nenhuma mensagem retornada de Anthropic.")
 
+            record_success(self.name)
             return response.content[0].text
 
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
-            raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"AnthropicClient _call_api: {e}")
+            raise APICommunicationError(f"Erro ao comunicar com Anthropic: {e}")
+
 
 @register_ai_client
 class PerplexityClient(APIClient):
-    """Cliente para interação com a API da Perplexity.
+    """Cliente para interação com a API da Perplexity."""
 
-    Fornece capacidades de geração de texto através dos modelos da Perplexity.
-    """
     name = "Perplexity"
     can_train = False
 
     def __init__(self, config: AIClientConfig):
         """
-        Construtor para o PerplexityClient, responsável por configurar
-        previamente o cliente para comunicação com a API da Perplexity.
+        Construtor para o PerplexityClient.
 
         Args:
-            config (AIClientConfig): Objeto de configuração com api_key,
-            model_name e outras informações.
+            config (AIClientConfig): Contém api_key, model_name etc.
         """
         super().__init__(config)
 
     def _call_api(self, prompts: dict) -> str:
-        """Realiza a chamada à API da Perplexity.
+        """
+        Realiza a chamada à API da Perplexity.
 
         Args:
-            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+            prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
 
         Returns:
-            str: Texto gerado pela API da Perplexity.
+            str: Texto gerado pela Perplexity.
 
         Raises:
             APICommunicationError: Se a API retornar erro ou nenhum texto.
         """
-        function_name = '_call_api'
+        attempt_call(self.name)
         try:
             url = self.api_url if self.api_url else "https://api.perplexity.ai/chat/completions"
 
             messages = []
             if prompts['base_instruction'].strip():
-                messages.append({
-                    "role": "system",
-                    "content": prompts['base_instruction']
-                })
-            messages.append({
-                    "role": "user",
-                    "content": prompts['user_prompt']
-            })
+                messages.append({"role": "system", "content": prompts['base_instruction']})
+            messages.append({"role": "user", "content": prompts['user_prompt']})
 
             self.configurations['model'] = self.model_name
             self.configurations['messages'] = messages
@@ -597,38 +568,31 @@ class PerplexityClient(APIClient):
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
+            response = requests.post(url, json=self.configurations, headers=headers)
 
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Enviando solicitação para a API.")
-            response = requests.post(url, json= self.configurations, headers=headers)
-
-            # Verificar o status da resposta
             if response.status_code != 200:
-                logger.error(f"{self.__class__.__name__}.{function_name}: API retornou o código de status {response.status_code}")
-                raise APICommunicationError(f"API retornou o código de status {response.status_code}")
+                raise APICommunicationError(f"API Perplexity retornou código {response.status_code}.")
 
-            response_json = response.json()
-
-            # Extrair o texto gerado da resposta
-            generated_text = response_json['choices'][0]['message'].get('content', '')
+            resp_json = response.json()
+            generated_text = resp_json['choices'][0]['message'].get('content', '')
 
             if not generated_text:
-                logger.error(f"{self.__class__.__name__}.{function_name}: Nenhum texto retornado na resposta.")
-                raise APICommunicationError("Nenhum texto retornado na resposta.")
+                raise APICommunicationError("Nenhum texto retornado pela Perplexity.")
 
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Resposta recebida com sucesso.")
-
+            record_success(self.name)
             return generated_text
-
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
-            raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"PerplexityClient _call_api: {e}")
+            raise APICommunicationError(f"Erro Perplexity: {e}")
+
 
 @register_ai_client
 class LlamaClient(APIClient):
-    """Cliente para interação com a API do Llama.
+    """Cliente para interação com a API do Llama."""
 
-    Fornece capacidades de geração de texto utilizando o modelo Llama.
-    """
     name = "Llama"
     can_train = False
 
@@ -637,172 +601,136 @@ class LlamaClient(APIClient):
         Construtor para o LlamaClient.
 
         Args:
-            config (AIClientConfig): Objeto de configuração contendo a
-            api_key e o model_name, entre outras informações.
+            config (AIClientConfig): Contém api_key, model_name etc.
         """
         super().__init__(config)
         self.client = LlamaAPI(self.api_key)
 
     def _call_api(self, prompts: dict) -> str:
-        """Realiza a chamada à API do Llama.
+        """
+        Realiza a chamada à API do Llama.
 
         Args:
-            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+            prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
 
         Returns:
-            str: Conteúdo da resposta gerada pela API do Llama.
+            str: Conteúdo retornado pela API do Llama.
 
         Raises:
-            APICommunicationError: Se ocorrer erro na comunicação com a API.
+            APICommunicationError: Se ocorrer erro na comunicação.
         """
-        function_name = '_call_api'
+        attempt_call(self.name)
         try:
             messages = []
             if prompts['base_instruction'].strip():
-                messages.append({
-                    "role": "system",
-                    "content": prompts['base_instruction']
-                })
-            messages.append({
-                "role": "user",
-                    "content": prompts['user_prompt']
-            })
+                messages.append({"role": "system", "content": prompts['base_instruction']})
+            messages.append({"role": "user", "content": prompts['user_prompt']})
 
             self.configurations['model'] = self.model_name
             self.configurations['messages'] = messages
             self.configurations['stream'] = self.configurations.get('stream', False)
 
-            response = self.client.run(self.configurations)          
+            response = self.client.run(self.configurations)
 
             if not response:
-                logger.error(f"{function_name}: Nenhum texto retornado na resposta.")
-                raise APICommunicationError("Nenhum texto retornado na resposta.")
-            
+                raise APICommunicationError("Nenhum texto retornado de Llama.")
+
             response = response.json()
-
             if "choices" not in response:
+                error_str = response[0].get('error', 'Erro Llama')
+                raise APICommunicationError(error_str)
 
-                s = response[0].get('error', 'Unknown error')
-
-                # 1) Se possível, separe o código de status do "dicionário"
-                parts = s.split(": ", 1)
-                if len(parts) == 2:
-                    _, dict_str = parts
-
-                    # 2) Converta a parte do dicionário em um objeto Python
-                    data = ast.literal_eval(dict_str)
-
-                    # 3) Extraia o valor da chave "error"
-                    error_message = data["error"]
-                else:
-                    error_message = s
-
-                raise APICommunicationError(f"{error_message}")
-
+            record_success(self.name)
             return response["choices"][0]["message"]["content"]
+
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}._call_api: Erro ao comunicar com a API: {e}")
-            raise APICommunicationError(f"{e}")
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"LlamaClient _call_api: {e}")
+            raise APICommunicationError(f"Erro Llama: {e}")
+
 
 @register_ai_client
-class AzureOpenAIClient(OpenAiClient):  # Atualizado para herdar de OpenAiClient
-    """Cliente para interação com a API do Azure OpenAI.
-
-    Comunica-se com o OpenAI hospedado no Azure usando os parâmetros apropriados.
+class AzureOpenAIClient(OpenAiClient):
     """
+    Cliente para interação com a API do Azure OpenAI.
+    Herda a maior parte da lógica do OpenAiClient.
+    """
+
     name = "AzureOpenAI"
     can_train = False
 
     def __init__(self, config: AIClientConfig):
         """
-        Construtor para o AzureOpenAIClient, configurando o cliente AzureOpenAI
-        com os parâmetros adequados.
+        Construtor para AzureOpenAIClient.
 
         Args:
-            config (AIClientConfig): Configura as informações necessárias
-            para acessar o serviço Azure OpenAI.
+            config (AIClientConfig): Configurações com azure_endpoint, api_key etc.
         """
-        super().config(config)
-
-        self.client = AzureOpenAI(  
-            azure_endpoint=self.api_url,  
+        super().__init__(config)
+        self.client = AzureOpenAI(
+            azure_endpoint=self.api_url,
             api_key=self.api_key,
             api_version="2024-05-01-preview"
         )
 
+
 @register_ai_client
 class AzureClient(APIClient):
-    """Cliente para interação com a API do Azure.
+    """Cliente para interação com a API do Azure (ChatCompletionsClient)."""
 
-    Configura o cliente para comunicação com o serviço Azure de IA.
-    """
     name = "Azure"
     can_train = False
 
     def __init__(self, config: AIClientConfig):
         """
-        Construtor para o AzureClient, responsável por inicializar o cliente
-        ChatCompletionsClient usando as credenciais do Azure.
+        Construtor para o AzureClient.
 
         Args:
-            config (AIClientConfig): Contém a api_key e informações de endpoint
-            para se conectar ao serviço Azure.
+            config (AIClientConfig): Contém api_key e api_url.
         """
         super().__init__(config)
-
-        # Configuração do transporte com timeout aumentado
-        #transport = RequestsTransport(connection_timeout=1200, read_timeout=1200)  # 1200 segundos de timeout
-
-
         self.client = ChatCompletionsClient(
             endpoint=self.api_url,
             credential=AzureKeyCredential(self.api_key),
-            #transport=transport
         )
 
     def _call_api(self, prompts: dict) -> str:
-        """Realiza a chamada à API do Azure.
+        """
+        Realiza a chamada à API do Azure.
 
         Args:
-            prompts (dict): Dicionário com os prompts 'base_instruction' e 'user_prompt'.
+            prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
 
         Returns:
-            str: Conteúdo da resposta retornada pelo Azure.
+            str: Conteúdo retornado.
 
         Raises:
-            APICommunicationError: Se ocorrer erro na comunicação com a API.
+            APICommunicationError: Se não houver resposta válida.
         """
-        function_name = '_call_api'
+        attempt_call(self.name)
         try:
             messages = []
             if prompts['base_instruction'].strip():
-                messages.append({
-                    "role": "system",
-                    "content": prompts['base_instruction']
-                })
-            messages.append({
-                "role": "user", 
-                "content": prompts['user_prompt']
-            })
-
+                messages.append({"role": "system", "content": prompts['base_instruction']})
+            messages.append({"role": "user", "content": prompts['user_prompt']})
             self.configurations['messages'] = messages
 
             response = self.client.complete(**self.configurations)
 
-            logger.debug(f"{self.__class__.__name__}.{function_name}: Chat criado e concluído com sucesso.")
-
             if not response:
-                logger.error(f"{self.__class__.__name__}.{function_name}: Nenhuma mensagem retornada.")
-                raise APICommunicationError("Nenhuma mensagem retornada.")
+                raise APICommunicationError("Nenhuma mensagem retornada de Azure.")
 
-            if not isinstance(response.choices, list):
-                error_message = response[0].model_extra.get('error', 'Unknown error')
-                raise APICommunicationError(f"{error_message}")
-            
+            if not hasattr(response, 'choices') or not response.choices:
+                raise APICommunicationError("Resposta inválida da Azure API")
+
+            record_success(self.name)
             return response.choices[0].message.content
 
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}.{function_name}: Erro ao comunicar com a API: {e}")
-            raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
-
-
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"AzureClient _call_api: {e}")
+            raise APICommunicationError(f"Erro Azure: {e}")

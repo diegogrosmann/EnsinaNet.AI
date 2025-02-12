@@ -1316,21 +1316,17 @@ sequenceDiagram
 
     C->>V: Requisição com dados
     V->>OAI: compare(data)
-    
+
     OAI->>OAI: _prepare_prompts()
-    
+
     rect rgb(0, 51, 102)
         Note over OAI: Preparação do Contexto
         OAI->>OAI: _render_template(prompt)
         OAI->>OAI: Configura system_message
     end
 
-    OAI->>API: client.chat.completions.create(
-        model=gpt-3.5-turbo,
-        messages=[...],
-        temperature=0.7
-    )
-    
+    OAI->>API: "client.chat.completions.create(model='gpt-3.5-turbo', messages=[...], temperature=0.7)"
+
     alt Resposta Bem-sucedida
         API-->>OAI: Resposta OpenAI
         OAI->>Cache: Armazena resultado (TTL=1h)
@@ -1338,7 +1334,7 @@ sequenceDiagram
     else Erro de API
         API-->>OAI: Erro 429 (Rate Limit)
         OAI->>OAI: Aguarda 2s
-        OAI->>API: Retry (max 3x)
+        OAI->>API: "Retry (max 3x)"
     end
 ```
 
@@ -1353,20 +1349,17 @@ sequenceDiagram
 
     C->>V: Requisição com dados
     V->>G: compare(data)
-    
+
     G->>G: _prepare_prompts()
-    
+
     rect rgb(0, 51, 102)
         Note over G: Preparação do Modelo
         G->>G: genai.configure(api_key)
         G->>G: model = genai.GenerativeModel('gemini-pro')
     end
 
-    G->>API: model.generate_content(
-        contents=[prompt],
-        generation_config={...}
-    )
-    
+    G->>API: "model.generate_content(contents=[prompt], generation_config={...})"
+
     alt Resposta Bem-sucedida
         API-->>G: Resposta Gemini
         G->>Cache: Armazena resultado (TTL=1h)
@@ -1388,21 +1381,17 @@ sequenceDiagram
 
     C->>V: Requisição com dados
     V->>A: compare(data)
-    
+
     A->>A: _prepare_prompts()
-    
+
     rect rgb(0, 51, 102)
         Note over A: Configuração Claude
         A->>A: client = anthropic.Anthropic()
         A->>A: Prepara mensagem
     end
 
-    A->>API: client.messages.create(
-        model="claude-3-opus-20240229",
-        max_tokens=1000,
-        messages=[...]
-    )
-    
+    A->>API: "client.messages.create(model='claude-3-opus-20240229', max_tokens=1000, messages=[...])"
+
     alt Resposta Bem-sucedida
         API-->>A: Resposta Claude
         A->>Cache: Armazena resultado (TTL=1h)
@@ -1410,7 +1399,7 @@ sequenceDiagram
     else Erro de Contexto
         API-->>A: ContextLengthError
         A->>A: Reduz tamanho do prompt
-        A->>API: Retry com prompt reduzido
+        A->>API: "Retry com prompt reduzido"
     end
 ```
 
@@ -1425,24 +1414,14 @@ sequenceDiagram
 
     C->>V: Requisição com dados
     V->>AZ: compare(data)
-    
-    AZ->>AZ: _prepare_prompts()
-    
-    rect rgb(0, 51, 102)
-        Note over AZ: Configuração Azure
-        AZ->>AZ: client = AzureOpenAI(
-            azure_endpoint="...",
-            api_key="...",
-            api_version="2024-02-15-preview"
-        )
-    end
 
-    AZ->>API: client.chat.completions.create(
-        model="gpt-4",
-        messages=[...],
-        temperature=0.7
-    )
-    
+    AZ->>AZ: _prepare_prompts()
+
+    %% Se quiser apenas uma linha com "client = AzureOpenAI(...)":
+    AZ->>AZ: "client = AzureOpenAI(azure_endpoint='...', api_key='...', api_version='2024-02-15-preview')"
+
+    AZ->>API: "client.chat.completions.create(model='gpt-4', messages=[...], temperature=0.7)"
+
     alt Resposta Bem-sucedida
         API-->>AZ: Resposta Azure
         AZ->>Cache: Armazena resultado (TTL=1h)
@@ -1464,21 +1443,17 @@ sequenceDiagram
 
     C->>V: Requisição com dados
     V->>L: compare(data)
-    
+
     L->>L: _prepare_prompts()
-    
+
     rect rgb(0, 51, 102)
         Note over L: Configuração Llama
         L->>L: client = LlamaAPI(api_key)
         L->>L: Prepara requisição
     end
 
-    L->>API: client.run(
-        prompt=prompt,
-        stream=False,
-        max_tokens=1000
-    )
-    
+    L->>API: "client.run(prompt=prompt, stream=False, max_tokens=1000)"
+
     alt Resposta Bem-sucedida
         API-->>L: Resposta Llama
         L->>Cache: Armazena resultado (TTL=1h)
@@ -1612,95 +1587,75 @@ sequenceDiagram
 ##### 8.3. Timeout e Retry
 ```mermaid
 sequenceDiagram
-    participant C as Cliente API
-    participant V as Views
-    participant R as Retry Handler
-    participant IA as Cliente IA
-    participant API as API Externa
+    participant C as Chamador (usuário/admin)
+    participant V as View/Util
+    participant O as OpenAiClient
+    participant API as OpenAI FineTune
 
-    C->>V: Requisição
-    V->>R: Processa com retry
-    
-    rect rgb(0, 51, 102)
-        Note over R: Configuração
-        R->>R: max_retries = 3
-        R->>R: timeout = 5s
-        R->>R: backoff = exponential
-    end
-    
-    loop Até max_retries ou sucesso
-        R->>IA: Tentativa de requisição
+    C->>V: Solicita treinamento (train)
+    V->>O: O.train(training_file, parameters)
+
+    Note over O: Cria file JSONL c/ exemplos
+    O->>API: POST /files (upload do arquivo)
+
+    alt Falha de Upload
+        API-->>O: Erro (429 ou outro)
+        O-->>V: Lança APICommunicationError
+        V-->>C: Retorna erro
+    else Sucesso no Upload
+        API-->>O: OK, file_id
+        O->>API: POST /fine_tuning/jobs (model=self.model_name)
+        API-->>O: Retorna job (id)
         
-        alt Sucesso
-            IA->>API: Requisição
-            API-->>IA: Resposta 200
-            IA-->>R: Sucesso
-            R-->>V: Retorna resultado
-        else Timeout
-            IA->>API: Requisição
-            API--xIA: Timeout (5s)
-            IA-->>R: TimeoutError
-            R->>R: Calcula próximo backoff
-            R->>R: Aguarda (2^n * 100ms)
-        else Erro 429 (Rate Limit)
-            IA->>API: Requisição
-            API-->>IA: 429 Too Many Requests
-            IA-->>R: RateLimitError
-            R->>R: Extrai Retry-After
-            R->>R: Aguarda tempo especificado
+        loop Checa status até concluir
+            O->>API: GET /fine_tuning/jobs/<id>
+            alt status=succeeded
+                API-->>O: Fine-tune concluído
+                O-->>V: Retorna nome do modelo final
+                V-->>C: "Modelo treinado: gpt-3.5-turbo-finetuned"
+            else status=failed
+                API-->>O: "failed"
+                O-->>V: Lança APICommunicationError
+                V-->>C: "Erro ao treinar o modelo"
+            else
+                API-->>O: "still running"
+                O->>O: Aguarda 5s
+            end
         end
-    end
-    
-    alt Máximo de tentativas atingido
-        R-->>V: MaxRetriesExceeded
-        V-->>C: Status 503 + Erro
     end
 ```
 
 ##### 8.4. Validação de Dados
 ```mermaid
 sequenceDiagram
-    participant C as Cliente API
+    participant C as Cliente (chamando API)
     participant V as Views
-    participant VH as Validation Handler
-    participant S as Schema
-    participant L as Logger
+    participant P as process_request_data
+    participant F as DjangoForms/ModelForms
 
-    C->>V: Requisição com dados
-    V->>VH: Valida payload
-    
-    rect rgb(0, 51, 102)
-        Note over VH: Validação Estrutural
-        VH->>S: Carrega schema JSON
-        VH->>VH: Valida estrutura
-    end
-    
-    alt Estrutura Inválida
-        VH-->>V: SchemaError
-        V-->>C: Status 400 + Detalhes
-        VH->>L: Registra erro de schema
-    else Estrutura OK
-        rect rgb(0, 51, 102)
-            Note over VH: Validação de Conteúdo
-            VH->>VH: Valida tipos
-            VH->>VH: Valida tamanhos
-            VH->>VH: Valida formatos
+    C->>V: POST /api/v1/compare/ (JSON)
+    alt Falta 'students' ou 'instructor'
+        V-->>C: HTTP 400 {"error": "A solicitação deve conter 'students' e 'instructor'."}
+    else Estrutura básica presente
+        V->>F: Valida token e forms
+        alt Token inválido
+            F-->>V: Falha
+            V-->>C: HTTP 401 {"error":"Token inválido"}
+        else Token válido
+            V->>P: process_request_data(dados) 
+            alt Conteúdo de arquivo inválido
+                P-->>V: Lança FileProcessingError
+                V-->>C: HTTP 400 {"error":"Erro ao processar arquivo"}
+            else Tudo OK
+                V->>F: (Opcional) Valida configurações extras
+                alt Form Inválido
+                    F-->>V: Falha de form
+                    V-->>C: HTTP 400 {"error":"Formulário inválido"}
+                else Form Válido
+                    V-->>C: HTTP 200 {"students": {...resultados...}}
+                end
+            end
         end
-        
-        alt Conteúdo Inválido
-            VH-->>V: ValidationError
-            V-->>C: Status 400 + Detalhes
-            VH->>L: Registra erro de validação
-        else Dados OK
-            VH-->>V: Dados validados
-            V->>V: Processa requisição
-        end
-    end
-    
-    alt Erro Inesperado
-        VH-->>V: UnexpectedError
-        V-->>C: Status 500 + ID do Erro
-        VH->>L: Registra erro com stack
     end
 ```
 

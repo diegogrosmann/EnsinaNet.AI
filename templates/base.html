@@ -18,7 +18,9 @@
     <!-- Navbar escura -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{% url 'manage_tokens' %}"> <img src="{% static 'img/logo.png' %}" alt="Logo" height="30"> {{ SITE_NAME }}</a>
+            <a class="navbar-brand" href="{% url 'manage_tokens' %}">
+                <img src="{% static 'img/logo.png' %}" alt="Logo" height="30"> {{ SITE_NAME }}
+            </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
                     aria-controls="navbarNav" aria-expanded="false" aria-label="Alternar navegação">
                 <span class="navbar-toggler-icon"></span>
@@ -27,7 +29,15 @@
                 <ul class="navbar-nav ms-auto">
                     {% if user.is_authenticated %}
                         <li class="nav-item">
-                            <a class="nav-link" href="#">Olá, {{ user.email }}</a>
+                            <a class="nav-link" href="#">
+                                Olá, {{ user.email }}
+                            </a>
+                        </li>
+                        <!-- (NOVO) Link para Logs. Se quiser só para staff, use: if user.is_staff. -->
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'monitoring_dashboard' %}">
+                                Logs
+                            </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{% url 'logout' %}">Logout</a>

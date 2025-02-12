@@ -1,8 +1,10 @@
-"""Views para a aplicação accounts.
+"""
+Views para a aplicação accounts.
 
 Este módulo contém funções e classes que gerenciam o registro, login, logout,
 gerenciamento de tokens, configuração, redefinição de senha e confirmação de email.
 """
+
 import logging
 from typing import Any, Dict
 
@@ -26,7 +28,7 @@ from .forms import (
 )
 from .models import UserToken, Profile
 
-from ai_config.forms import UserAITrainingFileForm  
+from ai_config.forms import UserAITrainingFileForm
 from ai_config.models import AITrainingFile, AIClientGlobalConfiguration
 
 logger = logging.getLogger(__name__)
@@ -63,12 +65,18 @@ def register_view(request: HttpRequest) -> HttpResponse:
 def login_view(request: HttpRequest) -> HttpResponse:
     """Realiza autenticação e login do usuário.
 
+    (NOVO) Se o usuário já estiver logado, redireciona para 'manage_tokens'.
+
     Args:
         request (HttpRequest): Objeto de requisição HTTP.
 
     Returns:
         HttpResponse: Página renderizada ou redirecionamento após login.
     """
+    # (NOVO) Se já está logado, vai direto para manage_tokens
+    if request.user.is_authenticated:
+        return redirect('manage_tokens')
+
     if request.method == 'POST':
         form = EmailAuthenticationForm(request, data=request.POST)
         if form.is_valid():
@@ -230,7 +238,8 @@ def manage_configurations(request: HttpRequest, token_id: str) -> HttpResponse:
 
 
 class CustomPasswordResetView(ConfirmEmailView):
-    """View customizada para redefinição de senha no padrão Google.
+    """
+    View customizada para redefinição de senha no padrão Google.
 
     Attributes:
         template_name (str): Caminho do template para o formulário de reset de senha.
@@ -241,14 +250,7 @@ class CustomPasswordResetView(ConfirmEmailView):
     email_template_name = 'accounts/registration/password_reset_email.html'
 
     def get_context_data(self, **kwargs: Any) -> Dict[str, Any]:
-        """Retorna o contexto atualizado com informações do site.
-
-        Args:
-            **kwargs: Argumentos adicionais do contexto.
-
-        Returns:
-            Dict[str, Any]: Contexto atualizado com domínio, nome do site e protocolo.
-        """
+        """Retorna o contexto atualizado com informações do site."""
         context = super().get_context_data(**kwargs)
         current_site = get_current_site(self.request)
         context.update({
@@ -259,15 +261,7 @@ class CustomPasswordResetView(ConfirmEmailView):
         return context
 
     def send_mail(self, *args: Any, **kwargs: Any) -> None:
-        """Envia o email de redefinição de senha e registra o log da operação.
-
-        Args:
-            *args: Argumentos posicionais para o envio do email.
-            **kwargs: Argumentos nomeados para o envio do email.
-
-        Raises:
-            Exception: Em caso de falha no envio do email.
-        """
+        """Envia o email de redefinição de senha e registra o log da operação."""
         try:
             super().send_mail(*args, **kwargs)
             logger.info(f"E-mail de redefinição enviado para {kwargs.get('context', {}).get('email')}.")
@@ -277,29 +271,13 @@ class CustomPasswordResetView(ConfirmEmailView):
 
 
 def password_reset_done_view(request: HttpRequest) -> HttpResponse:
-    """Exibe a página de confirmação após solicitar o reset de senha.
-
-    Args:
-        request (HttpRequest): Objeto de requisição HTTP.
-
-    Returns:
-        HttpResponse: Página renderizada de confirmação.
-    """
+    """Exibe a página de confirmação após solicitar o reset de senha."""
     from django.contrib.auth.views import PasswordResetDoneView
     return PasswordResetDoneView.as_view(template_name='accounts/registration/password_reset_done.html')(request)
 
 
 def password_reset_confirm_view(request: HttpRequest, uidb64: str, token: str) -> HttpResponse:
-    """Exibe a página para confirmação do reset de senha.
-
-    Args:
-        request (HttpRequest): Objeto de requisição HTTP.
-        uidb64 (str): UID do usuário codificado.
-        token (str): Token de confirmação.
-
-    Returns:
-        HttpResponse: Página renderizada para confirmação do reset.
-    """
+    """Exibe a página para confirmação do reset de senha."""
     from django.contrib.auth.views import PasswordResetConfirmView
     return PasswordResetConfirmView.as_view(template_name='accounts/registration/password_reset_confirm.html')(
         request, uidb64=uidb64, token=token
@@ -307,37 +285,21 @@ def password_reset_confirm_view(request: HttpRequest, uidb64: str, token: str) -
 
 
 def password_reset_complete_view(request: HttpRequest) -> HttpResponse:
-    """Exibe a página informando a conclusão do reset de senha.
-
-    Args:
-        request (HttpRequest): Objeto de requisição HTTP.
-
-    Returns:
-        HttpResponse: Página renderizada indicando a conclusão.
-    """
+    """Exibe a página informando a conclusão do reset de senha."""
     from django.contrib.auth.views import PasswordResetCompleteView
     return PasswordResetCompleteView.as_view(template_name='accounts/registration/password_reset_complete.html')(request)
 
 
 class CustomConfirmEmailView(ConfirmEmailView):
-    """View customizada para confirmação de email no padrão Google.
+    """
+    View customizada para confirmação de email no padrão Google.
 
     Esta view personaliza o processo de confirmação de email, ativando o usuário
     e enviando notificação para o administrador.
     """
 
     def get(self, request: HttpRequest, key: str, *args: Any, **kwargs: Any) -> HttpResponse:
-        """Realiza a confirmação do email e ativa o usuário.
-
-        Args:
-            request (HttpRequest): Objeto de requisição HTTP.
-            key (str): Chave única para confirmação do email.
-            *args: Argumentos posicionais adicionais.
-            **kwargs: Argumentos nomeados adicionais.
-
-        Returns:
-            HttpResponse: Redirecionamento para a página de login ou registro.
-        """
+        """Realiza a confirmação do email e ativa o usuário."""
         self.kwargs['key'] = key
         try:
             confirmation = self.get_object()
