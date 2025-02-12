@@ -21,8 +21,8 @@ urlpatterns = [
         name='account_confirm_email',
     ),
     
-    path('tinymce/', include('tinymce.urls')),
-
+    path('markdownx/', include('markdownx.urls')),
+    
     # Incluir as URLs do ai_config
     path('ai-config/', include('ai_config.urls')),
 ]

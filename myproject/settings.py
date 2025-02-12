@@ -32,7 +32,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'dj_rest_auth',
     'dj_rest_auth.registration',
-    'tinymce',
+    'markdownx',
 
     # Aplicações locais
     'accounts',
@@ -306,33 +306,3 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
 # Arquivos estáticos
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')  # Adicionado
-
-TINYMCE_DEFAULT_CONFIG = {
-    'height': 300,
-    'width': '100%',
-    'cleanup_on_startup': True,
-    'custom_undo_redo_levels': 20,
-    'selector': '.tinymce',
-    'theme': 'silver',
-    'plugins': '''
-            save preview 
-            table code lists fullscreen insertdatetime nonbreaking
-            directionality searchreplace wordcount visualblocks
-            visualchars autolink charmap
-            ''',
-    'toolbar1': '''
-            fullscreen preview bold italic underline | fontselect,
-            fontsizeselect | forecolor backcolor | alignleft alignright aligncenter alignjustify |
-             indent outdent | bullist numlist | outdent indent |
-            ''',
-    'toolbar2': '''
-            undo redo | h1 h2 h3 h4 h5 h6 | table |
-            charmap hr pagebreak nonbreaking anchor |
-            visualblocks visualchars | code
-            ''',
-    'contextmenu': 'formats',
-    'menubar': False,
-    'statusbar': True,
-    'branding': False,  # Remove o branding do TinyMCE
-    'convert_urls': False,  # Mantém URLs como estão
-}

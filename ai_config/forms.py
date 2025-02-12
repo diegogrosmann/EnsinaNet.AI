@@ -9,7 +9,7 @@ import bleach
 from django import forms
 from django.forms import formset_factory, BaseFormSet, ModelChoiceField
 from django.contrib.auth import get_user_model
-from tinymce.widgets import TinyMCE
+from markdownx.widgets import MarkdownxWidget
 
 from .models import (
     AIClientGlobalConfiguration, 
@@ -224,34 +224,19 @@ class TokenAIConfigurationForm(forms.ModelForm):
     """Formulário para criação/edição de TokenAIConfiguration."""
     base_instruction = forms.CharField(
         label='Instrução Base',
-        widget=forms.Textarea(attrs={
-            'class': 'form-control',
-            'cols': 100, 
-            'rows': 20,
-            'placeholder': 'Insira a instrução base personalizada para este token.'
-        }),
+        widget=MarkdownxWidget(attrs={'class': 'form-control'}),
         required=False,
         help_text='Insira a instrução base personalizada para este token.'
     )
     prompt = forms.CharField(
         label='Prompt',
-        widget=forms.Textarea(attrs={
-            'class': 'form-control',
-            'cols': 100, 
-            'rows': 20,
-            'placeholder': 'Insira o prompt personalizado para este token.'
-        }),
+        widget=MarkdownxWidget(attrs={'class': 'form-control'}),
         required=False,
         help_text='Insira o prompt para todas as comparações.'
     )
     responses = forms.CharField(
         label='Respostas',
-        widget=forms.Textarea(attrs={
-            'class': 'form-control',
-            'cols': 100, 
-            'rows': 20,
-            'placeholder': 'Insira o prompt personalizado para este token.'
-        }),
+        widget=MarkdownxWidget(attrs={'class': 'form-control'}),
         required=False,
         help_text='Insira as respostas para todas as comparações.'
     )

@@ -1,22 +1,153 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-8">
-        <h2 class="mb-4 text-center">Configurações para o Token "{{ token.name }}"</h2>
-        <div class="card p-3 mb-3">
-            <form method="post" enctype="multipart/form-data">
-                {% csrf_token %}
-                {{ form.as_p }}
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-save"></i> Salvar Configurações
-                </button>
-            </form>
+<div class="container my-4">
+
+  <h2 class="text-center mb-4">
+    Configurações para o Token "{{ token.name }}"
+  </h2>
+
+  <form method="post" enctype="multipart/form-data" class="card shadow-sm">
+    {% csrf_token %}
+    {{ form.media }}
+    <!-- IMPORTANTE: {{ form.media }} traz os scripts e CSS necessários do django-markdownx -->
+
+    <div class="card-body">
+
+      <!-- Abas Bootstrap -->
+      <ul class="nav nav-tabs" id="tokenConfigTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" id="instruction-tab" data-bs-toggle="tab" data-bs-target="#instruction-tab-pane"
+                  type="button" role="tab" aria-controls="instruction-tab-pane" aria-selected="true">
+            Instrução Base
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="prompt-tab" data-bs-toggle="tab" data-bs-target="#prompt-tab-pane"
+                  type="button" role="tab" aria-controls="prompt-tab-pane" aria-selected="false">
+            Prompt
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="responses-tab" data-bs-toggle="tab" data-bs-target="#responses-tab-pane"
+                  type="button" role="tab" aria-controls="responses-tab-pane" aria-selected="false">
+            Respostas
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="training-tab" data-bs-toggle="tab" data-bs-target="#training-tab-pane"
+                  type="button" role="tab" aria-controls="training-tab-pane" aria-selected="false">
+            Arquivo de Treinamento
+          </button>
+        </li>
+      </ul>
+
+      <div class="tab-content border border-top-0 p-3" id="tokenConfigTabsContent" style="min-height: 400px;">
+
+        <!-- Tab 1: Instrução Base -->
+        <div class="tab-pane fade show active" id="instruction-tab-pane" role="tabpanel" aria-labelledby="instruction-tab" tabindex="0">
+          <label for="{{ form.base_instruction.id_for_label }}" class="form-label fw-semibold">
+            Instrução Base
+          </label>
+          <div class="markdownx-container">
+            {{ form.base_instruction }}
+          </div>
+          {% for error in form.base_instruction.errors %}
+            <div class="text-danger small">{{ error }}</div>
+          {% endfor %}
+          <small class="text-muted">Use Markdown para formatar o texto. A prévia aparece ao lado.</small>
         </div>
 
-        <a href="{% url 'manage_configurations' token.id %}" class="btn btn-secondary">
-            <i class="bi bi-arrow-left"></i> Voltar para Configurações do Token
+        <!-- Tab 2: Prompt -->
+        <div class="tab-pane fade" id="prompt-tab-pane" role="tabpanel" aria-labelledby="prompt-tab" tabindex="0">
+          <label for="{{ form.prompt.id_for_label }}" class="form-label fw-semibold">
+            Prompt
+          </label>
+          <div class="markdownx-container">
+            {{ form.prompt }}
+          </div>
+          {% for error in form.prompt.errors %}
+            <div class="text-danger small">{{ error }}</div>
+          {% endfor %}
+          <small class="text-muted">Texto principal enviado à IA (Markdown suportado).</small>
+        </div>
+
+        <!-- Tab 3: Respostas -->
+        <div class="tab-pane fade" id="responses-tab-pane" role="tabpanel" aria-labelledby="responses-tab" tabindex="0">
+          <label for="{{ form.responses.id_for_label }}" class="form-label fw-semibold">
+            Respostas
+          </label>
+          <div class="markdownx-container">
+            {{ form.responses }}
+          </div>
+          {% for error in form.responses.errors %}
+            <div class="text-danger small">{{ error }}</div>
+          {% endfor %}
+          <small class="text-muted">Exemplos de respostas ou trechos prontos para reuso.</small>
+        </div>
+
+        <!-- Tab 4: Arquivo de Treinamento -->
+        <div class="tab-pane fade" id="training-tab-pane" role="tabpanel" aria-labelledby="training-tab" tabindex="0">
+          <label for="{{ form.training_file.id_for_label }}" class="form-label fw-semibold">
+            Arquivo de Treinamento
+          </label>
+          {{ form.training_file }}
+          {% for error in form.training_file.errors %}
+            <div class="text-danger small">{{ error }}</div>
+          {% endfor %}
+          <small class="text-muted">Se necessário, selecione ou troque o arquivo de treinamento.</small>
+        </div>
+
+      </div> <!-- .tab-content -->
+
+      <!-- Botões -->
+      <div class="mt-4 d-flex flex-wrap gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-save"></i> Salvar Configurações
+        </button>
+        <a href="{% url 'manage_configurations' token.id %}" class="btn btn-outline-secondary">
+          <i class="bi bi-arrow-left"></i> Voltar
         </a>
-    </div>
+      </div>
+
+    </div> <!-- .card-body -->
+  </form>
 </div>
+
+<!-- CSS para deixar Editor e Preview sempre com a mesma altura -->
+<style>
+  /* Container principal do markdownx */
+  .markdownx-container .markdownx {
+    display: flex;
+    flex-wrap: wrap; /* se a tela for estreita, eles quebram linha */
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  /* Define as 2 colunas (editor e preview) com a mesma altura fixa */
+  .markdownx-container .markdownx .markdownx-editor,
+  .markdownx-container .markdownx .markdownx-preview {
+    flex: 1 1 48%;
+    min-width: 300px;
+    height: 400px;         /* define altura fixa */
+    overflow-y: auto;      /* rolagem se o conteúdo passar */
+    box-sizing: border-box; 
+  }
+
+  .markdownx-container .markdownx .markdownx-preview {
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 0.75rem;
+    background-color: #f8f9fa;
+  }
+
+  /* Força o textarea a ocupar todo o espaço no editor */
+  .markdownx-container .markdownx .markdownx-editor textarea {
+    height: 100% !important;
+    min-height: 100%;
+    box-sizing: border-box;
+    resize: none; /* para não permitir redimensionamento manual */
+  }
+</style>
 {% endblock %}
