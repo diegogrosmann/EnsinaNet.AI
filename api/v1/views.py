@@ -46,14 +46,17 @@ def compare(request: HttpRequest) -> HttpResponse:
         logger.error("Token inválido.")
         return JsonResponse({"error": "Token inválido."}, status=status.HTTP_401_UNAUTHORIZED)
     try:
-        # NOVO: Verifica se o prompt está configurado no ai_configuration do usuário
-        if not (hasattr(user_token, 'ai_configuration') and getattr(user_token.ai_configuration, 'prompt', None)):
-            raise Exception("Prompt não configurado. Por favor, configure o prompt.")
-        
+
         data = request.data
         if "students" not in data or "instructor" not in data:
             return JsonResponse({"error": "A solicitação deve conter 'students' e 'instructor'."},
                                 status=status.HTTP_400_BAD_REQUEST)
+    
+        # NOVO: Verifica se o prompt está configurado no ai_configuration do usuário
+        if not (hasattr(user_token, 'ai_configuration') and getattr(user_token.ai_configuration, 'prompt', None)):
+            raise Exception("Prompt não configurado. Por favor, configure o prompt.")
+        
+
         instructor_data = data["instructor"]
         students_data = data["students"]
 

@@ -305,4 +305,4 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
 
 # Arquivos estáticos
 STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')  # Adicionado
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')

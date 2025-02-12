@@ -33,6 +33,7 @@ O **EnsinaNet.AI** é uma aplicação web desenvolvida em Django que permite cor
   - [Como Contribuir](#como-contribuir)
   - [Testes](#testes)
   - [Tecnologias Utilizadas](#tecnologias-utilizadas)
+- [Testes](#testes)
 - [Suporte](#suporte)
   - [FAQ](#faq)
   - [Documentação Adicional](#documentação-adicional)
@@ -97,150 +98,64 @@ O **EnsinaNet.AI** é uma aplicação web desenvolvida em Django que permite cor
   ---
 
   #### Versão 1
-  - **Endpoint Principal:** `/api/v1/compare/` (método POST).
-  - **Autenticação:** As requisições devem incluir o token no header:
+  - **Endpoint Principal:** `/api/v1/compare/` (método POST)
+  - **Autenticação:** Requer token no header:
     ```http
     Authorization: Token <seu_token>
     ```
-  - **Formato da Requisição (JSON):**  
-    O payload deve conter dois objetos principais:
-    - `instructor`: Dados do instrutor.
-    - `students`: Objeto onde cada chave representa um identificador único para um aluno e o valor é um objeto com os dados do aluno.
-    
-    *Observação:* Cada campo enviado pode ser um texto simples ou um objeto do tipo _file_. Caso seja um arquivo, o objeto deverá conter as chaves:
-    - `"type": "file"`
-    - `"name"`: Nome do arquivo (para inferir o formato, ex.: `.pdf`, `.docx`)
-    - `"content"`: Conteúdo codificado em base64.
-    
-    **Exemplo de Request:**
+  - **Formato da Requisição (JSON):**
+    O payload deve conter:
+    - `instructor`: Dados do instrutor (config, network, instruction)
+    - `students`: Objeto com dados dos alunos
+
     ```json
-      {
-        "instructor": {
-            "lab": {
-                "config": {
-                  "PC-B": "set pcname PC-B \n ip 192.168.1.11 24",
-                  "S1": "",
-                },
-                "network": {
-                  "1": {
-                    "PC-B": "eth0", 
-                    "S2": "e0/0"
-                  }, 
-                  "2": {
-                    "S1": "e0/0", 
-                    "PC-A": "eth0"
-                  }
+    {
+      "instructor": {
+        "lab": {
+          "config": {
+            "PC-B": "set pcname PC-B \n ip 192.168.1.11 24",
+            "S1": ""
+          },
+          "network": {
+            "1": {
+              "PC-B": "eth0",
+              "S2": "e0/0"
             },
-            "instruction": {
-                "name": "Nome do arquivo de instrução",
-                "content": "Conteúdo do arquivo de instrução codificado em base64",
-                "type": "file"
+            "2": {
+              "S1": "e0/0",
+              "PC-A": "eth0"
             }
+          }
         },
-        "students": {
-            "aluno1": {
-                "lab": {
-                  "config": {
-                  "PC-B": "set pcname PC-B \n ip 192.168.1.11 24",
-                  "S1": "",
-                },
-                "network": {
-                  "1": {
-                    "PC-B": "eth0", 
-                    "S2": "e0/0"
-                  }, 
-                  "2": {
-                    "S1": "e0/0", 
-                    "PC-A": "eth0"
-                  }
-                },
-                "answers": {
-                    "name": "Nome do arquivo de resposta",
-                    "content": "Conteúdo do arquivo de resposta codificado em base64",
-                    "type": "file"
-                }
-            },
-            "aluno2": {
-                "answers": {
-                    "name": "Nome do arquivo de resposta",
-                    "content": "Conteúdo do arquivo de resposta codificado em base64",
-                    "type": "file"
-                }
-            },
-            "aluno3": {
-                "lab": {
-                  "config": {
-                  "PC-B": "set pcname PC-B \n ip 192.168.1.11 24",
-                  "S1": "",
-                },
-                "network": {
-                  "1": {
-                    "PC-B": "eth0", 
-                    "S2": "e0/0"
-                  }, 
-                  "2": {
-                    "S1": "e0/0", 
-                    "PC-A": "eth0"
-                  }
-                },
-            },
-            
+        "instruction": {
+          "type": "file",
+          "name": "instructions.pdf",
+          "content": "base64_encoded_content"
         }
+      },
+      "students": {
+        "aluno1": {
+          // Similar structure to instructor
+        }
+      }
     }
     ```
 
-  - **Formato da Resposta (JSON):**
-    A resposta retorna, para cada aluno, um objeto com os resultados de cada cliente de IA configurado e habilitado:
-
+  - **Resposta:**
     ```json
-      {
-          "students": {
-              "aluno1": {
-                  "OpenAi": {
-                      "response": "Resultado da comparação...(Em Markdown)",
-                      "model_name": "gpt-3.5-turbo",
-                      "configurations": { "temperature": 0.7 },
-                      "processing_time": 0.123
-                  },
-                  "Gemini": {
-                      "response": "Outro resultado... (Em Markdown)",
-                      "model_name": "gemini-pro",
-                      "configurations": {},
-                      "processing_time": 0.234
-                  }
-              },
-              "aluno2": {
-                  "OpenAi": {
-                      "response": "Resultado da comparação...",
-                      "model_name": "gpt-4",
-                      "configurations": { "temperature": 0.5 },
-                      "processing_time": 0.456
-                  },
-                  "Gemini": {
-                      "error": "Descrição do erro específico",
-                  }
-              },
-              "aluno3": {
-                  "OpenAi": {
-                      "error": "Descrição do erro específico",
-                  },
-                  "Gemini": {
-                      "response": "Outro resultado... (Em Markdown)",
-                      "model_name": "gemini-pro",
-                      "configurations": {},
-                      "processing_time": 0.234
-                  }
-              }
+    {
+      "students": {
+        "aluno1": {
+          "OpenAi": {
+            "response": "Resultado formatado em Markdown",
+            "model_name": "gpt-3.5-turbo",
+            "configurations": { "temperature": 0.7 },
+            "processing_time": 0.123
           }
+        }
       }
-      ```
-      *Nota:* Em caso de erro, o objeto do da IA correspondente incluirá um campo `"error"` com a descrição do problema. Se ocorrer um erro geral na requisição, a resposta consistirá apenas em um objeto JSON contendo o campo `"error"` e a respectiva mensagem.     
-      ```json
-      {
-        "error": "Descrição do erro Geral", 
-      }
-      ```
-
+    }
+    ```
 
 ### Interface Pública
 - **Página Inicial:** Exibe informações básicas sobre a API, exemplos de uso e links para login/registro.
@@ -1694,17 +1609,26 @@ python manage.py test
 
 ### Tecnologias Utilizadas
 
-- **Django (v4.2+)**: Framework web principal.
-- **Django REST Framework (v3.15+)**: Criação dos endpoints REST.
+Updated versions based on requirements.txt:
+- **Django (v4.2.7)**: Framework web principal.
+- **Django REST Framework (v3.15.2)**: Criação dos endpoints REST.
 - **Allauth e dj-rest-auth**: Gerenciamento de autenticação e registro de usuários.
 - **Clientes de IA**: OpenAI, Azure OpenAI, Anthropic, Google Gemini, Llama, Perplexity.
 - **Docling (v2.17.0)**: Extração de texto de documentos (PDF, DOCX).
-- **python-dotenv (v1.0.1)**: Gerenciamento de variáveis de ambiente.
+- **python-dotenv (v1.0.0)**: Gerenciamento de variáveis de ambiente.
 - **Requests (v2.32.3)**: Realização de requisições HTTP.
 - **Gunicorn (v22.0.0)**: Servidor WSGI para produção.
 - **Bootstrap (v5.3.2)**: Framework CSS para a interface.
 - **TinyMCE (django-tinymce v4.1.0)**: Editor de texto (opcional).
 - **Sphinx**: Geração de documentação (opcional).
+
+---
+
+## Testes
+
+### Testes Unitários
+
+O projeto contém uma suíte de testes unitários organizados por módulo:
 
 ---
 
