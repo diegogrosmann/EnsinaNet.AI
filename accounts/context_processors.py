@@ -1,5 +1,3 @@
-# myapp/context_processors.py
-
 from django.contrib.sites.models import Site
 
 def site_info(request):

@@ -9,9 +9,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'fallback-secret-key')
 
-#Recupere o path completo do GOOGLE_APPLICATION_CREDENTIALS
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(BASE_DIR / os.getenv('GOOGLE_APPLICATION_CREDENTIALS'))
-
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
