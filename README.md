@@ -422,7 +422,7 @@ classDiagram
 
     class TrainingCapture {
 	    +token: ForeignKey to UserToken
-	    +ai_client: ForeignKey to AIClientGlobalConfiguration
+	    +ai_client_config: ForeignKey to AIClientConfiguration
 	    +is_active: BooleanField
 	    +temp_file: FileField
 	    +create_at: DateTimeField
@@ -464,10 +464,10 @@ classDiagram
     UserToken "1" <-- "0..*" APILog : user_token
     
     AIClientGlobalConfiguration "1" <-- "0..*" AIClientConfiguration : ai_client 
-    AIClientGlobalConfiguration "1" <-- "0..*" TrainingCapture : ai_client
     AIClientGlobalConfiguration ..> APIClient : api_client_class
 
     AIClientConfiguration "1" -- "1" AIClientTraining : ai_client_configuration 
+    AIClientGlobalConfiguration "1" <-- "0..*" TrainingCapture : ai_client_config
 
     <<abstract>> APIClient
     
