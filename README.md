@@ -467,7 +467,7 @@ classDiagram
     AIClientGlobalConfiguration ..> APIClient : api_client_class
 
     AIClientConfiguration "1" -- "1" AIClientTraining : ai_client_configuration 
-    AIClientGlobalConfiguration "1" <-- "0..*" TrainingCapture : ai_client_config
+    AIClientConfiguration "1" <-- "0..*" TrainingCapture : ai_client_config
 
     <<abstract>> APIClient
     
