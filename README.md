@@ -300,153 +300,184 @@ O **EnsinaNet.AI** é uma aplicação web desenvolvida em Django que permite cor
 
 ### Diagrama de Classes
 
+
 ```mermaid
 classDiagram
-    %% Accounts App
     class User {
-        +UUID id
-        +str email
-        +str password
-        +bool is_active
-        +__str__()
-    }
-    class Profile {
-        +User user
-        +bool is_approved
-        +__str__()
-    }
-    class UserToken {
-        +UUID id
-        +User user
-        +str name
-        +str key
-        +datetime created
-        +save()
-        +generate_unique_key()
-        +__str__()
-    }
-    class EmailBackend {
-        +authenticate(request, username, password)
+	    +id: UUID
+	    +username: str
+	    +email: str
+	    +password: str
+	    +is_active: bool
+	    -- Demais atributos Django
     }
 
-    %% AI Config App
     class AIClientGlobalConfiguration {
-        +str name
-        +str api_client_class
-        +str api_url
-        +str api_key
-        +__str__()
+	    +name: CharField
+	    +api_client_class: CharField
+	    +api_url: URLField
+	    +api_key: CharField
     }
-    class AIClientConfiguration {
-        +UserToken token
-        +AIClientGlobalConfiguration ai_client
-        +str name
-        +bool enabled
-        +str model_name
-        +JSONField configurations
-        +bool use_system_message
-        +__str__()
-    }
-    class TokenAIConfiguration {
-        +UserToken token
-        +str base_instruction
-        +str prompt
-        +str responses
-        +AITrainingFile training_file
-        +__str__()
-    }
-    class AITrainingFile {
-        +User user
-        +str name
-        +FileField file
-        +datetime uploaded_at
-        +__str__()
-    }
-    class AIClientTraining {
-        +AIClientConfiguration ai_client_configuration
-        +JSONField training_parameters
-        +str trained_model_name
-        +__str__()
-    }
-    
-    %% Relationships
-    User "1" -- "1" Profile
-    User "1" -- "N" UserToken
-    User "1" -- "N" AITrainingFile
-    UserToken "1" -- "N" AIClientConfiguration
-    UserToken "1" -- "1" TokenAIConfiguration
-    UserToken "1" -- "N" TrainingCapture
-    AIClientConfiguration "1" -- "1" AIClientTraining
-    AIClientConfiguration "N" -- "1" AIClientGlobalConfiguration
-    TrainingCapture "N" -- "1" AIClientGlobalConfiguration
-    TokenAIConfiguration "1" -- "0..1" AITrainingFile
 
-```
-
-```mermaid
-classDiagram
-    %% API App
     class APIClient {
-        <<abstract>>
-        +str name
-        +bool can_train
-        +bool supports_system_message
-        +str api_key
-        +str model_name
-        +dict configurations
-        +compare(data)
-        +_call_api(prompts)*
+	    +name: str
+	    +can_train: bool
+	    +supports_system_message: bool
+	    +api_key: str
+	    +model_name: str
+	    +configurations: dict
+	    +base_instruction: str
+	    +prompt: str
+	    +responses: str
+	    +api_url: str
+	    +use_system_message: bool
+	    +compare()
+	    +train()
+	    +_call_api()
+	    +_prepare_prompts()
+	    +_prepare_train()
+	    +_render_template()
     }
+
     class OpenAiClient {
-        +_call_api(prompts)
-        +train(training_file, parameters)
+	    +__init__()
+	    +_call_api()
+	    +train()
     }
+
     class GeminiClient {
-        +_call_api(prompts)
-        +train(training_file, parameters)
+	    +__init__()
+	    +_call_api()
+	    +train()
     }
+
     class AnthropicClient {
-        +_call_api(prompts)
+	    +__init__()
+	    +_call_api()
     }
+
     class PerplexityClient {
-        +_call_api(prompts)
+	    +__init__()
+	    +_call_api()
     }
+
     class LlamaClient {
-        +_call_api(prompts)
+	    +__init__()
+	    +_call_api()
     }
+
     class AzureOpenAIClient {
-        +_call_api(prompts)
+	    +__init__()
     }
+
     class AzureClient {
-        +_call_api(prompts)
+	    +__init__()
+	    +_call_api()
+    }
+
+    class UserToken {
+	    +id: UUIDField
+	    +user: ForeignKey to User
+	    +name: CharField
+	    +key: CharField
+	    +created: DateTimeField
+	    +save()
+	    +generate_unique_key()
+	    +__str__()
+    }
+
+    class AIClientConfiguration {
+	    +token: ForeignKey to UserToken
+	    +ai_client: ForeignKey to AIClientGlobalConfiguration
+	    +name: CharField
+	    +enabled: BooleanField
+	    +model_name: CharField
+	    +configurations: JSONField
+	    +use_system_message: BooleanField
+    }
+
+    class AIClientTraining {
+	    +ai_client_configuration: OneToOneField to AIClientConfiguration
+	    +training_parameters: JSONField
+	    +trained_model_name: CharField
+    }
+
+    class AITrainingFile {
+	    +user: ForeignKey to User
+	    +name: CharField
+	    +file: FileField
+	    +uploaded_at: DateTimeField
+	    +file_exists()
+	    +get_file_size()
+	    +__str__()
+    }
+
+    class TokenAIConfiguration {
+	    +token: OneToOneField to UserToken
+	    +base_instruction: TextField
+	    +prompt: TextField
+	    +responses: TextField
+	    +clean()
     }
 
     class TrainingCapture {
-        +UserToken token
-        +AIClientGlobalConfiguration ai_client
-        +bool is_active
-        +FileField temp_file
-        +datetime create_at
-        +datetime last_activity
-        +__str__()
-    }
-    class DoclingConfiguration {
-        +bool do_ocr
-        +bool do_table_structure
-        +bool do_cell_matching
-        +str accelerator_device
-        +JSONField custom_options
-        +__str__()
+	    +token: ForeignKey to UserToken
+	    +ai_client: ForeignKey to AIClientGlobalConfiguration
+	    +is_active: BooleanField
+	    +temp_file: FileField
+	    +create_at: DateTimeField
+	    +last_activity: DateTimeField
     }
 
-    %% API Client Inheritance
+    class DoclingConfiguration {
+	    +do_ocr: BooleanField
+	    +do_table_structure: BooleanField
+	    +do_cell_matching: BooleanField
+	    +accelerator_device: CharField
+	    +custom_options: JSONField
+    }
+
+    class Profile {
+	    +user: OneToOneField to User
+	    +is_approved: BooleanField
+    }
+
+    class APILog {
+	    +user: ForeignKey to User
+	    +user_token: ForeignKey to UserToken
+	    +path: CharField
+	    +method: CharField
+	    +status_code: IntegerField
+	    +execution_time: FloatField
+	    +timestamp: DateTimeField
+    }
+
+    
+    User "1" -- "1" Profile : user
+    User "1" <-- "0..*" APILog : user
+    User "1" <-- "0..*" AITrainingFile : user
+    User "1" <-- "0..*" UserToken : user
+
+    UserToken "1" -- "1" TokenAIConfiguration : token
+    UserToken "1" <-- "0..*" TrainingCapture : token 
+    UserToken "1" <-- "0..*" AIClientConfiguration : token
+    UserToken "1" <-- "0..*" APILog : user_token
+    
+    AIClientGlobalConfiguration "1" <-- "0..*" AIClientConfiguration : ai_client 
+    AIClientGlobalConfiguration "1" <-- "0..*" TrainingCapture : ai_client
+    AIClientGlobalConfiguration ..> APIClient : api_client_class
+
+    AIClientConfiguration "1" -- "1" AIClientTraining : ai_client_configuration 
+
+    <<abstract>> APIClient
+    
     APIClient <|-- OpenAiClient
     APIClient <|-- GeminiClient
     APIClient <|-- AnthropicClient
     APIClient <|-- PerplexityClient
     APIClient <|-- LlamaClient
-    APIClient <|-- AzureOpenAIClient
     APIClient <|-- AzureClient
+    OpenAiClient <|-- AzureOpenAIClient
 ```
 
 ### Diagramas de Sequência
@@ -610,6 +641,31 @@ sequenceDiagram
     participant N as Navegador
     participant D as Django
     participant DB as Banco de Dados
+    participant FS as Sistema de Arquivos
+
+    U->>N: Seleciona arquivo
+    N->>D: POST /upload-training-file/
+    D->>D: Valida formato do arquivo
+    D->>FS: Salva arquivo
+    D->>DB: Cria AITrainingFile
+    D->>DB: Vincula ao TokenAIConfiguration
+    D-->>N: Confirma upload
+    
+    alt Arquivo existente
+        D->>FS: Remove arquivo antigo
+        D->>FS: Salva novo arquivo
+        D->>DB: Atualiza referência
+    end
+```
+
+##### 2.4. Exclusão de Token
+```mermaid
+sequenceDiagram
+    actor U as Usuário
+    participant N as Navegador
+    participant D as Django
+    participant DB as Banco de Dados
+    participant FS as Sistema de Arquivos
     participant FS as Sistema de Arquivos
 
     U->>N: Seleciona arquivo
