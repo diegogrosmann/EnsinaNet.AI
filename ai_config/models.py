@@ -5,12 +5,14 @@ Contém definições de modelos para armazenar configurações, treinamento e ar
 
 import logging
 import uuid
+import os
 
 from django.db import models
 from django.dispatch import receiver
 from django.db.models.signals import post_delete
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.conf import settings
 
 from accounts.models import UserToken
 
@@ -29,6 +31,14 @@ class AIClientGlobalConfiguration(models.Model):
         api_client_class (str): Classe da API cliente.
         api_url (str): URL da API (opcional).
         api_key (str): Chave de acesso à API.
+
+    NOTA:
+        A api_client_class relaciona-se com a classe APIClient do módulo api_client.
+        Como a APIClient é uma classe abstrata, e não é persistida no BD, a api_client_class é uma string.
+        A relação entre a api_client_class e a classe APIClient um para muitos.
+        A relação indica que uma API pode estar associada a múltiplas configurações 
+        globais de cliente, mas cada configuração global pertence a apenas uma API.
+        Essa relação deve ser exibida no Diagrama de Classes.
     """
     name = models.CharField(max_length=255)
     api_client_class = models.CharField(max_length=255)  
@@ -102,6 +112,25 @@ class AITrainingFile(models.Model):
     file = models.FileField(upload_to='training_files/', storage=OverwriteStorage())
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    def file_exists(self):
+        """Verifica se o arquivo físico existe.
+        
+        Returns:
+            bool: True se o arquivo existir, False caso contrário
+        """
+        return self.file and self.file.storage.exists(self.file.name)
+
+    def get_file_size(self):
+        """Retorna o tamanho do arquivo se ele existir.
+        
+        Returns:
+            int: Tamanho do arquivo em bytes ou 0 se não existir
+        """
+        try:
+            return self.file.size if self.file_exists() else 0
+        except Exception:
+            return 0
+
     def __str__(self):
         """Retorna a representação em string do arquivo de treinamento.
 
@@ -137,7 +166,6 @@ class TokenAIConfiguration(models.Model):
         base_instruction (str): Instrução base (opcional).
         prompt (str): Prompt personalizado (opcional).
         responses (str): Respostas personalizadas (opcional).
-        training_file: Arquivo de treinamento vinculado (opcional).
     """
     token = models.OneToOneField(UserToken, related_name='ai_configuration', on_delete=models.CASCADE)
     base_instruction = models.TextField(
@@ -146,21 +174,14 @@ class TokenAIConfiguration(models.Model):
         help_text='Instrução base personalizada para este token.'
     )
     prompt = models.TextField(
-        blank=True,
-        null=True,
-        help_text='Prompt personalizado para este token.'
+        blank=False,
+        null=False,
+        help_text='Prompt específico para cada comparação (obrigatório).'
     )
     responses = models.TextField(
         blank=True,
         null=True,
         help_text='Respostas personalizadas para este token.'
-    )
-    training_file = models.ForeignKey(
-        AITrainingFile,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        help_text='Selecione o arquivo de treinamento para este token.'
     )
 
     class Meta:
@@ -174,6 +195,11 @@ class TokenAIConfiguration(models.Model):
             str: Descrição do token relacionado.
         """
         return f"Configuração de IA para Token: {self.token.name}"
+
+    def clean(self):
+        if not self.prompt or not self.prompt.strip():
+            raise ValidationError({'prompt': 'O campo Prompt é obrigatório.'})
+        super().clean()
 
 class AIClientTraining(models.Model):
     """Parâmetros de treinamento e nome do modelo treinado para uma configuração de IA.
@@ -204,21 +230,32 @@ class TrainingCapture(models.Model):
 
     Attributes:
         token: Token associado.
-        ai_client: Configuração global de IA.
+        ai_client_config: Configuração de IA.
         is_active (bool): Indica se a captura está ativa.
         temp_file: Arquivo temporário (opcional).
         create_at: Data de criação.
         last_activity: Última atividade registrada.
     """
+    def _generate_temp_filename(instance, filename):
+        """Gera um nome único para o arquivo temporário."""
+        ext = filename.split('.')[-1] if '.' in filename else 'tmp'
+        filename = f"{uuid.uuid4()}.{ext}"
+        return os.path.join('training_captures', filename)
+
     token = models.ForeignKey(UserToken, related_name='training_captures', on_delete=models.CASCADE)
-    ai_client = models.ForeignKey('AIClientGlobalConfiguration', on_delete=models.CASCADE)
+    ai_client_config = models.ForeignKey('AIClientConfiguration', on_delete=models.CASCADE) 
     is_active = models.BooleanField(default=False)
-    temp_file = models.FileField(upload_to='training_captures/', null=True, blank=True)
+    temp_file = models.FileField(
+        upload_to=_generate_temp_filename,
+        null=True,
+        blank=True,
+        storage=OverwriteStorage()
+    )
     create_at = models.DateTimeField(auto_now_add=True)
     last_activity = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ('token', 'ai_client')
+        unique_together = ('token',)
         verbose_name = "Captura de Treinamento"
         verbose_name_plural = "Capturas de Treinamento"
 
@@ -229,7 +266,25 @@ class TrainingCapture(models.Model):
             str: Status e informações do token e da IA.
         """
         status = "Ativa" if self.is_active else "Inativa"
-        return f"Captura {status} para {self.ai_client} do Token {self.token.name}"
+        return f"Captura {status} para {self.ai_client_config} do Token {self.token.name}"
+
+    def save(self, *args, **kwargs):
+        """Garante que um arquivo temporário seja criado se não existir."""
+        if not self.temp_file:
+            temp_filename = self._generate_temp_filename("capture.tmp")
+            # Cria um arquivo vazio
+            with open(os.path.join(settings.MEDIA_ROOT, temp_filename), 'w') as f:
+                f.write('')
+            self.temp_file.name = temp_filename
+        super().save(*args, **kwargs)
+
+@receiver(post_delete, sender=TrainingCapture)
+def delete_temp_file_on_delete(sender, instance, **kwargs):
+    """Remove o arquivo temporário quando a captura for deletada."""
+    if instance.temp_file:
+        if instance.temp_file.storage.exists(instance.temp_file.name):
+            instance.temp_file.delete(save=False)
+            logger.debug(f"Arquivo temporário deletado: {instance.temp_file.name}")
 
 class DoclingConfiguration(models.Model):
     """Configuração específica para o Docling.

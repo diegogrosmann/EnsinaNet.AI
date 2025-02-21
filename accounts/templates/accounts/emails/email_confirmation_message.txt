@@ -1,9 +1,0 @@
-{% load account %}
-Olá do site {{ current_site.name }}!
-
-Você está recebendo esta mensagem porque o usuário {{ user.email }} utilizou este e-mail para se cadastrar no site {{ current_site.name }}.
-
-Para confirmar que isso está correto, clique em {{ activate_url }}
-
-Obrigado por usar o site {{ current_site.name }}!
-{{ current_site.name }}

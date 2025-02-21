@@ -117,17 +117,15 @@ def process_client(ai_config: AIClientConfiguration, processed_data: Dict[str, A
             prompt=user_token.ai_configuration.prompt or "",
             responses=user_token.ai_configuration.responses or "",
             enabled=ai_config.enabled,
-            use_system_message=ai_config.use_system_message  # NOVO: repassa a opção para o cliente
+            use_system_message=ai_config.use_system_message
         )
-        training_file = user_token.ai_configuration.training_file.file if user_token.ai_configuration.training_file else None
-        if training_file:
-            processed_data['training_file'] = training_file
+
         client_class = AI_CLIENT_MAPPING.get(ai_config.ai_client.api_client_class)
         if not client_class:
             raise APICommunicationError(f"Cliente '{ai_config.ai_client.api_client_class}' não mapeado.")
         ai_client_instance = client_class(config)
         comparison_result, system_message, user_message = ai_client_instance.compare(processed_data)
-        handle_training_capture(user_token, ai_config.ai_client, system_message, user_message, comparison_result)
+        handle_training_capture(user_token, ai_config, system_message, user_message, comparison_result)
         processing_time = round(time.perf_counter() - start_time, 2)
         result = {
             "response": comparison_result,
@@ -144,35 +142,51 @@ def process_client(ai_config: AIClientConfiguration, processed_data: Dict[str, A
         return ai_config, {"error": str(e)}
 
 
-def handle_training_capture(user_token: UserToken, ai_client: Any, system_message: str, user_message: str, comparison_result: str) -> None:
+from django.utils import timezone
+from datetime import timedelta
+
+def handle_training_capture(user_token: UserToken, ai_config: AIClientConfiguration, system_message: str, user_message: str, comparison_result: str) -> None:
     """Gerencia a captura de dados de treinamento, adicionando exemplos ao arquivo se houver captura ativa.
 
     Args:
-        user_token (UserToken): Token do usuário.
-        ai_client (Any): Instância do cliente de IA.
-        system_message (str): Mensagem retornada pelo sistema.
-        user_message (str): Mensagem retornada ao usuário.
-        comparison_result (str): Resultado da comparação efetuada.
+        user_token (UserToken): Token do usuário
+        ai_config (AIClientConfiguration): Configuração de IA atual
+        system_message (str): Mensagem do sistema
+        user_message (str): Mensagem do usuário
+        comparison_result (str): Resultado da comparação
 
     Returns:
         None
     """
     try:
-        capture = TrainingCapture.objects.get(token=user_token, ai_client=ai_client)
-        if capture.is_active and capture.temp_file:
-            try:
-                with capture.temp_file.open('r') as f:
-                    training_data = json.load(f)
-            except json.JSONDecodeError:
-                training_data = []
-            training_data.append({
-                'system_message': system_message,
-                'user_message': user_message,
-                'response': comparison_result,
-            })
-            with capture.temp_file.open('w') as f:
-                json.dump(training_data, f, ensure_ascii=False, indent=4)
-            logger.info(f"Exemplo capturado para {ai_client.api_client_class}")
+        capture = TrainingCapture.objects.get(
+            token=user_token,
+            ai_client_config=ai_config,
+            is_active=True
+        )
+
+        # Usa o timeout configurado no perfil do usuário
+        timeout_minutes = user_token.user.profile.capture_inactivity_timeout
+        if timezone.now() - capture.last_activity > timedelta(minutes=timeout_minutes):
+            logger.info(f"Captura expirada para {ai_config.ai_client.api_client_class} - Removendo...")
+            capture.delete()
+            return
+
+        try:
+            with capture.temp_file.open('r') as f:
+                training_data = json.load(f)
+        except json.JSONDecodeError:
+            training_data = []
+            
+        training_data.append({
+            'system_message': system_message,
+            'user_message': user_message,
+            'response': comparison_result,
+        })
+        
+        with capture.temp_file.open('w') as f:
+            json.dump(training_data, f, ensure_ascii=False, indent=4)
+        logger.info(f"Exemplo capturado para {ai_config.ai_client.api_client_class}")
     except TrainingCapture.DoesNotExist:
         pass
 

@@ -1,0 +1,91 @@
+<!-- Modal -->
+<div class="modal fade" id="deleteTokenModal" tabindex="-1" aria-labelledby="deleteTokenModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteTokenModalLabel">
+                    <i class="bi bi-trash3-fill text-danger me-2"></i>
+                    Deletar Token
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <p>Tem certeza de que deseja deletar este token?</p>
+                <form id="deleteTokenForm" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="token_id" id="delete_token_id">
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-lg me-1"></i>Cancelar
+                </button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
+                    <i class="bi bi-trash me-1"></i>Deletar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Script para suporte a teclas de atalho -->
+<script>
+document.addEventListener('keydown', function(e) {
+    const deleteModal = document.getElementById('deleteTokenModal');
+    if (!deleteModal.classList.contains('show')) return;
+    
+    if (e.key === 'Escape') {
+        const modal = bootstrap.Modal.getInstance(deleteModal);
+        modal.hide();
+    } else if (e.key === 'Enter' && !document.getElementById('confirmDeleteBtn').disabled) {
+        e.preventDefault();
+        document.getElementById('confirmDeleteBtn').click();
+    }
+});
+</script>
+
+<!-- Estilos aplicados -->
+<style>
+.modal-content {
+    border: none;
+    border-radius: 0.5rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.modal-header {
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+    background-color: #f8f9fa;
+    border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.modal-footer {
+    border-top: 1px solid rgba(0,0,0,0.1);
+    background-color: #f8f9fa;
+    border-radius: 0 0 0.5rem 0.5rem;
+}
+
+.form-check-input:checked {
+    background-color: #dc3545;
+    border-color: #dc3545;
+}
+
+.form-check-input:focus {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25);
+}
+
+.alert {
+    margin-bottom: 0;
+    padding: 0.75rem;
+    font-size: 0.875rem;
+}
+
+.btn {
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11);
+}
+</style>

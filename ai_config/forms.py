@@ -96,7 +96,7 @@ class AIClientGlobalConfigForm(forms.ModelForm):
     def clean_api_key(self):
         """Processa o campo 'api_key' para retornar o valor correto.
 
-        Retorna a chave original se o valor não tiver sido alterado.
+        Retorna a chave original se o valor not tiver sido alterado.
 
         Returns:
             str: API key válida.
@@ -161,7 +161,7 @@ class AIClientConfigurationForm(forms.ModelForm):
         return cleaned_data
     
     def clean_name(self):
-        """Valida que o campo 'name' não esteja vazio nem contenha espaços em excesso.
+        """Valida que o campo 'name' not esteja vazio nem contenha espaços em excesso.
 
         Returns:
             str: Nome validado.
@@ -171,7 +171,7 @@ class AIClientConfigurationForm(forms.ModelForm):
         """
         name = self.cleaned_data.get('name', '').strip()
         if not name:
-            raise forms.ValidationError("Nome não pode ser vazio.")
+            raise forms.ValidationError("Nome not pode ser vazio.")
         return name
 
     def clean_configurations(self):
@@ -193,7 +193,7 @@ class AIClientConfigurationForm(forms.ModelForm):
                     continue
                 if '=' not in line:
                     raise forms.ValidationError(
-                        f"Linha {line_number}: '{line}' não está no formato chave=valor."
+                        f"Linha {line_number}: '{line}' not está no formato chave=valor."
                     )
                 key, value = line.split('=', 1)
                 key = key.strip()
@@ -240,23 +240,15 @@ class TokenAIConfigurationForm(forms.ModelForm):
         required=False,
         help_text='Insira as respostas para todas as comparações.'
     )
-    training_file = forms.ModelChoiceField(
-        queryset=AITrainingFile.objects.none(),
-        required=False,
-        label='Arquivo de Treinamento',
-        help_text='Selecione o arquivo de treinamento para este token.'
-    )
 
     class Meta:
         model = TokenAIConfiguration
-        fields = ['base_instruction', 'prompt', 'responses', 'training_file']
+        fields = ['base_instruction', 'prompt', 'responses']
 
     def __init__(self, *args, **kwargs):
         """Inicializa o formulário definindo o queryset do campo 'training_file' conforme o usuário."""
         user = kwargs.pop('user', None)
         super(TokenAIConfigurationForm, self).__init__(*args, **kwargs)
-        if user:
-            self.fields['training_file'].queryset = AITrainingFile.objects.filter(user=user)
         self.user = user
 
     def clean_base_instruction(self):
@@ -297,37 +289,22 @@ class AITrainingFileNameForm(forms.Form):
 
 class TrainingCaptureForm(forms.ModelForm):
     """Formulário para configurar uma captura de treinamento."""
-    ai_client = forms.ChoiceField(
-        choices=API_CLIENT_CHOICES,
-        label='Selecione a IA para Capturar',
-        required=True,
-        widget=forms.Select(attrs={'class': 'form-control'})
-    )
-
+    
     token = ModelChoiceField(
         queryset=UserToken.objects.none(),
-        widget=forms.Select(attrs={'class': 'form-control'}),
-        label='Selecionar Token para Capturar',
+        empty_label="Selecione um token",
         required=True
     )
 
     class Meta:
         model = TrainingCapture
-        fields = ['token', 'ai_client']
+        fields = ['token', 'ai_client_config']
 
     def __init__(self, *args, **kwargs):
-        """Inicializa o formulário e define os tokens disponíveis conforme o usuário."""
         user = kwargs.pop('user', None)
-        super(TrainingCaptureForm, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         if user:
-            tokens = UserToken.objects.filter(user=user)
-            self.fields['token'].queryset = tokens
-        else:
-            self.fields['token'].queryset = UserToken.objects.none()
-        
-        if self.instance and self.instance.pk:
-            self.initial['ai_client'] = self.instance.ai_client.api_client_class
-            self.fields['token'].initial = self.instance.token
+            self.fields['token'].queryset = UserToken.objects.filter(user=user)
 
 class AITrainingFileForm(forms.ModelForm):
     """Formulário para upload de arquivo de treinamento."""
@@ -359,7 +336,7 @@ class AIClientTrainingForm(forms.ModelForm):
             'rows': 5,
             'placeholder': 'Exemplo:\nparam1=valor1\nparam2=valor2'
         }),
-        help_text='Insira os parâmetros no formato chave=valor, uma por linha.',
+        help_text='Insira os parâmetros no formato chave=valor, um por linha.',
         required=False
     )
 
@@ -388,7 +365,7 @@ class AIClientTrainingForm(forms.ModelForm):
         self.fields['trained_model_name'].widget.attrs['readonly'] = True
 
     def clean_trained_model_name(self):
-        """Garante que o nome do modelo treinado não seja modificado.
+        """Garante que o nome do modelo treinado not seja modificado.
 
         Returns:
             str: Nome do modelo treinado.
@@ -407,7 +384,7 @@ class AIClientTrainingForm(forms.ModelForm):
             dict: Configurações de treinamento.
         
         Raises:
-            forms.ValidationError: Se alguma linha não estiver no formato válido.
+            forms.ValidationError: Se alguma linha not estiver no formato válido.
         """
         configurations_text = self.cleaned_data.get('training_parameters', '').strip()
         configurations_dict = {}
@@ -417,7 +394,7 @@ class AIClientTrainingForm(forms.ModelForm):
                 if not line.strip():
                     continue
                 if '=' not in line:
-                    raise forms.ValidationError(f"Linha {line_number}: '{line}' não está no formato chave=valor.")
+                    raise forms.ValidationError(f"Linha {line_number}: '{line}' not está no formato chave=valor.")
                 key, value = line.split('=', 1)
                 key = key.strip()
                 value = value.strip()
@@ -487,14 +464,12 @@ class TrainingExampleForm(forms.Form):
     )
     response = forms.CharField(
         label='Resposta',
-        widget=forms.Textarea(attrs={
-            'class': 'form-control',
-            'cols': 100, 
-            'rows': 20,
-            'placeholder': 'Insira o prompt personalizado para este token.'
+        widget=MarkdownxWidget(attrs={
+            'class': 'form-control markdownx-editor',
+            'rows': 4,
+            'placeholder': 'Digite a resposta em markdown...'
         }),
-        required=False,
-        help_text='Insira as respostas para todas as comparações.'
+        required=True
     )
 
     def clean_user_message(self):

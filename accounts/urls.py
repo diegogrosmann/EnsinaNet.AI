@@ -1,22 +1,37 @@
-"""Configuração de URLs para a aplicação accounts.
-
-Este módulo mapeia os padrões de URL para as views de registro, login, logout,
-gerenciamento de tokens, configurações e fluxos de redefinição de senha.
-"""
-from django.urls import path
+"""URLs do aplicativo accounts."""
+from django.urls import path, include
 from . import views
 
-urlpatterns = [
-    path('register/', views.register_view, name='register'),
-    path('login/', views.login_view, name='login'),
-    path('logout/', views.logout_view, name='logout'),
-    path('manage-tokens/', views.manage_tokens, name='manage_tokens'),
-    path('manage-tokens/delete/<uuid:token_id>/', views.delete_token, name='delete_token'),
-    path('manage-tokens/<uuid:token_id>/configurations/', views.manage_configurations, name='manage_configurations'),
+app_name = 'accounts'
 
-    # Rotas para redefinição de senha
-    path('password_reset/', views.CustomPasswordResetView.as_view(), name='password_reset'),
-    path('password_reset/done/', views.password_reset_done_view, name='password_reset_done'),
-    path('reset/<uidb64>/<token>/', views.password_reset_confirm_view, name='password_reset_confirm'),
-    path('reset/done/', views.password_reset_complete_view, name='password_reset_complete'),
+auth_patterns = [
+    path('register/', views.auth_register, name='register'),
+    path('login/', views.auth_login, name='login'),
+    path('logout/', views.auth_logout, name='logout'),
+    path('confirm-email/<str:key>/', views.CustomConfirmEmailView.as_view(), name='account_confirm_email'),
+    path('resend-confirmation/', views.auth_resend_confirmation, name='resend_confirmation'),
+]
+
+password_patterns = [
+    path('reset/', views.CustomPasswordResetView.as_view(), name='password_reset'),
+    path('reset/done/', views.password_reset_done, name='password_reset_done'),
+    path('reset/<uidb64>/<token>/', views.password_reset_confirm, name='password_reset_confirm'),
+    path('reset/complete/', views.password_reset_complete, name='password_reset_complete'),
+]
+
+token_patterns = [
+    path('', views.tokens_manage, name='tokens_manage'),
+    path('create/', views.token_create, name='token_create'),
+    path('<uuid:token_id>/', include([
+        path('edit/name/', views.token_edit_name, name='token_edit_name'),
+        path('delete/', views.token_delete, name='token_delete'),
+        path('config/', views.token_config, name='token_config'),
+    ])),
+]
+
+urlpatterns = [
+    path('auth/', include(auth_patterns)),
+    path('password/', include(password_patterns)), 
+    path('tokens/', include(token_patterns)),
+    path('settings/', views.user_settings, name='user_settings'),
 ]

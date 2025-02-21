@@ -2,18 +2,15 @@
 
 Contém classes de formulário para registro, criação e atualização de tokens, e autenticação via email.
 """
-
-import json
 import bleach
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import get_user_model, authenticate
 from allauth.account.models import EmailAddress
-
-from tinymce.widgets import TinyMCE
+from django.urls import reverse_lazy
 
 from .models import UserToken
-from ai_config.models import AIClientGlobalConfiguration
+from django.utils.safestring import mark_safe
 
 ALLOWED_TAGS = bleach.sanitizer.ALLOWED_TAGS.union({
     'p', 'br', 'strong', 'em', 'ul', 'ol', 'li',
@@ -49,6 +46,12 @@ class CustomUserCreationForm(UserCreationForm):
         model = User
         fields = ('email', 'password1', 'password2')
 
+    def clean_email(self):
+        email = self.cleaned_data.get('email')
+        if User.objects.filter(email=email).exists():
+            raise forms.ValidationError("Usuário já cadastrado.")
+        return email
+
     def save(self, commit=True):
         """Salva o usuário com a conta desativada até a confirmação por email.
         
@@ -68,42 +71,30 @@ class CustomUserCreationForm(UserCreationForm):
 
 
 class TokenForm(forms.ModelForm):
-    """Formulário para criação de um novo token de usuário e seleção de tipos de IA."""
+    """Formulário para criação de um novo token de usuário."""
 
     class Meta:
         model = UserToken
         fields = ['name']
         widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Nome do Token'})
+            'name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Nome do Token'
+            })
         }
 
     def __init__(self, *args, **kwargs):
-        """Inicializa o formulário adicionando o campo de tipos de IA.
-        
-        Argumentos:
-            user: Instância do usuário associado ao token.
-            *args: Argumentos posicionais.
-            **kwargs: Argumentos nomeados.
-        """
+        """Inicializa o formulário."""
         self.user = kwargs.pop('user', None)
         super(TokenForm, self).__init__(*args, **kwargs)
-
-        all_clients = AIClientGlobalConfiguration.objects.all()
-        choices = [(client.api_client_class, client.api_client_class) for client in all_clients]
-
-        self.fields['ai_types'] = forms.MultipleChoiceField(
-            choices=choices,
-            required=False,
-            widget=forms.CheckboxSelectMultiple
-        )
 
     def clean_name(self):
         """Valida se o nome do token é único para o usuário.
         
-        Retorna:
+        Returns:
             str: Nome do token validado.
         
-        Levanta:
+        Raises:
             forms.ValidationError: Se já existir um token com o mesmo nome.
         """
         name = self.cleaned_data.get('name')
@@ -126,49 +117,45 @@ class EmailAuthenticationForm(forms.Form):
     )
 
     def __init__(self, request=None, *args, **kwargs):
-        """Inicializa o formulário de autenticação.
-        
-        Argumentos:
-            request (HttpRequest): Objeto da requisição HTTP.
-            *args: Argumentos posicionais.
-            **kwargs: Argumentos nomeados.
-        """
+        """Inicializa o formulário de autenticação."""
         self.request = request
         super().__init__(*args, **kwargs)
 
     def clean(self):
-        """Valida as credenciais fornecidas no formulário.
-        
-        Retorna:
-            dict: Dados limpos do formulário.
-        
-        Levanta:
-            forms.ValidationError: Se as credenciais estiverem ausentes ou inválidas.
-        """
+        """Valida as credenciais fornecidas no formulário."""
         email = self.cleaned_data.get('email')
         password = self.cleaned_data.get('password')
 
         if email and password:
+            try:
+                user_obj = User.objects.get(email=email)
+            except User.DoesNotExist:
+                raise forms.ValidationError("Email ou senha inválidos.")
+
+            if not user_obj.check_password(password):
+                raise forms.ValidationError("Email ou senha inválidos.")
+
+            email_address = EmailAddress.objects.filter(user=user_obj, email=user_obj.email).first()
+            if email_address and not email_address.verified:
+                # Modificado para usar um link simples ao invés de um form embutido
+                resend_url = reverse_lazy('accounts:resend_confirmation')
+                self.add_error(None, forms.ValidationError(
+                    mark_safe(
+                        'Sua conta ainda não foi confirmada. '
+                        f'<a href="{resend_url}?email={email}" class="btn-link">Clique aqui</a> '
+                        'para reenviar o email de confirmação.'
+                    )
+                ))
+                return None
+
             self.user = authenticate(self.request, username=email, password=password)
-            if self.user is not None:
-                email_address = EmailAddress.objects.filter(user=self.user, email=self.user.email).first()
-                if email_address and not email_address.verified:
-                    raise forms.ValidationError('Seu email ainda não foi confirmado.')
-                if not self.user.is_active:
-                    raise forms.ValidationError('Sua conta está inativa.')
-            else:
-                raise forms.ValidationError('Email ou senha inválidos.')
         else:
-            raise forms.ValidationError('Por favor, preencha todos os campos.')
+            raise forms.ValidationError("Por favor, preencha todos os campos.")
 
         return self.cleaned_data
 
     def get_user(self):
-        """Retorna o usuário autenticado.
-        
-        Retorna:
-            User: Usuário autenticado.
-        """
+        """Retorna o usuário autenticado."""
         return self.user
 
 
@@ -209,3 +196,47 @@ class UserTokenForm(forms.ModelForm):
         if commit:
             token.save()
         return token
+
+
+class UserSettingsForm(forms.ModelForm):
+    """Formulário para gerenciar as configurações do usuário."""
+    
+    first_name = forms.CharField(
+        label='Nome',
+        required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control'})
+    )
+    last_name = forms.CharField(
+        label='Sobrenome',
+        required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control'})
+    )
+    email = forms.EmailField(
+        label='Email',
+        widget=forms.EmailInput(attrs={'class': 'form-control'})
+    )
+    capture_inactivity_timeout = forms.IntegerField(
+        label='Tempo de Inatividade de Captura (minutos)',
+        required=False,
+        min_value=1,
+        widget=forms.NumberInput(attrs={'class': 'form-control'})
+    )
+
+    class Meta:
+        model = User
+        fields = ['first_name', 'last_name', 'email']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and hasattr(self.instance, 'profile'):
+            self.fields['capture_inactivity_timeout'].initial = self.instance.profile.capture_inactivity_timeout
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        if commit:
+            user.save()
+            # Salva o tempo de inatividade no perfil
+            if hasattr(user, 'profile'):
+                user.profile.capture_inactivity_timeout = self.cleaned_data.get('capture_inactivity_timeout')
+                user.profile.save()
+        return user

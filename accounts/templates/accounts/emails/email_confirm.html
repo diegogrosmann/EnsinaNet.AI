@@ -1,13 +1,63 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <h2 class="mb-3 text-center">Confirmação de Email</h2>
-        <p>Seu email foi confirmado com sucesso! Agora você pode fazer login na sua conta.</p>
-        <a href="{% url 'login' %}" class="btn btn-primary w-100">
-            <i class="bi bi-box-arrow-in-right"></i> Ir para o Login
-        </a>
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-body text-center p-5">
+                    <!-- Ícone de Sucesso Animado -->
+                    <div class="mb-4">
+                        <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
+                    </div>
+
+                    <h2 class="h3 mb-4">Email Confirmado com Sucesso!</h2>
+                    
+                    <p class="text-muted mb-4">
+                        Seu endereço de email foi confirmado. Agora você pode fazer login na sua conta 
+                        e começar a usar todos os recursos disponíveis.
+                    </p>
+
+                    <a href="{% url 'accounts:login' %}" class="btn btn-primary btn-lg w-100">
+                        <i class="bi bi-box-arrow-in-right me-2"></i>
+                        Fazer Login
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
+
+<style>
+.card {
+    border: none;
+}
+
+.bi-check-circle-fill {
+    animation: checkmark 0.5s ease-in-out;
+}
+
+@keyframes checkmark {
+    0% {
+        transform: scale(0);
+        opacity: 0;
+    }
+    70% {
+        transform: scale(1.2);
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.btn {
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11);
+}
+</style>
 {% endblock %}

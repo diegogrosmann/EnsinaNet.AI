@@ -53,7 +53,8 @@ ACCOUNT_AUTHENTICATION_METHOD = "email"
 ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_USERNAME_REQUIRED = False
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
-ACCOUNT_EMAIL_VERIFICATION = "mandatory"  # Garante que a verificação de email é obrigatória
+ACCOUNT_EMAIL_VERIFICATION = "mandatory"
+ACCOUNT_EMAIL_CONFIRMATION_HTML_TEMPLATE = "accounts/registration/email_confirmation_message.html"
 
 
 REST_FRAMEWORK = {
@@ -69,14 +70,15 @@ REST_FRAMEWORK = {
     'ALLOWED_VERSIONS': ['v1'],  # Defina aqui todas as versões que sua API suportará
 }
 
-LOGIN_REDIRECT_URL = '/manage-tokens/'
-LOGOUT_REDIRECT_URL = '/accounts/login/'
-LOGIN_URL = 'login'  # Nome da URL definida em accounts/urls.py
-LOGOUT_URL = 'logout'  # Nome da URL definida em accounts/urls.py
+# Ajustar redirecionamentos
+LOGIN_REDIRECT_URL = 'accounts:tokens'
+LOGOUT_REDIRECT_URL = 'accounts:login'
+LOGIN_URL = 'accounts:login'
+LOGOUT_URL = 'accounts:logout'
 
 # URLs de redirecionamento após confirmação de email
-ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = '/login/'
-ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = '/login/'
+ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = 'accounts:login'
+ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = 'accounts:login'
 
 # Use a confirmação de email via GET
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True
@@ -264,6 +266,14 @@ LOGGING = {
             'maxBytes': 1024*1024*5,  # 5 MB
             'backupCount': 5,
         },
+        'ai_config_file': {
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'formatter': 'standard',
+            'filename': os.path.join(LOG_DIR, 'ai_config.log'),
+            'maxBytes': 1024*1024*5,  # 5 MB
+            'backupCount': 5,
+        },
     },
     'loggers': {
         '': {  # Root logger
@@ -296,6 +306,11 @@ LOGGING = {
             'level': 'DEBUG' if DEBUG else 'INFO',
             'propagate': False,
         },
+        'ai_config': {
+            'handlers': ['ai_config_file'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
     }
 }
 
@@ -306,3 +321,4 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
 # Arquivos estáticos
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+

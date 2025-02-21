@@ -25,7 +25,8 @@
 
 <script>
 function fetchData() {
-  fetch("{% url 'monitoring_data' %}")
+  // Usar URL nomeada com namespace
+  fetch("{% url 'api:monitoring_data' %}")
     .then(response => response.json())
     .then(data => {
       const logs = data.logs;

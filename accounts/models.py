@@ -13,9 +13,14 @@ class Profile(models.Model):
     Atributos:
         user (User): Usuário associado.
         is_approved (bool): Indica se o perfil está aprovado.
+        capture_inactivity_timeout (int): Tempo de inatividade de captura em minutos.
     """
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     is_approved = models.BooleanField(default=False)
+    capture_inactivity_timeout = models.IntegerField(
+        default=5,
+        verbose_name="Tempo de Inatividade de Captura (minutos)"
+    )
 
     def __str__(self):
         """Retorna a representação em string do perfil.

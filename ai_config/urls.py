@@ -1,28 +1,46 @@
-"""URLs do aplicativo ai_config.
-
-Define os endpoints para gerenciamento de configurações, treinamento, upload/download de arquivos, etc.
-"""
-
-from django.urls import path
-from . import views
+"""URLs do aplicativo ai_config."""
+from django.urls import path, include
+from ai_config import views
 
 app_name = 'ai_config'
 
+ai_configs_patterns = [
+    path('', views.ai_config_manage, name='ai_config_manage'),
+    path('create/', views.ai_config_create, name='ai_config_create'),
+    path('<int:config_id>/', include([
+        path('edit/', views.ai_config_edit, name='ai_config_edit'),
+        path('delete/', views.ai_config_delete, name='ai_config_delete'),
+        path('toggle/', views.ai_config_toggle, name='ai_config_toggle'),  # Nova URL
+    ])),
+]
+
+ai_patterns = [
+    path('configs/', include(ai_configs_patterns)),
+    path('get/', views.get_token_ais, name='token_get_ais'),
+]
+
+training_patterns = [
+    path('', views.training_center, name='training_center'),
+    path('files/', include([
+        path('', views.training_file_create, name='training_file_create'),
+        path('upload/', views.training_file_upload, name='training_file_upload'),
+        path('<int:file_id>/', include([
+            path('', views.training_file_create, name='training_file_edit'),
+            path('download-training-file/', views.training_file_download, name='training_file_download'),
+            path('delete/', views.training_file_delete, name='training_file_delete'),
+        ])),
+    ])),
+    path('train/', views.training_ai, name='training_ai'),
+    path('capture/toggle/', views.capture_toggle, name='capture_toggle'),
+    path('tokens/<uuid:token_id>/ai/<int:ai_id>/get-examples', 
+         views.capture_get_examples, 
+         name='capture_get_examples'),
+]
+
 urlpatterns = [
-    path('manage-ai-configurations/<uuid:token_id>/', views.manage_ai_configurations, name='manage_ai_configurations'),
-    path('manage-ai-configurations/<uuid:token_id>/create/', views.create_ai_configuration, name='create_ai_configuration'),
-    path('manage-ai-configurations/<uuid:token_id>/edit/<int:config_id>/', views.edit_ai_configuration, name='edit_ai_configuration'),
-    path('manage-ai-configurations/<uuid:token_id>/delete/<int:config_id>/', views.delete_ai_configuration, name='delete_ai_configuration'),
-    path('manage-ai-configurations/<uuid:token_id>/toggle/<int:config_id>/', views.toggle_ai_configuration, name='toggle_ai_configuration'),
-    path('manage-token-configurations/<uuid:token_id>/', views.manage_token_configurations, name='manage_token_configurations'),
-    path('upload-training-file/<uuid:token_id>/', views.upload_training_file, name='upload_training_file'),
-    path('manage-training-configurations/<uuid:token_id>/', views.manage_training_configurations, name='manage_training_configurations'),
-    path('train-ai/<uuid:token_id>/', views.train_ai, name='train_ai'),
-    path('training-file/', views.create_or_edit_training_file, name='create_training_file'),
-    path('training-file/<int:file_id>/', views.create_or_edit_training_file, name='edit_training_file'),
-    path('download-training-file/<int:file_id>/', views.download_training_file, name='download_training_file'),
-    path('delete-training-file/<int:file_id>/', views.delete_training_file, name='delete_training_file'),
-    path('toggle-capture/', views.toggle_capture, name='toggle_capture'),
-    #path('receive-capture/', views.receive_capture, name='receive_capture'),
-    path('get-training-examples/<uuid:token_id>/<str:ai_client_name>/', views.get_training_examples, name='get_training_examples'),
+    path('tokens/<uuid:token_id>/', include([
+        path('ai/', include(ai_patterns)),
+        path('prompt-config/', views.prompt_config, name='prompt-config'),
+    ])),
+    path('training/', include(training_patterns)),
 ]

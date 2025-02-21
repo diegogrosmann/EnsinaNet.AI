@@ -1,45 +1,93 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <h2 class="mb-4 text-center">Login</h2>
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h2 class="text-center mb-4">Entrar</h2>
+                    
+                    <form method="post" action="{% url 'accounts:login' %}" id="loginForm" novalidate>
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="id_email" class="form-label">Email</label>
+                            <div class="input-group">
+                                <span class="input-group-text">
+                                    <i class="bi bi-envelope"></i>
+                                </span>
+                                <input type="email" name="email" id="id_email" 
+                                       class="form-control {% if form.email.errors %}is-invalid{% endif %}"
+                                       required placeholder="seu@email.com">
+                                {% if form.email.errors %}
+                                    <div class="invalid-feedback">{{ form.email.errors|join:", " }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
 
-        {% if form.non_field_errors %}
-            <div class="alert alert-danger">
-                {% for error in form.non_field_errors %}
-                    <p>{{ error }}</p>
-                {% endfor %}
+                        <div class="mb-4">
+                            <label for="id_password" class="form-label">Senha</label>
+                            <div class="input-group">
+                                <span class="input-group-text">
+                                    <i class="bi bi-lock"></i>
+                                </span>
+                                <input type="password" name="password" id="id_password" 
+                                       class="form-control {% if form.password.errors %}is-invalid{% endif %}"
+                                       required placeholder="Sua senha">
+                                {% if form.password.errors %}
+                                    <div class="invalid-feedback">{{ form.password.errors|join:", " }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 mb-3">
+                            <i class="bi bi-box-arrow-in-right me-2"></i>Entrar
+                        </button>
+                    </form>
+
+                    <div class="text-center">
+                        <a href="{% url 'accounts:password_reset' %}" class="text-decoration-none">
+                            Esqueceu sua senha?
+                        </a>
+                        <hr>
+                        <p class="mb-0">
+                            Não tem uma conta?
+                            <a href="{% url 'accounts:register' %}" class="text-decoration-none">Registre-se</a>
+                        </p>
+                    </div>
+                </div>
             </div>
-        {% endif %}
-
-        <form method="post" class="needs-validation" novalidate>
-            {% csrf_token %}
-            
-            <!-- Exemplo com form-floating também -->
-            <div class="form-floating mb-3">
-                {{ form.email }}
-                <label for="{{ form.email.id_for_label }}">Email</label>
-                {% for error in form.email.errors %}
-                    <div class="invalid-feedback d-block">{{ error }}</div>
-                {% endfor %}
-            </div>
-
-            <div class="form-floating mb-3">
-                {{ form.password }}
-                <label for="{{ form.password.id_for_label }}">Senha</label>
-                {% for error in form.password.errors %}
-                    <div class="invalid-feedback d-block">{{ error }}</div>
-                {% endfor %}
-            </div>
-
-            <button type="submit" class="btn btn-primary w-100">Login</button>
-        </form>
-
-        <div class="mt-3 text-center">
-            <a href="{% url 'register' %}">Criar uma nova conta</a> |
-            <a href="{% url 'password_reset' %}">Esqueci minha senha</a>
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-focus no campo de email
+    document.getElementById('id_email').focus();
+
+    // Validação em tempo real
+    const form = document.getElementById('loginForm');
+    const inputs = form.querySelectorAll('input');
+
+    inputs.forEach(input => {
+        input.addEventListener('input', function() {
+            this.classList.remove('is-invalid');
+            const feedback = this.nextElementSibling;
+            if (feedback && feedback.classList.contains('invalid-feedback')) {
+                feedback.textContent = '';
+            }
+        });
+    });
+
+    // Suporte ao Enter
+    form.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            form.submit();
+        }
+    });
+});
+</script>
 {% endblock %}

@@ -59,5 +59,5 @@ class CreateAIConfigurationViewTest(TestCase):
             'configurations': 'temperature=0.5\nmax_tokens=1000'
         }
         response = self.client.post(self.url, data)
-        self.assertRedirects(response, reverse('ai_config:manage_ai_configurations', args=[self.token.id]))
+        self.assertRedirects(response, reverse('ai_config:ai_config_manage', args=[self.token.id]))
         self.assertTrue(AIClientConfiguration.objects.filter(name='CFG1').exists())

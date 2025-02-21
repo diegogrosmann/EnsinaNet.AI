@@ -80,6 +80,12 @@ class APIClient:
         responses (str): Respostas personalizadas (opcional).
         api_url (str): URL da API (opcional).
         use_system_message (bool): Se deve usar "system message" (caso suportado).
+
+    NOTA:
+        Esta classe é virtual e não está persistida no banco de dados. Ela serve
+        para documentar a relação um para muitos com AIClientGlobalConfiguration.
+        A relação indica que uma API pode estar associada a múltiplas configurações 
+        globais de cliente, mas cada configuração global pertence a apenas uma API.
     """
     name = ''
     can_train = False

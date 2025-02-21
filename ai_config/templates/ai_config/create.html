@@ -1,0 +1,232 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center p-3">
+                <h2 class="h4 m-0">
+                    <i class="bi bi-robot me-2"></i> 
+                    {% if is_edit %}
+                        Editar Configuração de IA: {{ ai_config.name }}
+                    {% else %}
+                        Nova Configuração de IA
+                    {% endif %}
+                </h2>
+                <a href="{% url 'ai_config:ai_config_manage' token.id %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Voltar
+                </a>
+            </div>
+
+            <div class="card-body p-4">
+                <form method="post" class="needs-validation" novalidate>
+                    {% csrf_token %}
+
+                    <div class="row g-4">
+                        <!-- Nome da Configuração -->
+                        <div class="col-12">
+                            <div class="form-group">
+                                <label for="{{ form.name.id_for_label }}" class="form-label fw-bold">
+                                    <i class="bi bi-tag me-1"></i> Nome da Configuração
+                                </label>
+                                <div class="input-group has-validation">
+                                    {{ form.name }}
+                                    {% if form.name.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.name.errors|join:", " }}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div class="form-text text-muted mt-1">
+                                    Escolha um nome único para identificar esta configuração.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cliente de IA -->
+                        <div class="col-12">
+                            <div class="form-group">
+                                <label for="{{ form.ai_client.id_for_label }}" class="form-label fw-bold">
+                                    <i class="bi bi-cpu me-1"></i> Cliente de IA
+                                </label>
+                                <div class="input-group has-validation">
+                                    {{ form.ai_client }}
+                                    {% if form.ai_client.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.ai_client.errors|join:", " }}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div class="form-text text-muted mt-1">
+                                    Selecione o provedor de IA que deseja utilizar.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Nome do Modelo -->
+                        <div class="col-12">
+                            <div class="form-group">
+                                <label for="{{ form.model_name.id_for_label }}" class="form-label fw-bold">
+                                    <i class="bi bi-braces me-1"></i> Nome do Modelo
+                                </label>
+                                <div class="input-group has-validation">
+                                    {{ form.model_name }}
+                                    {% if form.model_name.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.model_name.errors|join:", " }}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div class="form-text text-muted mt-1">
+                                    Especifique o modelo da IA (exemplo: gpt-4, claude-3).
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Configurações -->
+                        <div class="col-12">
+                            <div class="form-group">
+                                <label for="{{ form.configurations.id_for_label }}" class="form-label fw-bold">
+                                    <i class="bi bi-gear me-1"></i> Configurações
+                                </label>
+                                <div class="input-group has-validation">
+                                    {{ form.configurations }}
+                                    {% if form.configurations.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.configurations.errors|join:", " }}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div class="form-text text-muted mt-1">
+                                    Configure os parâmetros da IA (um por linha, formato: chave=valor).
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Opções -->
+                        <div class="col-12">
+                            <div class="card bg-light border-0">
+                                <div class="card-body">
+                                    <!-- System Message -->
+                                    <div class="form-check form-switch mb-3">
+                                        {{ form.use_system_message }}
+                                        <label class="form-check-label fw-bold" for="{{ form.use_system_message.id_for_label }}">
+                                            <i class="bi bi-chat-square-text me-1"></i> Usar System Message
+                                        </label>
+                                        <div class="form-text text-muted mt-1">
+                                            Habilite para usar mensagem do sistema, se suportado pela API.
+                                        </div>
+                                    </div>
+
+                                    <!-- Status -->
+                                    <div class="form-check form-switch">
+                                        {{ form.enabled }}
+                                        <label class="form-check-label fw-bold" for="{{ form.enabled.id_for_label }}">
+                                            <i class="bi bi-toggle-on me-1"></i> Ativar Configuração
+                                        </label>
+                                        <div class="form-text text-muted mt-1">
+                                            Habilite para usar esta configuração nas comparações.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Botão Submit -->
+                        <div class="col-12">
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="bi bi-save me-1"></i> 
+                                    {% if is_edit %}
+                                        Atualizar Configuração
+                                    {% else %}
+                                        Salvar Configuração
+                                    {% endif %}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Estilos Gerais */
+    .form-group {
+        margin-bottom: 0;
+    }
+
+    .form-control, .form-select {
+        border-radius: 0.375rem;
+        border: 1px solid #dee2e6;
+        padding: 0.75rem;
+        font-size: 0.95rem;
+        width: 100%;
+    }
+
+    /* Estilização do textarea */
+    textarea.form-control {
+        min-height: 120px;
+        font-family: 'Fira Code', monospace;
+        line-height: 1.5;
+        resize: vertical;
+    }
+
+    /* Melhorias visuais */
+    .input-group {
+        width: 100%;
+    }
+
+    .has-validation {
+        position: relative;
+    }
+
+    .invalid-feedback {
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+        color: #dc3545;
+    }
+
+    /* Estilização dos switches */
+    .form-switch {
+        padding-left: 3em;
+    }
+
+    .form-switch .form-check-input {
+        width: 3em;
+        margin-left: -3em;
+        height: 1.5em;
+        cursor: pointer;
+    }
+
+    /* Estilização do card de opções */
+    .card.bg-light {
+        background-color: #f8f9fa;
+    }
+
+    /* Ajustes de espaçamento e alinhamento */
+    .form-text {
+        font-size: 0.875rem;
+        color: #6c757d;
+    }
+
+    .form-label {
+        margin-bottom: 0.5rem;
+    }
+
+    .card-header {
+        border-bottom: 1px solid rgba(0,0,0,.125);
+    }
+</style>
+
+<script>
+document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        document.querySelector('form').submit();
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,648 @@
+{% extends 'base.html' %}
+{% load ai_config_tags %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10" id="main-content">
+        {% if active_capture %}
+            <div class="alert alert-info alert-dismissible fade show" role="alert">
+                <i class="bi bi-record-circle text-danger me-2 recording-icon"></i>
+                Capturando exemplos para o token "{{ active_capture.token.name }}" usando {{ active_capture.ai_client_config }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endif %}
+        <!-- Adicione esta div para mensagens de erro no início do conteúdo principal -->
+        <div class="alert alert-danger alert-dismissible fade d-none" role="alert" id="errorAlert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <span class="error-message"></span>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        <!-- Cabeçalho e Controles de Captura -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h2 class="mb-0">
+                        {% if training_file %}
+                            Editar Arquivo de Treinamento: {{ training_file.name }}
+                        {% else %}
+                            Criar Arquivo de Treinamento
+                        {% endif %}
+                    </h2>
+                    <div>
+                        {% if active_capture %}
+                            <button type="button" class="btn btn-danger" id="deactivate-capture-btn">
+                                <i class="bi bi-stop-circle me-2"></i> Desativar Captura
+                            </button>
+                        {% else %}
+                            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#captureModal">
+                                <i class="bi bi-record-circle me-2"></i> Ativar Captura
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Formulário Principal -->
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data" id="trainingFileForm">
+                    {% csrf_token %}
+                    {{ formset.media }}
+                    {{ form.media }}
+
+                    <!-- Nome do Arquivo -->
+                    <div class="form-group mb-4">
+                        {{ name_form.name.label_tag }}
+                        {{ name_form.name }}
+                        {% for error in name_form.name.errors %}
+                            <div class="invalid-feedback d-block">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                    <!-- Formset de Exemplos -->
+                    {{ formset.management_form }}
+
+                    <!-- Barra de Ações -->
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <button type="button" id="add-form" class="btn btn-outline-primary">
+                            <i class="bi bi-plus-circle me-2"></i>Adicionar Exemplo
+                        </button>
+                        
+                        <div class="d-flex gap-2">
+                            {% if training_file %}
+                                <button type="submit" name="save" class="btn btn-primary">
+                                    <i class="bi bi-save me-2"></i>Salvar Alterações
+                                </button>
+                                <button type="submit" name="save_and_continue" class="btn btn-success">
+                                    <i class="bi bi-save2 me-2"></i>Salvar e Continuar
+                                </button>
+                            {% else %}
+                                <button type="submit" name="save" class="btn btn-primary">
+                                    <i class="bi bi-save me-2"></i>Salvar Arquivo
+                                </button>
+                                <button type="submit" name="save_and_continue" class="btn btn-success">
+                                    <i class="bi bi-save2 me-2"></i>Salvar e Continuar
+                                </button>
+                            {% endif %}
+                            <a href="{% url 'ai_config:training_center' %}" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left me-2"></i>Voltar
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Exibição dos exemplos: usamos o filtro reverse para exibir do mais novo ao mais antigo -->
+                    <div id="formset-container" class="mb-4">
+                        {% for form in formset reversed %}
+                        <div class="card mb-3 formset-form {% if form.errors %}border border-danger{% endif %}">
+                            <div class="card-header d-flex justify-content-between align-items-center {% if form.errors %}bg-danger bg-opacity-10{% endif %}">
+                                <div class="collapse-toggle" style="cursor: pointer;"
+                                     data-bs-toggle="collapse"
+                                     data-bs-target="#collapse{{ forloop.counter0 }}"
+                                     aria-expanded="{% if forloop.first or form.errors %}true{% else %}false{% endif %}"
+                                     aria-controls="collapse{{ forloop.counter0 }}">
+                                    <h5 class="mb-0">
+                                        Exemplo {{ forloop.revcounter }}
+                                        {% if form.errors %}
+                                        <i class="bi bi-exclamation-triangle-fill text-danger ms-2" 
+                                           title="Este exemplo contém erros"></i>
+                                        {% endif %}
+                                        <i class="bi bi-chevron-down ms-2"></i>
+                                    </h5>
+                                </div>
+                                <button type="button" class="btn btn-danger btn-sm remove-form">
+                                    <i class="bi bi-x-lg"></i> Remover
+                                </button>
+                            </div>
+                            <div id="collapse{{ forloop.counter0 }}" class="collapse {% if forloop.first or form.errors %}show{% endif %}"
+                                 aria-labelledby="heading{{ forloop.counter0 }}"
+                                 data-bs-parent="#formset-container">
+                                <div class="card-body">
+                                    <div style="display: none;">
+                                        {{ form.DELETE }}
+                                    </div>
+                                    <div class="mb-3">
+                                        {{ form.system_message.label_tag }}
+                                        {{ form.system_message }}
+                                        {% for error in form.system_message.errors %}
+                                            <small class="text-danger">{{ error }}</small>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="mb-3">
+                                        {{ form.user_message.label_tag }}
+                                        {{ form.user_message }}
+                                        {% for error in form.user_message.errors %}
+                                            <small class="text-danger">{{ error }}</small>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="mb-3">
+                                        {{ form.response.label_tag }}
+                                        <div class="markdownx">
+                                            {{ form.response }}
+                                        </div>
+                                        {% for error in form.response.errors %}
+                                            <small class="text-danger">{{ error }}</small>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% empty %}
+                            <p>Nenhum exemplo adicionado.</p>
+                        {% endfor %}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Captura -->
+{% include 'training/modals/capture.html' %}
+
+<style>
+/* Estilos Gerais */
+.card {
+    border: none;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+/* Editor e Preview lado a lado */
+.markdownx {
+    display: flex;
+    gap: 1rem;
+    width: 100%;
+}
+
+.markdownx-editor {
+    flex: 1;
+    width: 100%;
+    resize: vertical;
+    padding: 1rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    font-family: monospace;
+    max-height: 500px;
+}
+
+.markdownx-preview {
+    flex: 1;
+    width: 100%;
+    padding: 1rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    background-color: #f8f9fa;
+    overflow-y: auto;
+    max-height: 500px;
+}
+
+@media (max-width: 768px) {
+    .markdownx {
+        flex-direction: column;
+    }
+    
+    .markdownx-editor,
+    .markdownx-preview {
+        height: 150px; /* Mantém altura consistente em mobile */
+    }
+}
+
+.collapse-toggle .bi-chevron-down {
+    transition: transform 0.3s ease;
+}
+
+.collapse.show + .collapse-toggle .bi-chevron-down {
+    transform: rotate(180deg);
+}
+
+.form-control:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* Estilos para o alerta de erro */
+.alert {
+    margin-bottom: 1rem;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    border-color: #f5c2c7;
+    color: #842029;
+}
+
+.alert.show {
+    display: block;
+    animation: slideIn 0.3s ease-in-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Animação do ícone de gravação */
+@keyframes pulse {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.5;
+        transform: scale(1.2);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.recording-icon {
+    animation: pulse 1.5s ease infinite;
+    display: inline-block;
+}
+
+</style>
+
+<!-- Adiciona a biblioteca marked -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Adiciona variável global para controle de alterações
+    window.hasUnsavedChanges = false;
+
+    // Ao clicar em "Adicionar Exemplo", insere o novo form no início
+    const addFormButton = document.getElementById('add-form');
+    const formsetContainer = document.getElementById('formset-container');
+
+    // Função única e reutilizável para criar exemplos
+    function createNewExample(data = null, shouldMarkAsUnsaved = true) {
+        const nextIndex = document.getElementById('id_form-TOTAL_FORMS').value;
+        const newFormHtml = getEmptyFormHtml(nextIndex);
+        
+        // Insere no início do container
+        formsetContainer.insertAdjacentHTML('afterbegin', newFormHtml);
+        const newForm = formsetContainer.firstElementChild;
+        
+        // Preenche dados se fornecidos
+        if (data) {
+            newForm.querySelector('[name$="-system_message"]').value = data.system_message || '';
+            newForm.querySelector('[name$="-user_message"]').value = data.user_message || '';
+            newForm.querySelector('[name$="-response"]').value = data.response || '';
+        }
+        
+        // Inicializa o preview do markdown
+        initMarkdownEditor(newForm.querySelector('.markdownx'));
+        
+        // Atualiza contadores
+        document.getElementById('id_form-TOTAL_FORMS').value = parseInt(nextIndex) + 1;
+        updateExampleNumbers();
+        
+        // Adiciona listeners aos novos campos
+        newForm.querySelectorAll('input, textarea').forEach(input => {
+            input.addEventListener('change', () => {
+                window.hasUnsavedChanges = true;
+            });
+            
+            if (input.tagName === 'TEXTAREA') {
+                input.addEventListener('input', () => {
+                    window.hasUnsavedChanges = true;
+                });
+            }
+        });
+
+        window.hasUnsavedChanges = true;
+        
+        return newForm;
+    }
+
+    // Template para novo form com cabeçalho sem rótulo fixo (será atualizado)
+    function getEmptyFormHtml(index, exampleIndex) {
+        return `
+          <div class="card mb-3 formset-form">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <div class="collapse-toggle" style="cursor: pointer;"
+                   data-bs-toggle="collapse"
+                   data-bs-target="#collapse${index}"
+                   aria-expanded="false"
+                   aria-controls="collapse${index}">
+                <h5 class="mb-0">
+                    <span class="example-number" data-index="${exampleIndex}">Exemplo ${exampleIndex}</span>
+                    <i class="bi bi-chevron-down ms-2"></i>
+                </h5>
+              </div>
+              <button type="button" class="btn btn-danger btn-sm remove-form">
+                  <i class="bi bi-x-lg"></i> Remover
+              </button>
+            </div>
+            <div id="collapse${index}" class="collapse" aria-labelledby="heading${index}" data-bs-parent="#formset-container">
+              <div class="card-body">
+                <div style="display: none;">
+                  <input type="checkbox" name="form-${index}-DELETE" id="id_form-${index}-DELETE">
+                </div>
+                <div class="mb-3">
+                  <label for="id_form-${index}-system_message">Mensagem do Sistema:</label>
+                  <textarea name="form-${index}-system_message"
+                            cols="40" rows="4"
+                            class="form-control"
+                            id="id_form-${index}-system_message"></textarea>
+                </div>
+                <div class="mb-3">
+                  <label for="id_form-${index}-user_message">Mensagem do Usuário:</label>
+                  <textarea name="form-${index}-user_message"
+                            cols="4 rows="4"0 rows="4"" rows="4"
+                            class="form-control"
+                            id="id_form-${index}-user_message"></textarea>
+                </div>
+                <div class="mb-3">
+                  <label for="id_form-${index}-response">Resposta:</label>
+                  <div class="markdownx">
+                    <textarea name="form-${index}-response"
+                              cols="40"
+                              class="form-control markdownx-editor"
+                              id="id_form-${index}-response"></textarea>
+                                      </div>
+                </div>
+              </div>
+            </div>
+          </div>`;
+    }
+
+    // Remover form: marca DELETE e oculta o form; depois atualiza numeração
+    formsetContainer.addEventListener('click', function(e) {
+        const removeBtn = e.target.closest('.remove-form');
+        if (removeBtn) {
+            const formCard = removeBtn.closest('.formset-form');
+            if (formCard) {
+                const deleteCheckbox = formCard.querySelector('input[type="checkbox"][name$="-DELETE"]');
+                if (deleteCheckbox) {
+                    deleteCheckbox.checked = true;
+                }
+                formCard.style.display = 'none';
+            }
+        }
+    });
+
+    // Função para mostrar erro
+    function showError(message) {
+        const errorAlert = document.getElementById('errorAlert');
+        const errorMessage = errorAlert.querySelector('.error-message');
+        if (errorAlert && errorMessage) {
+            errorMessage.textContent = message;
+            errorAlert.classList.remove('d-none');
+            errorAlert.classList.add('show');
+            
+            // Auto-hide após 5 segundos
+            setTimeout(() => {
+                errorAlert.classList.remove('show');
+                errorAlert.classList.add('d-none');
+            }, 5000);
+        }
+    }
+
+    // Inicia o polling se houver captura ativa
+    if (document.getElementById('deactivate-capture-btn')) {
+        // Guarda os dados da captura ativa em variáveis globais
+        window.activeCaptureToken = '{{ active_capture.token.id }}';
+        window.activeCaptureAI = '{{ active_capture.ai_client_config.id }}';
+        
+        // Busca inicial
+        fetchTrainingExamples();
+        
+        // Configura o polling a cada 30 segundos
+        window.pollingInterval = setInterval(fetchTrainingExamples, 30000);
+    }
+
+    // Limpa o intervalo quando a página é fechada
+    window.addEventListener('beforeunload', function() {
+        if (window.pollingInterval) {
+            clearInterval(window.pollingInterval);
+        }
+    });
+
+    // Funções Utilitárias
+    function updateExampleNumbers() {
+        const forms = Array.from(formsetContainer.querySelectorAll('.formset-form')).filter(form => form.style.display !== 'none');
+        forms.forEach((form, index) => {
+            const numberSpan = form.querySelector('.example-number');
+            if (numberSpan) {
+                const displayNumber = forms.length - index;
+                numberSpan.textContent = `Exemplo ${displayNumber}`;
+                numberSpan.dataset.index = displayNumber;
+            }
+        });
+    }
+
+    function initMarkdownEditor(container) {
+        const textarea = container.querySelector('.markdownx-editor');
+        const previewDiv = container.querySelector('.markdownx-preview') || createPreviewDiv(container);
+        
+        // Atualiza o preview inicialmente
+        if (textarea.value) {
+            previewDiv.innerHTML = marked.parse(textarea.value);
+        }
+
+        // Remove listener antigo se existir
+        textarea.removeEventListener('input', textarea.markdownHandler);
+        
+        // Adiciona novo listener
+        textarea.markdownHandler = () => {
+            previewDiv.innerHTML = marked.parse(textarea.value);
+        };
+        
+        textarea.addEventListener('input', textarea.markdownHandler);
+    }
+
+    function createPreviewDiv(container) {
+        const previewDiv = document.createElement('div');
+        previewDiv.className = 'markdownx-preview';
+        container.appendChild(previewDiv);
+        return previewDiv;
+    }
+
+    // Atualizar handlers existentes
+    addFormButton.addEventListener('click', function() {
+        const newForm = createNewExample(null, true); // Marca como alterado ao adicionar manualmente
+        newForm.querySelector('.collapse').classList.add('show');
+    });
+
+    formsetContainer.addEventListener('click', function(e) {
+        const removeBtn = e.target.closest('.remove-form');
+        if (removeBtn) {
+            const formCard = removeBtn.closest('.formset-form');
+            if (formCard) {
+                const deleteCheckbox = formCard.querySelector('input[type="checkbox"][name$="-DELETE"]');
+                if (deleteCheckbox) {
+                    deleteCheckbox.checked = true;
+                }
+                formCard.style.display = 'none';
+                updateExampleNumbers();
+                window.hasUnsavedChanges = true; // Marca como alterado ao remover exemplo
+            }
+        }
+    });
+
+    // Inicializar todos os previews existentes
+    document.querySelectorAll('.markdownx').forEach(initMarkdownEditor);
+
+    // Atualizar função de polling
+    function fetchTrainingExamples() {
+        if (!window.activeCaptureToken || !window.activeCaptureAI) return;
+
+        fetch(buildUrl(buildUrl("{% url 'ai_config:capture_get_examples' 'ffffffff-ffff-ffff-ffff-ffffffffffff' '8888888888'%}", "ffffffff-ffff-ffff-ffff-ffffffffffff", window.activeCaptureToken), '8888888888', window.activeCaptureAI))
+            .then(response => response.json())
+            .then(data => {
+                if (data.examples && data.examples.length > 0) {
+                    data.examples.forEach(example => {
+                        createNewExample(example, false); // Não marca como alterado para exemplos capturados
+                    });
+                }
+            })
+            .catch(error => showError('Erro ao buscar exemplos: ' + error));
+    }
+
+    // Inicializar numeração inicial
+    updateExampleNumbers();
+
+    // Monitora alterações no formulário principal
+    const form = document.getElementById('trainingFileForm');
+    const formInputs = form.querySelectorAll('input, textarea');
+    
+    formInputs.forEach(input => {
+        input.addEventListener('change', () => {
+            window.hasUnsavedChanges = true;
+        });
+        
+        if (input.tagName === 'TEXTAREA') {
+            input.addEventListener('input', () => {
+                window.hasUnsavedChanges = true;
+            });
+        }
+    });
+
+    // Reseta o status de alterações ao salvar
+    form.addEventListener('submit', () => {
+        window.hasUnsavedChanges = false;
+    });
+
+    // Adicionar handler para Ctrl+S
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault(); // Previne o comportamento padrão do navegador
+            
+            // Encontra e clica no botão "Salvar e Continuar"
+            const saveAndContinueBtn = document.querySelector('button[name="save_and_continue"]');
+            if (saveAndContinueBtn) {
+                saveAndContinueBtn.click();
+            }
+        }
+    });
+
+    // Função para desativar captura - extraída para reuso
+    async function deactivateCapture() {
+        try {
+            const response = await fetch('{% url "ai_config:capture_toggle" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: new URLSearchParams({
+                    'action': 'deactivate'
+                })
+            });
+
+            if (response.ok) {
+                // Remove o alerta de captura ativa
+                const activeAlert = document.querySelector('.alert-info');
+                if (activeAlert) {
+                    activeAlert.remove();
+                }
+
+                // Atualiza o botão de captura
+                const deactivateButton = document.getElementById('deactivate-capture-btn');
+                if (deactivateButton) {
+                    const buttonContainer = deactivateButton.parentElement;
+                    if (buttonContainer) {
+                        const newButton = document.createElement('button');
+                        newButton.type = 'button';
+                        newButton.className = 'btn btn-primary';
+                        newButton.setAttribute('data-bs-toggle', 'modal');
+                        newButton.setAttribute('data-bs-target', '#captureModal');
+                        newButton.innerHTML = '<i class="bi bi-record-circle me-2"></i> Ativar Captura';
+                        
+                        // Substitui o botão antigo pelo novo
+                        buttonContainer.innerHTML = '';
+                        buttonContainer.appendChild(newButton);
+                    }
+                }
+
+                // Limpa as variáveis globais de captura
+                window.activeCaptureToken = null;
+                window.activeCaptureAI = null;
+
+                // Para o polling de exemplos
+                if (window.pollingInterval) {
+                    clearInterval(window.pollingInterval);
+                }
+
+                // Altera aqui: usa showToast com tipo 'success'
+                showToast('Captura desativada com sucesso', 'success');
+            } else {
+                throw new Error('Erro ao desativar captura');
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            showError('Erro ao desativar captura: ' + error.message);
+        }
+    }
+
+    // Configura o botão de desativar captura
+    const deactivateButton = document.getElementById('deactivate-capture-btn');
+    if (deactivateButton) {
+        deactivateButton.addEventListener('click', deactivateCapture);
+    }
+
+    // Adicionar esta função para sincronizar altura do preview com o editor
+    function initializeMarkdownPreview(textarea) {
+        const markdownx = textarea.closest('.markdownx');
+        const preview = markdownx.querySelector('.markdownx-preview');
+        
+        // Observa mudanças na altura do textarea
+        const resizeObserver = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                // Atualiza altura do preview para corresponder ao editor
+                preview.style.height = `${entry.target.offsetHeight}px`;
+            }
+        });
+        
+        resizeObserver.observe(textarea);
+        
+        // Atualiza preview quando o texto mudar
+        textarea.addEventListener('input', function() {
+            preview.innerHTML = marked.parse(textarea.value);
+        });
+        
+        // Atualiza preview inicialmente se houver conteúdo
+        if (textarea.value) {
+            preview.innerHTML = marked.parse(textarea.value);
+        }
+    }
+    
+    // Inicializa os previews existentes
+    document.querySelectorAll('.markdownx-editor').forEach(initializeMarkdownPreview);
+});
+</script>
+{% endblock %}
