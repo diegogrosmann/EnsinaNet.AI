@@ -4,19 +4,15 @@ from ai_config import views
 
 app_name = 'ai_config'
 
-ai_configs_patterns = [
-    path('', views.ai_config_manage, name='ai_config_manage'),
-    path('create/', views.ai_config_create, name='ai_config_create'),
-    path('<int:config_id>/', include([
-        path('edit/', views.ai_config_edit, name='ai_config_edit'),
-        path('delete/', views.ai_config_delete, name='ai_config_delete'),
-        path('toggle/', views.ai_config_toggle, name='ai_config_toggle'),  # Nova URL
-    ])),
-]
-
 ai_patterns = [
-    path('configs/', include(ai_configs_patterns)),
-    path('get/', views.get_token_ais, name='token_get_ais'),
+    path('', views.manage_ai, name='ai_manage'),
+    path('create/', views.create_ai, name='ai_create'),
+    path('<int:ai_id>/', include([
+        path('edit/', views.edit_ai, name='ai_edit'),
+        path('delete/', views.delete_ai, name='ai_delete'),
+        path('available-tokens/', views.ai_available_tokens, name='ai_available_tokens'),
+        path('link-token/<uuid:token_id>/', views.ai_link_token, name='ai_link_token'),
+    ])),
 ]
 
 training_patterns = [
@@ -30,17 +26,25 @@ training_patterns = [
             path('delete/', views.training_file_delete, name='training_file_delete'),
         ])),
     ])),
-    path('train/', views.training_ai, name='training_ai'),
     path('capture/toggle/', views.capture_toggle, name='capture_toggle'),
     path('tokens/<uuid:token_id>/ai/<int:ai_id>/get-examples', 
          views.capture_get_examples, 
          name='capture_get_examples'),
+    # Novos endpoints
+    path('train/', views.training_ai, name='training_ai'),  # URL simplificada
+    path('status/', views.training_status, name='training_status'),
+    path('progress/', views.training_progress, name='training_progress'),
+    path('cancel/<str:job_id>/', views.training_cancel, name='training_cancel'),
+    path('delete/<str:job_id>/', views.training_delete, name='training_delete'),  # Nova URL
 ]
 
-urlpatterns = [
-    path('tokens/<uuid:token_id>/', include([
-        path('ai/', include(ai_patterns)),
-        path('prompt-config/', views.prompt_config, name='prompt-config'),
-    ])),
+token_patterns = [
+    path('prompt', views.prompt_config, name='token_prompt_config'),
+    path('ai_link', views.token_ai_link, name='token_ai_link'),
+]
+
+urlpatterns = [ 
+    path('ai/', include(ai_patterns)),
     path('training/', include(training_patterns)),
+    path('token/<uuid:token_id>/', include(token_patterns)),
 ]

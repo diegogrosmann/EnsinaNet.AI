@@ -278,13 +278,32 @@ def token_create(request: HttpRequest) -> HttpResponse:
     user = request.user
     form = TokenForm(request.POST, user=user)
     
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    
     if not form.is_valid():
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return render(request, 'accounts/manage/modals/create_token_modal.html', {'form': form})
+        if is_ajax:
+            # Formato consistente para erros
+            errors = {}
+            for field, error_messages in form.errors.items():
+                errors[field] = [str(msg) for msg in error_messages]
+            
+            # Log detalhado para depuração
+            logger.debug(f"Erros de validação do token: {errors}")
+            
+            return JsonResponse({
+                'success': False, 
+                'errors': errors
+            }, status=400)
+        
         messages.error(request, 'Formulário inválido.')
         return redirect('accounts:tokens_manage')
 
     if not user.profile.is_approved:
+        if is_ajax:
+            return JsonResponse({
+                'success': False, 
+                'errors': {'__all__': ['Sua conta não foi aprovada.']}
+            }, status=403)
         messages.error(request, 'Sua conta não foi aprovada.')
         logger.warning(f"Tentativa de criação de token sem aprovação: {user.email}")
         return redirect('accounts:tokens_manage')
@@ -294,13 +313,25 @@ def token_create(request: HttpRequest) -> HttpResponse:
         token.user = user
         token.save()
         logger.info(f"Token criado: {token.name} para {user.email}")
-        messages.success(request, 'Token criado com sucesso!')
         
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return HttpResponse()
+        if is_ajax:
+            return JsonResponse({
+                'success': True, 
+                'message': 'Token criado com sucesso!',
+                'token_id': str(token.id)
+            })
+            
+        messages.success(request, 'Token criado com sucesso!')
         return redirect('accounts:token_config', token_id=token.id)
     except Exception as e:
         logger.exception(f"Erro ao criar token para {user.email}:")
+        
+        if is_ajax:
+            return JsonResponse({
+                'success': False, 
+                'errors': {'__all__': [f'Erro ao criar token: {str(e)}']}
+            }, status=500)
+            
         messages.error(request, 'Erro ao criar token.')
         return redirect('accounts:tokens_manage')
 
@@ -391,7 +422,7 @@ def token_config(request: HttpRequest, token_id: str) -> HttpResponse:
         'form': form,
         'available_ais': available_ais,
     }
-    return render(request, 'accounts/manage/token.config.html', context)
+    return render(request, 'accounts/manage/token_config.html', context)
 
 ### Configurações do Usuário ###
 

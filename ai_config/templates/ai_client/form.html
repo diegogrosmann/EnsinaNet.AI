@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <!-- Card Header -->
+                <div class="card-header bg-white d-flex justify-content-between align-items-center p-3">
+                    <h2 class="h4 m-0">
+                        <i class="bi bi-robot me-2"></i> 
+                        {{ title }}
+                    </h2>
+                    <a href="{% url 'ai_config:ai_manage' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i> Voltar
+                    </a>
+                </div>
+
+                <!-- Card Body -->
+                <div class="card-body p-4">
+                    <form method="post" class="needs-validation" novalidate>
+                        {% csrf_token %}
+
+                        <!-- Campos Básicos -->
+                        <div class="row g-4">
+                            <!-- Nome -->
+                            <div class="col-12">
+                                <label class="form-label fw-bold">
+                                    <i class="bi bi-tag me-1"></i> Nome da IA
+                                </label>
+                                {{ form.name }}
+                                {% if form.name.errors %}
+                                    <div class="invalid-feedback d-block">{{ form.name.errors|join:", " }}</div>
+                                {% endif %}
+                            </div>
+
+                            <!-- AI Client -->
+                            <div class="col-12">
+                                <label class="form-label fw-bold">
+                                    <i class="bi bi-cpu me-1"></i> Cliente IA
+                                </label>
+                                {{ form.ai_client }}
+                                {% if form.ai_client.errors %}
+                                    <div class="invalid-feedback d-block">{{ form.ai_client.errors|join:", " }}</div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Model Name -->
+                            <div class="col-12">
+                                <label class="form-label fw-bold">
+                                    <i class="bi bi-box me-1"></i> Nome do Modelo
+                                </label>
+                                {{ form.model_name }}
+                                {% if form.model_name.errors %}
+                                    <div class="invalid-feedback d-block">{{ form.model_name.errors|join:", " }}</div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Use System Message -->
+                            <div class="col-12">
+                                <div class="form-check">
+                                    {{ form.use_system_message }}
+                                    <label class="form-check-label" for="{{ form.use_system_message.id_for_label }}">
+                                        <i class="bi bi-chat-left-text me-1"></i> {{ form.use_system_message.label }}
+                                    </label>
+                                </div>
+                                {% if form.use_system_message.help_text %}
+                                    <div class="form-text">{{ form.use_system_message.help_text }}</div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Configurações Avançadas -->
+                            <div class="col-12">
+                                <div class="accordion" id="configAccordion">
+                                    <!-- Configurações da API -->
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header">
+                                            <button class="accordion-button {% if not form.configurations.errors %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#configCollapse" aria-expanded="{% if form.configurations.errors %}true{% else %}false{% endif %}">
+                                                <i class="bi bi-gear me-2"></i> Configurações da API
+                                            </button>
+                                        </h2>
+                                        <div id="configCollapse" class="accordion-collapse collapse {% if form.configurations.errors %}show{% endif %}" data-bs-parent="#configAccordion">
+                                            <div class="accordion-body">
+                                                <div class="mb-3">
+                                                    <label class="form-label">Parâmetros da API</label>
+                                                    {% with config_value=form.configurations.value %}
+                                                        <textarea name="{{ form.configurations.name }}" class="form-control {% if form.configurations.errors %}is-invalid{% endif %}" rows="5" placeholder="{{ form.configurations.field.widget.attrs.placeholder }}">{% if config_value != '{}' and config_value != None %}{{ config_value }}{% endif %}</textarea>
+                                                    {% endwith %}
+                                                    {% if form.configurations.errors %}
+                                                        <div class="invalid-feedback d-block">
+                                                            {% for error in form.configurations.errors %}
+                                                                {{ error }}
+                                                            {% endfor %}
+                                                        </div>
+                                                    {% endif %}
+                                                    <div class="form-text">
+                                                        Configure parâmetros da API no formato chave=valor (um por linha)
+                                                        <br>Exemplo:<br>
+                                                        temperature=0.7<br>
+                                                        max_tokens=2000
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Configurações de Treinamento -->
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header">
+                                            <button class="accordion-button {% if not form.training_configurations.errors %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#trainingCollapse" aria-expanded="{% if form.training_configurations.errors %}true{% else %}false{% endif %}">
+                                                <i class="bi bi-book me-2"></i> Configurações de Treinamento
+                                            </button>
+                                        </h2>
+                                        <div id="trainingCollapse" class="accordion-collapse collapse {% if form.training_configurations.errors %}show{% endif %}" data-bs-parent="#configAccordion">
+                                            <div class="accordion-body">
+                                                <div class="mb-3">
+                                                    <label class="form-label">Parâmetros de Treinamento</label>
+                                                    {% with train_value=form.training_configurations.value %}
+                                                        <textarea name="{{ form.training_configurations.name }}" class="form-control {% if form.training_configurations.errors %}is-invalid{% endif %}" rows="5" placeholder="{{ form.training_configurations.field.widget.attrs.placeholder }}">{% if train_value != '{}' and train_value != None %}{{ train_value }}{% endif %}</textarea>
+                                                    {% endwith %}
+                                                    {% if form.training_configurations.errors %}
+                                                        <div class="invalid-feedback d-block">
+                                                            {% for error in form.training_configurations.errors %}
+                                                                {{ error }}
+                                                            {% endfor %}
+                                                        </div>
+                                                    {% endif %}
+                                                    <div class="form-text">
+                                                        Configure parâmetros de treinamento no formato chave=valor (um por linha)
+                                                        <br>Exemplo:<br>
+                                                        epochs=10<br>
+                                                        batch_size=4<br>
+                                                        learning_rate=0.001
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Botão Submit -->
+                            <div class="col-12">
+                                <div class="d-grid gap-2">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-save me-1"></i> {{ submit_text }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.form-control, .form-select {
+    border-radius: 0.375rem;
+    border: 1px solid #dee2e6;
+    padding: 0.75rem;
+}
+
+.accordion-button:not(.collapsed) {
+    background-color: #f8f9fa;
+    color: #0d6efd;
+}
+
+.accordion-button:focus {
+    box-shadow: none;
+    border-color: rgba(13, 110, 253, 0.25);
+}
+
+textarea.form-control {
+    min-height: 120px;
+    font-family: 'Fira Code', monospace;
+    line-height: 1.5;
+}
+
+.invalid-feedback {
+    font-size: 0.875rem;
+}
+
+.form-text {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
+.card {
+    border: none;
+    box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+}
+</style>
+
+<script>
+document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        document.querySelector('form').submit();
+    }
+});
+</script>
+{% endblock %}

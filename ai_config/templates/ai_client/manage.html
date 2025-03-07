@@ -1,0 +1,647 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Gerenciamento de IAs</h2>
+        <a href="{% url 'ai_config:ai_create' %}" class="btn btn-success">
+            <i class="bi bi-plus-circle"></i> Nova IA
+        </a>
+    </div>
+
+    {% if ai_clients %}
+    <div class="card shadow-sm">
+        <!-- Filtros e Busca -->
+        <div class="card-header bg-white py-3">
+            <div class="row align-items-center">
+                <div class="col-md-4">
+                    <select id="apiFilter" class="form-select">
+                        <option value="">Todas as APIs</option>
+                        {% for api in api_types %}
+                        <option value="{{ api }}">{{ api }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-8">
+                    <div class="d-flex gap-2">
+                        <input type="text" 
+                               id="searchInput"
+                               class="form-control" 
+                               placeholder="Buscar por nome..."
+                               value="{{ search_query }}">
+                        {% if search_query %}
+                        <button class="btn btn-outline-secondary" onclick="clearSearch()">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tableContainer">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Cliente IA</th>
+                        <th>Modelo</th>
+                        <th class="text-end">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ai in ai_clients %}
+                    <tr style="cursor: pointer;" onclick="window.location='{% url 'ai_config:ai_edit' ai.id %}'">
+                        <td>{{ ai.name }}</td>
+                        <td>{{ ai.ai_client }}</td>
+                        <td>{{ ai.model_name|default:"Padrão" }}</td>
+                        <td class="text-end">
+                            <div class="btn-group">
+                                <button onclick="event.stopPropagation(); openLinkModal('{{ ai.id }}', '{{ ai.name }}')" class="btn btn-sm btn-outline-primary me-1">
+                                    <i class="bi bi-link"></i> Tokens
+                                </button>
+                                <button onclick="event.stopPropagation(); confirmDelete('{{ ai.id }}', '{{ ai.name }}')" class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        {% if search_query %}
+        <i class="bi bi-info-circle me-2"></i>
+        Nenhuma IA encontrada com o termo "{{ search_query }}".
+        <a href="{% url 'ai_config:manage_ai' %}" class="alert-link">Limpar busca</a>
+        {% else %}
+        <i class="bi bi-info-circle me-2"></i>
+        Nenhuma IA configurada. Clique em "Nova IA" para adicionar.
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal de Confirmação de Exclusão -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirmar Exclusão</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                Tem certeza que deseja excluir a IA "<span id="aiNameToDelete"></span>"?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" id="confirmDelete">Excluir</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Vincular Tokens -->
+<div class="modal fade" id="linkTokenModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Vincular Tokens à IA: <span id="aiNameForTokens"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-loading text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Carregando...</span>
+                    </div>
+                    <p class="mt-2">Carregando tokens disponíveis...</p>
+                </div>
+                <div class="modal-error alert alert-danger d-none">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Erro ao carregar tokens. Por favor, tente novamente.
+                </div>
+                <div class="tokens-container d-none">
+                    <div class="alert alert-info mb-3">
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        Selecione os tokens que podem utilizar esta IA. As alterações são salvas automaticamente.
+                    </div>
+                    <div class="list-group token-list">
+                        <!-- Lista de tokens será carregada dinamicamente -->
+                    </div>
+                    <div class="no-tokens text-center py-4 d-none">
+                        <i class="bi bi-exclamation-circle text-warning" style="font-size: 2rem;"></i>
+                        <p class="mt-2">Você ainda não tem tokens disponíveis.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let deleteModal;
+let linkTokenModal;
+let aiIdToDelete;
+let currentAiId;
+
+document.addEventListener('DOMContentLoaded', function() {
+    deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    linkTokenModal = new bootstrap.Modal(document.getElementById('linkTokenModal'));
+});
+
+function confirmDelete(id, name) {
+    aiIdToDelete = id;
+    document.getElementById('aiNameToDelete').textContent = name;
+    deleteModal.show();
+}
+
+document.getElementById('confirmDelete').addEventListener('click', function() {
+    const url = buildUrl(`{% url 'ai_config:ai_delete' 9999999999 %}`,'9999999999', aiIdToDelete)
+    
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            window.location.reload();
+        } else {
+            alert(data.message || 'Erro ao excluir IA');
+        }
+    })
+    .catch(error => {
+        console.error('Erro:', error);
+        alert('Erro ao excluir IA');
+    })
+    .finally(() => {
+        deleteModal.hide();
+    });
+});
+
+// Adiciona filtro de API
+document.getElementById('apiFilter').addEventListener('change', function() {
+    const selectedApi = this.value;
+    const rows = document.querySelectorAll('tbody tr');
+    
+    rows.forEach(row => {
+        const apiType = row.dataset.apiType;
+        if (!selectedApi || apiType === selectedApi) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+});
+
+// Adiciona debounce para evitar muitas requisições
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Função para atualizar a tabela
+async function updateTable(page = 1) {
+    const searchQuery = document.getElementById('searchInput').value;
+    const selectedApi = document.getElementById('apiFilter').value;
+    const url = new URL(window.location.href);
+    
+    // Adiciona todos os parâmetros
+    url.searchParams.set('search', searchQuery);
+    url.searchParams.set('page', page);
+    if (selectedApi) {
+        url.searchParams.set('api_type', selectedApi);
+    } else {
+        url.searchParams.delete('api_type');
+    }
+
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        const data = await response.json();
+        
+        document.getElementById('tableContainer').innerHTML = data.html;
+        
+        // Atualiza a URL sem recarregar a página
+        window.history.pushState({}, '', url);
+    } catch (error) {
+        console.error('Erro ao buscar dados:', error);
+    }
+}
+
+// Atualiza o listener do filtro de API para usar updateTable
+document.getElementById('apiFilter').addEventListener('change', function() {
+    updateTable(1); // Reset para primeira página ao filtrar
+});
+
+// Limpar busca
+function clearSearch() {
+    document.getElementById('searchInput').value = '';
+    updateTable();
+}
+
+// Configura o input de busca com debounce
+document.getElementById('searchInput').addEventListener('input', 
+    debounce(() => updateTable(), 300)
+);
+
+// Função para abrir o modal de vinculação de tokens
+function openLinkModal(aiId, aiName) {
+    currentAiId = aiId;
+    document.getElementById('aiNameForTokens').textContent = aiName;
+    
+    // Resetar o estado do modal
+    const loadingEl = document.querySelector('.modal-loading');
+    const errorEl = document.querySelector('.modal-error');
+    const tokensContainer = document.querySelector('.tokens-container');
+    const noTokensEl = document.querySelector('.no-tokens');
+    
+    loadingEl.classList.remove('d-none');
+    errorEl.classList.add('d-none');
+    tokensContainer.classList.add('d-none');
+    noTokensEl.classList.add('d-none');
+    
+    // Mostrar o modal
+    linkTokenModal.show();
+    
+    // Carregar os tokens disponíveis
+    loadTokensForAi(aiId);
+}
+
+// Função para carregar tokens disponíveis
+async function loadTokensForAi(aiId) {
+    try {
+        const response = await fetch(buildUrl(
+            `{% url 'ai_config:ai_available_tokens' 9999999999 %}`,
+            '9999999999',
+            aiId
+        ), {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Falha ao carregar tokens');
+        }
+        
+        const data = await response.json();
+        
+        // Esconder o loading
+        document.querySelector('.modal-loading').classList.add('d-none');
+        
+        // Mostrar o container de tokens
+        const tokensContainer = document.querySelector('.tokens-container');
+        tokensContainer.classList.remove('d-none');
+        
+        // Processar a resposta
+        const tokenList = document.querySelector('.token-list');
+        
+        if (data.tokens && data.tokens.length > 0) {
+            let tokensHtml = '';
+            data.tokens.forEach(token => {
+                tokensHtml += `
+                <div class="list-group-item d-flex align-items-center justify-content-between">
+                    <div>
+                        <h6 class="mb-0">${token.name}</h6>
+                        <small class="text-muted">${token.description || 'Sem descrição'}</small>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input token-toggle" 
+                               type="checkbox" 
+                               id="token-${token.id}" 
+                               data-token-id="${token.id}" 
+                               data-ai-id="${aiId}"
+                               ${token.enabled ? 'checked' : ''}>
+                        <span class="status-badge ms-2 badge ${token.enabled ? 'bg-success' : 'bg-secondary'}">
+                            ${token.enabled ? 'Ativo' : 'Inativo'}
+                        </span>
+                    </div>
+                </div>
+                `;
+            });
+            tokenList.innerHTML = tokensHtml;
+            
+            // Adicionar listeners aos switches
+            document.querySelectorAll('.token-toggle').forEach(toggle => {
+                toggle.addEventListener('change', function() {
+                    toggleTokenForAi(this.dataset.tokenId, this.dataset.aiId, this.checked);
+                });
+            });
+        } else {
+            document.querySelector('.no-tokens').classList.remove('d-none');
+            tokenList.innerHTML = '';
+        }
+    } catch (error) {
+        console.error('Erro ao carregar tokens:', error);
+        document.querySelector('.modal-loading').classList.add('d-none');
+        document.querySelector('.modal-error').classList.remove('d-none');
+    }
+}
+
+// Função para ativar/desativar um token para uma IA
+async function toggleTokenForAi(tokenId, aiId, isEnabled) {
+    // Encontrar elementos de UI
+    const toggle = document.getElementById(`token-${tokenId}`);
+    const statusBadge = toggle.nextElementSibling;
+    
+    // Desabilitar o switch durante o processamento
+    toggle.disabled = true;
+    statusBadge.innerHTML = `
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        Salvando...
+    `;
+    
+    try {
+        // Enviar atualização para o servidor
+        const response = await fetch(
+        buildUrl(    
+            buildUrl(
+                `{% url 'ai_config:ai_link_token' '9999999999' 'ffffffff-ffff-ffff-ffff-ffffffffffff' %}`,
+                '9999999999',
+                aiId,
+            ),
+            'ffffffff-ffff-ffff-ffff-ffffffffffff',
+            tokenId
+        ), {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ enabled: isEnabled })
+        });
+        
+        const data = await response.json();
+        
+        // Restaurar o switch e atualizar a interface
+        toggle.disabled = false;
+        
+        if (data.status === 'success') {
+            // Atualizar o badge de status
+            statusBadge.className = isEnabled ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
+            statusBadge.textContent = isEnabled ? 'Ativo' : 'Inativo';
+            
+            // Mostrar mensagem de sucesso
+            showMessage('success', `Token ${isEnabled ? 'ativado' : 'desativado'} para esta IA com sucesso!`);
+        } else {
+            // Reverter o estado do switch em caso de erro
+            toggle.checked = !isEnabled;
+            statusBadge.className = !isEnabled ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
+            statusBadge.textContent = !isEnabled ? 'Ativo' : 'Inativo';
+            
+            // Mostrar mensagem de erro
+            showMessage('error', data.message || 'Ocorreu um erro ao processar sua solicitação.');
+        }
+    } catch (error) {
+        console.error('Erro:', error);
+        toggle.disabled = false;
+        toggle.checked = !isEnabled;
+        statusBadge.className = !isEnabled ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
+        statusBadge.textContent = !isEnabled ? 'Ativo' : 'Inativo';
+        showMessage('error', 'Erro de conexão. Tente novamente.');
+    }
+}
+
+// Função para exibir mensagem de toast
+function showMessage(type, message) {
+    let toastContainer = document.querySelector('.toast-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+        toastContainer.style.zIndex = '1500';
+        document.body.appendChild(toastContainer);
+    }
+    
+    let bgClass, iconClass;
+    switch(type) {
+        case 'success':
+            bgClass = 'text-bg-success';
+            iconClass = 'bi-check-circle';
+            break;
+        case 'error':
+            bgClass = 'text-bg-danger';
+            iconClass = 'bi-exclamation-circle';
+            break;
+        default:
+            bgClass = 'text-bg-info';
+            iconClass = 'bi-info-circle';
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center border-0 ${bgClass}`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="bi ${iconClass} me-2"></i>
+                ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    `;
+    
+    toastContainer.appendChild(toast);
+    const bsToast = new bootstrap.Toast(toast, { delay: 3000 });
+    bsToast.show();
+}
+
+// Função auxiliar para obter cookies (para CSRF)
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+</script>
+
+<style>
+.table thead th {
+    border-bottom: none;
+    font-weight: 500;
+}
+
+.badge {
+    font-size: 0.85em;
+    padding: 0.4em 0.6em;
+}
+
+.btn-group .btn {
+    padding: 0.25rem 0.5rem;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+/* Estilos modernizados para a tabela */
+.table {
+    --bs-table-hover-bg: rgba(13, 110, 253, 0.04);
+    margin-bottom: 0;
+}
+
+.table thead {
+    background-color: #f8f9fa;
+}
+
+.table thead th {
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    padding: 1rem;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.table td {
+    padding: 1rem;
+    vertical-align: middle;
+}
+
+.badge {
+    font-weight: 500;
+    padding: 0.5em 0.9em;
+    font-size: 0.75rem;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.cursor-pointer:hover {
+    background-color: var(--bs-table-hover-bg);
+}
+
+/* Estilização do filtro */
+.card-header {
+    border-bottom: 1px solid #dee2e6;
+}
+
+.form-select {
+    border-radius: 0.5rem;
+    padding: 0.5rem 2.25rem 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    border-color: #dee2e6;
+    cursor: pointer;
+}
+
+.form-select:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* Animação suave ao filtrar */
+tbody tr {
+    transition: opacity 0.3s ease;
+}
+
+/* Estilos adicionais para busca e paginação */
+.form-control:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.pagination {
+    margin-bottom: 0;
+}
+
+.page-link {
+    padding: 0.375rem 0.75rem;
+    color: #0d6efd;
+    background-color: #fff;
+    border: 1px solid #dee2e6;
+}
+
+.page-link:hover {
+    z-index: 2;
+    color: #0a58ca;
+    background-color: #e9ecef;
+    border-color: #dee2e6;
+}
+
+.page-item.active .page-link {
+    z-index: 3;
+    color: #fff;
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+
+.card-footer {
+    border-top: 1px solid #dee2e6;
+    padding: 1rem;
+}
+
+/* Estilos para o modal de tokens */
+.token-list .list-group-item {
+    transition: background-color 0.2s ease;
+}
+
+.token-list .list-group-item:hover {
+    background-color: rgba(13, 110, 253, 0.04);
+}
+
+.form-check-input {
+    cursor: pointer;
+    width: 3em;
+    height: 1.5em;
+}
+
+.form-check-input:checked {
+    background-color: #198754;
+    border-color: #198754;
+}
+
+.status-badge {
+    font-size: 0.85em;
+    padding: 0.4em 0.6em;
+    transition: all 0.3s ease;
+}
+
+/* Animações para estados de carregamento */
+.btn-processing {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+.btn-processing .spinner-border {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+}
+</style>
+{% endblock %}

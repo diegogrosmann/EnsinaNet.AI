@@ -8,6 +8,7 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import get_user_model, authenticate
 from allauth.account.models import EmailAddress
 from django.urls import reverse_lazy
+from django.core.exceptions import ValidationError
 
 from .models import UserToken
 from django.utils.safestring import mark_safe
@@ -100,6 +101,9 @@ class TokenForm(forms.ModelForm):
         name = self.cleaned_data.get('name')
         if UserToken.objects.filter(user=self.user, name=name).exists():
             raise forms.ValidationError('Já existe um token com esse nome.')
+        # Verifica se já existe um token com o mesmo nome (ignora maiúsculas/minúsculas)
+        if UserToken.objects.filter(name__iexact=name).exists():
+            raise ValidationError("Este nome de token já está em uso.")
         return name
 
 

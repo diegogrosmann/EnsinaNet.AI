@@ -29,8 +29,11 @@
 
                     <div class="mb-3">
                         <label for="id_ai_client_config" class="form-label">Cliente de IA</label>
-                        <select class="form-select" id="id_ai_client_config" name="ai_client_config" required disabled>
-                            <option value="">Primeiro selecione um token</option>
+                        <select class="form-select" id="id_ai_client_config" name="ai_client_config" required>
+                            <option value="">Selecione um cliente de IA</option>
+                            {% for ai_client_config in capture_form.fields.ai_client_config.queryset %}
+                                <option value="{{ ai_client_config.id }}">({{ ai_client_config.ai_client.name }}) {{ ai_client_config.name }}</option>
+                            {% endfor %}
                         </select>
                         <div class="invalid-feedback">
                             Por favor selecione um cliente de IA
@@ -54,7 +57,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('captureForm');
     const errorDiv = document.getElementById('captureError');
     const tokenSelect = document.getElementById('id_token');
-    const aiClientSelect = document.getElementById('id_ai_client_config');
     
     // Verifica se os elementos foram encontrados antes de prosseguir
     if (!form || !errorDiv) {
@@ -91,7 +93,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Validação adicional para garantir que Token e IA estão selecionados
-        if (!tokenSelect.value || !aiClientSelect.value) {
+        if (!tokenSelect.value || !document.getElementById('id_ai_client_config').value) {
             showError('Por favor, selecione um Token e uma IA.');
             return;
         }
@@ -135,34 +137,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Limpa erro quando usuário começa a interagir novamente
     form.querySelectorAll('select').forEach(select => {
         select.addEventListener('change', hideError);
-    });
-
-    // Atualiza lista de IAs quando o token é selecionado
-    tokenSelect.addEventListener('change', function() {
-        const tokenId = this.value;
-        aiClientSelect.disabled = !tokenId;
-        
-        if (!tokenId) {
-            aiClientSelect.innerHTML = '<option value="">Primeiro selecione um token</option>';
-            return;
-        }
-
-        // Busca as configurações de IA disponíveis para o token
-        fetch(buildUrl("{% url 'ai_config:token_get_ais' 'ffffffff-ffff-ffff-ffff-ffffffffffff' %}", "ffffffff-ffff-ffff-ffff-ffffffffffff", tokenId))
-            .then(response => response.json())
-            .then(data => {
-                aiClientSelect.innerHTML = '<option value="">Selecione um cliente de IA</option>';
-                data.ai_configs.forEach(config => {
-                    const option = document.createElement('option');
-                    option.value = config.id;
-                    option.textContent = `${config.name} (${config.ai_client})`;
-                    aiClientSelect.appendChild(option);
-                });
-            })
-            .catch(error => {
-                console.error('Erro ao carregar IAs:', error);
-                aiClientSelect.innerHTML = '<option value="">Erro ao carregar IAs</option>';
-            });
     });
 });
 </script>

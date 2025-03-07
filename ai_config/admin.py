@@ -1,67 +1,34 @@
-import os
 import logging
 
-from django import forms
-from django.conf import settings
-from django.urls import path
+from django.http import JsonResponse
+from django.urls import path, reverse
 from django.template.response import TemplateResponse
 from django.shortcuts import redirect, get_object_or_404
 from django.contrib import admin, messages
-from django.utils.html import format_html
-
-from tinymce.widgets import TinyMCE
-
-from api.utils.clientsIA import AI_CLIENT_MAPPING
+from django.utils.html import format_html   
 
 from .models import ( 
     AIClientGlobalConfiguration, 
-    AIClientConfiguration, 
+    AIClientConfiguration,
+    AITrainedModelsManager,
+    AITraining,
+    AITrainingFilesManager, 
     TokenAIConfiguration, 
     AITrainingFile, 
-    AIClientTraining,
-    DoclingConfiguration
+    DoclingConfiguration,
 )
+
 from .forms import (
     AIClientGlobalConfigForm, 
     AIClientConfigurationForm, 
     TokenAIConfigurationForm, 
     AITrainingFileForm, 
-    AIClientTrainingForm
 )
 
 
 from .utils import perform_training
 
 logger = logging.getLogger(__name__)
-
-class AIClientTrainingInline(admin.StackedInline):
-    """Inline para os parâmetros de treinamento de IA.
-
-    Attributes:
-        model: Modelo associado, AIClientTraining.
-        form: Formulário utilizado para edição.
-    """
-    model = AIClientTraining
-    form = AIClientTrainingForm
-    extra = 0
-    can_delete = True
-    verbose_name = "Parâmetros de Treinamento de IA"
-    verbose_name_plural = "Parâmetros de Treinamento de IA"
-    fields = ['training_parameters', 'trained_model_name']
-    readonly_fields = ['trained_model_name']
-
-    def get_formset(self, request, obj=None, **kwargs):
-        """Obtém o formset do inline.
-
-        Args:
-            request: Requisição HTTP.
-            obj: Instância relacionada (opcional).
-
-        Returns:
-            Formset: Formset customizado.
-        """
-        formset = super().get_formset(request, obj, **kwargs)
-        return formset
 
 class AIClientGlobalConfigAdmin(admin.ModelAdmin):
     """Administração das configurações globais dos clientes de IA.
@@ -109,16 +76,12 @@ class AIClientGlobalConfigAdmin(admin.ModelAdmin):
         return self.readonly_fields
 
 class AIClientConfigurationAdmin(admin.ModelAdmin):
-    """Administração das configurações dos clientes de IA.
-
-    Configura os campos exibidos, filtros e inlines para o modelo.
-    """
+    """Administração das configurações dos clientes de IA."""
     form = AIClientConfigurationForm
-    list_display = ('token', 'name', 'ai_client', 'enabled')
-    list_filter = ('name', 'ai_client', 'enabled')
-    search_fields = ('token__user__email', 'ai_client__api_client_class', 'name')
-    fields = ('token', 'name', 'ai_client', 'enabled', 'model_name', 'configurations')
-    inlines = [AIClientTrainingInline]
+    list_display = ('name', 'ai_client')
+    list_filter = ('name', 'ai_client')
+    search_fields = ('ai_client__api_client_class', 'name')
+    fields = ('name', 'ai_client', 'model_name', 'configurations')
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         """Customiza o queryset para o campo estrangeiro 'ai_client'.
@@ -152,80 +115,15 @@ class AITrainingFileAdmin(admin.ModelAdmin):
     Configura a interface para upload, download e exclusão de arquivos.
     """
     form = AITrainingFileForm
-    list_display = ('name', 'file', 'uploaded_at', 'train_all_a_is')
-    list_filter = ('uploaded_at',)
-    search_fields = ('name', 'user__email')
+    list_display = ('name', 'user', 'file', 'uploaded_at')  # Removido train_all_a_is
+    list_filter = ('uploaded_at', 'user')  # Adicionado filtro por usuário
+    search_fields = ('name', 'user__email', 'user__username')  # Adicionado busca por email/username
     readonly_fields = ('uploaded_at',)
     
-    def train_all_a_is(self, obj):
-        """Gera um link para treinar todas as IAs associadas ao arquivo.
+    def get_queryset(self, request):
+        """Retorna o queryset dos arquivos de treinamento com user relacionado."""
+        return super().get_queryset(request).select_related('user')
 
-        Args:
-            obj: Instância do arquivo de treinamento.
-
-        Returns:
-            str: HTML com o link para treinamento.
-        """
-        return format_html('<a class="button" href="{}">Treinar IAs</a>', f'train_a_is/{obj.id}/')
-    train_all_a_is.short_description = 'Treinar todas as IAs'
-    train_all_a_is.allow_tags = True
-    
-    def get_urls(self):
-        """Retorna as URLs customizadas para o admin.
-
-        Returns:
-            list: Lista de URLs customizadas.
-        """
-        urls = super().get_urls()
-        custom_urls = [
-            path('train_a_is/<int:training_file_id>/', self.admin_site.admin_view(self.train_a_is_view), name='train_a_is'),
-        ]
-        return custom_urls + urls
-    
-    def train_a_is_view(self, request, training_file_id):
-        """Processa o treinamento das IAs para um arquivo específico.
-
-        Args:
-            request: Requisição HTTP.
-            training_file_id (int): Identificador do arquivo de treinamento.
-
-        Returns:
-            HttpResponse: Redirecionamento ou página de confirmação.
-        """
-        training_file = get_object_or_404(AITrainingFile, id=training_file_id)
-        if request.method == 'POST':
-            # Filtra apenas IAs que suportam treinamento
-            trainable_ias = [
-                name for name, client_class in AI_CLIENT_MAPPING.items()
-                if client_class.can_train
-            ]
-            results = perform_training(request.user, training_file.token, trainable_ias)
-            
-            for ai_name, result in results.items():
-                messages.info(request, f"{ai_name}: {result}")
-            return redirect('..')
-
-        context = {
-            'training_file': training_file,
-            'opts': self.model._meta,
-            'title': 'Confirmar Treinamento das IAs',
-            'trainable_ias': [
-                name for name, client_class in AI_CLIENT_MAPPING.items()
-                if client_class.can_train
-            ]
-        }
-        return TemplateResponse(
-            request, 
-            'admin/ai_config/train_a_is_confirmation.html', 
-            context
-        )
-
-class AIClientTrainingAdmin(admin.ModelAdmin):
-    """Administração dos parâmetros de treinamento das configurações de IA."""
-    form = AIClientTrainingForm
-    list_display = ('ai_client_configuration', 'trained_model_name') 
-    readonly_fields = ('trained_model_name',)
-    
 class DoclingConfigurationAdmin(admin.ModelAdmin):
     """Administração da configuração Docling.
 
@@ -245,9 +143,290 @@ class DoclingConfigurationAdmin(admin.ModelAdmin):
             return False
         return True
 
+class AITrainingAdmin(admin.ModelAdmin):
+    """Administração dos treinamentos de IA."""
+    list_display = ('ai_config', 'job_id', 'status', 'model_name', 'created_at', 'view_files_button', 'view_models_button')
+    list_filter = ('status', 'ai_config__ai_client__api_client_class')
+    search_fields = ('job_id', 'model_name', 'ai_config__name')
+    readonly_fields = ('created_at', 'updated_at')
+    
+    def get_queryset(self, request):
+        """Retorna o queryset com todos os treinamentos."""
+        return AITraining.objects.all().select_related(
+            'ai_config',
+            'ai_config__ai_client',
+            'file'
+        ).order_by('-created_at')
+        
+    def view_files_button(self, obj):
+        """Botão para ver arquivos da IA."""
+
+        if not obj.get_can_train():
+            return "-"
+        return format_html(
+            '<a class="button" href="{}">Ver Arquivos</a>',
+            reverse('admin:ai_files_list', args=[obj.ai_config.id])
+        )
+    view_files_button.short_description = 'Arquivos'
+    
+    def view_models_button(self, obj):
+        """Botão para ver modelos da IA."""
+        if not obj.get_can_train():
+            return "-"
+        return format_html(
+            '<a class="button" href="{}">Ver Modelos</a>',
+            reverse('admin:ai_models_list', args=[obj.ai_config.id])
+        )
+    view_models_button.short_description = 'Modelos'
+    
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('ai/<int:ai_config_id>/files/',
+                 self.admin_site.admin_view(self.ai_files_list_view),
+                 name='ai_files_list'),
+            path('ai/<int:ai_config_id>/models/',
+                 self.admin_site.admin_view(self.ai_models_list_view),
+                 name='ai_models_list'),
+            path('ai/file/<int:ai_config_id>/delete/<str:file_id>/',
+                 self.admin_site.admin_view(self.delete_file_view),
+                 name='delete_ai_file'),
+            path('ai/model/<int:ai_config_id>/delete/<str:model_name>/',
+                 self.admin_site.admin_view(self.delete_model_view),
+                 name='delete_ai_model'),
+        ]
+        return custom_urls + urls
+    
+    def ai_files_list_view(self, request, ai_config_id):
+        """View para listar arquivos de uma IA específica."""
+        ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id)
+        try:
+            files = ai_config.ai_client.list_files()
+            
+            context = {
+                'ai_config': ai_config,
+                'files': files,
+                'opts': self.model._meta,
+            }
+            return TemplateResponse(request, 'admin/ai_config/training_files_list.html', context)
+        except Exception as e:
+            messages.error(request, f'Erro ao listar arquivos: {str(e)}')
+            return redirect('..')
+    
+    def ai_models_list_view(self, request, ai_config_id):
+        """View para listar modelos treinados de uma IA específica."""
+        ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id)
+        try:
+            models = ai_config.ai_client.list_trained_models()
+            
+            # Formata os dados para o template
+            formatted_models = []
+            for model in models:
+                formatted_models.append({
+                    'name': model.get('name', 'N/A'),
+                    'status': model.get('status', 'unknown'),
+                    'created_at': model.get('created_at', None),
+                    'error': model.get('error', ''),
+                    'metadata': model.get('metadata', {})
+                })
+            
+            context = {
+                'ai_config': ai_config,
+                'models': formatted_models,
+                'opts': self.model._meta,
+            }
+            return TemplateResponse(request, 'admin/ai_config/models_list.html', context)
+        except Exception as e:
+            messages.error(request, f'Erro ao listar modelos: {str(e)}')
+            return redirect('..')
+    
+    def delete_file_view(self, request, ai_config_id, file_id):
+        """View para deletar um arquivo de treinamento."""
+        if request.method != 'POST':
+            return JsonResponse({'error': 'Método não permitido'}, status=405)
+            
+        ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id)
+        try:
+            if ai_config.ai_client.delete_training_file(file_id):
+                return JsonResponse({'success': True})
+            return JsonResponse({'error': 'Não foi possível deletar o arquivo'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    def delete_model_view(self, request, ai_config_id, model_name):
+        """View para deletar um modelo treinado."""
+        if request.method != 'POST':
+            return JsonResponse({'error': 'Método não permitido'}, status=405)
+            
+        ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id)
+        try:
+            if ai_config.ai_client.delete_trained_model(model_name):
+                return JsonResponse({'success': True})
+            return JsonResponse({'error': 'Não foi possível deletar o modelo'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+class AITrainingFilesAdmin(admin.ModelAdmin):
+    """Interface administrativa para gerenciar arquivos de treinamento."""
+    
+    change_list_template = "admin/ai_config/training_files_manager.html"
+    
+    def has_add_permission(self, request):
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        return False
+    
+    def changelist_view(self, request, extra_context=None):
+        """View customizada para listar os clientes de IA disponíveis."""
+        # Obtém todas as configurações globais que suportam treinamento
+        global_configs = []
+        for config in AIClientGlobalConfiguration.objects.all():
+            if config.get_client_can_train():
+                global_configs.append(config)
+        
+        context = {
+            'title': 'Arquivos de Treinamento na IA',
+            'global_configs': global_configs,
+            'selected_config': request.GET.get('ai_config'),
+            **self.admin_site.each_context(request),
+        }
+        
+        if request.GET.get('ai_config'):
+            try:
+                config = AIClientGlobalConfiguration.objects.get(id=request.GET['ai_config'])
+                context['files'] = config.list_files()
+            except Exception as e:
+                messages.error(request, f'Erro ao listar arquivos: {str(e)}')
+        
+        return TemplateResponse(request, self.change_list_template, context)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('delete/', self.admin_site.admin_view(self.delete_files_view), name='delete_training_files'),
+        ]
+        return custom_urls + urls
+    
+    def delete_files_view(self, request):
+        """Deleta múltiplos arquivos de treinamento."""
+        if request.method != 'POST':
+            return JsonResponse({'error': 'Método não permitido'}, status=405)
+        
+        config_id = request.POST.get('ai_config')
+        file_ids = request.POST.getlist('file_ids[]')
+        
+        if not config_id or not file_ids:
+            return JsonResponse({'error': 'Parâmetros inválidos'}, status=400)
+        
+        config = get_object_or_404(AIClientGlobalConfiguration, id=config_id)
+        
+        errors = []
+        success_count = 0
+        
+        for file_id in file_ids:
+            try:
+                if config.delete_training_file(file_id):
+                    success_count += 1
+                else:
+                    errors.append(f'Não foi possível deletar o arquivo {file_id}')
+            except Exception as e:
+                errors.append(f'Erro ao deletar arquivo {file_id}: {str(e)}')
+        
+        return JsonResponse({
+            'success': True,
+            'deleted': success_count,
+            'errors': errors
+        })
+
+class AITrainedModelsAdmin(admin.ModelAdmin):
+    """Interface administrativa para gerenciar modelos treinados."""
+    
+    change_list_template = "admin/ai_config/models_manager.html"
+    
+    def has_add_permission(self, request):
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        return False
+    
+    def changelist_view(self, request, extra_context=None):
+        # Obtém apenas configurações globais que suportam treinamento
+        global_configs = []
+        for config in AIClientGlobalConfiguration.objects.all():
+            if config.get_client_can_train():
+                global_configs.append(config)
+        
+        context = {
+            'title': 'Gerenciador de Modelos Treinados',
+            'global_configs': global_configs,
+            'selected_config': request.GET.get('ai_config'),
+            **self.admin_site.each_context(request),
+        }
+        
+        if request.GET.get('ai_config'):
+            try:
+                config = AIClientGlobalConfiguration.objects.get(id=request.GET['ai_config'])
+                
+                if config.get_client_can_train():
+                    models = config.list_trained_models()
+                    context['models'] = models
+                else:
+                    messages.error(request, 'Esta IA não suporta treinamento.')
+            except Exception as e:
+                messages.error(request, f'Erro ao listar modelos: {str(e)}')
+        
+        return TemplateResponse(request, self.change_list_template, context)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('delete/', self.admin_site.admin_view(self.delete_models_view), name='delete_trained_models'),
+        ]
+        return custom_urls + urls
+    
+    def delete_models_view(self, request):
+        """Deleta múltiplos modelos treinados."""
+        if request.method != 'POST':
+            return JsonResponse({'error': 'Método não permitido'}, status=405)
+        
+        config_id = request.POST.get('ai_config')
+        model_names = request.POST.getlist('model_names[]')
+        
+        if not config_id or not model_names:
+            return JsonResponse({'error': 'Parâmetros inválidos'}, status=400)
+        
+        config = get_object_or_404(AIClientGlobalConfiguration, id=config_id)
+        
+        errors = []
+        success_count = 0
+        
+        for model_name in model_names:
+            try:
+                if config.delete_trained_model(model_name):
+                    success_count += 1
+                else:
+                    errors.append(f'Não foi possível deletar o modelo {model_name}')
+            except Exception as e:
+                errors.append(f'Erro ao deletar modelo {model_name}: {str(e)}')
+        
+        return JsonResponse({
+            'success': True,
+            'deleted': success_count,
+            'errors': errors
+        })
+
+# Registra o admin
 admin.site.register(AIClientGlobalConfiguration, AIClientGlobalConfigAdmin)
 admin.site.register(AIClientConfiguration, AIClientConfigurationAdmin)
 admin.site.register(TokenAIConfiguration, TokenAIConfigurationAdmin)
 admin.site.register(AITrainingFile, AITrainingFileAdmin)
-admin.site.register(AIClientTraining, AIClientTrainingAdmin)
 admin.site.register(DoclingConfiguration, DoclingConfigurationAdmin)
+admin.site.register(AITrainingFilesManager, AITrainingFilesAdmin)
+admin.site.register(AITrainedModelsManager, AITrainedModelsAdmin)

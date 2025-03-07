@@ -1,76 +1,71 @@
-from .models import AIClientConfiguration
-from api.utils.clientsIA import AI_CLIENT_MAPPING
-import concurrent.futures
+from threading import Thread
+from .models import AIClientConfiguration, AITraining
 import logging
+
 
 logger = logging.getLogger(__name__)
 
-def perform_training(user, token, selected_ias=None):
-    """Realiza o treinamento das IAs em paralelo com base no token.
-
-    Args:
-        user: Usuário que solicitou o treinamento.
-        token: Token associado à configuração.
-        selected_ias (list, optional): Lista de nomes das IAs a serem treinadas.
-
-    Returns:
-        dict: Dicionário com os resultados do treinamento para cada IA.
-    """
-    results = {}
-
-    # Obter as AIClientConfigurations para o token, filtrando pelas IAs selecionadas
-    if selected_ias:
-        ai_client_configs = AIClientConfiguration.objects.filter(
-            token=token,
-            enabled=True,
-            ai_client__api_client_class__in=selected_ias
-        )
-    else:
-        ai_client_configs = AIClientConfiguration.objects.filter(
-            token=token,
-            enabled=True
-        )
-
-    def train_ai(ai_client_config):
-        ai_client_name = ai_client_config.ai_client.api_client_class
-        ai_client_cls = AI_CLIENT_MAPPING.get(ai_client_name)
-
-        if not ai_client_cls:
-            return ai_client_name, f"Erro: Cliente de IA '{ai_client_name}' não encontrado no mapeamento."
-
-        # Verificar se a IA pode ser treinada
-        if not ai_client_cls.can_train:
-            return ai_client_name, "Erro: Esta IA não suporta treinamento."
-
-        # Obter o arquivo de treinamento do TokenAIConfiguration
-        token_ai_config = token.ai_configuration
-        training_file = token_ai_config.training_file
-        if not training_file:
-            return ai_client_name, "Erro: Arquivo de treinamento não selecionado para o token."
-
+def perform_training(selected_ias, training_file):
+    """Inicia o treinamento para as IAs selecionadas usando threads."""
+    results = []
+    threads = []
+    
+    def train_single_ia(ai_id):
         try:
-            result = perform_training_for_single_ai(user, token, ai_client_config, training_file)
-            return ai_client_name, result[1]
-        except Exception as e:
-            logger.error(f"Erro ao treinar {ai_client_name} para token {token.name}: {e}")
-            return ai_client_name, f"Erro: {str(e)}"
-
-    # Usar ThreadPoolExecutor para treinar as IAs em paralelo
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = {
-            executor.submit(train_ai, ai_client_config): ai_client_config.ai_client.api_client_class
-            for ai_client_config in ai_client_configs
-        }
-
-        for future in concurrent.futures.as_completed(futures):
-            ai_client_name = futures[future]
+            config = AIClientConfiguration.objects.get(id=ai_id)
+            
             try:
-                ai_client_name_result, result = future.result()
-                results[ai_client_name_result] = result
-            except Exception as e:
-                logger.error(f"Erro inesperado ao treinar {ai_client_name} para token {token.name}: {e}")
-                results[ai_client_name] = f"Erro: {str(e)}"
-
+                client = config.create_api_client_instance()
+            except ValueError as e:
+                logger.error(f"Cliente inválido para IA {ai_id}: {e}")
+                results.append({
+                    'ai_name': f"IA {ai_id}",
+                    'error': str(e),
+                    'status': 'failed'
+                })
+                return
+            
+            if not client.can_train:
+                results.append({
+                    'ai_name': config.name,
+                    'error': "Esta IA não suporta treinamento",
+                    'status': 'failed'
+                })
+                return
+                
+            result = client.train(training_file.file.path)
+            
+            training = AITraining.objects.create(
+                ai_config=config,
+                file=training_file,
+                job_id=result.job_id,
+                status=result.status.value
+            )
+            
+            results.append({
+                'ai_name': config.name,
+                'job_id': training.job_id,
+                'status': 'initiated'
+            })
+            
+        except Exception as e:
+            logger.error(f"Erro ao iniciar treinamento para IA {ai_id}: {e}", exc_info=True)
+            results.append({
+                'ai_name': config.name if 'config' in locals() else f"IA {ai_id}",
+                'error': str(e),
+                'status': 'failed'
+            })
+    
+    # Cria uma thread para cada IA selecionada
+    for ai_id in selected_ias:
+        thread = Thread(target=train_single_ia, args=(ai_id,))
+        thread.start()
+        threads.append(thread)
+    
+    # Aguarda todas as threads terminarem
+    for thread in threads:
+        thread.join()
+    
     return results
 
 def perform_training_for_single_ai(user, token, ai_client_config, training_file):
@@ -85,27 +80,16 @@ def perform_training_for_single_ai(user, token, ai_client_config, training_file)
     Returns:
         tuple: Par contendo o nome da IA e o resultado do treinamento.
     """
-    ai_client_name = ai_client_config.ai_client.api_client_class
-    ai_client_cls = AI_CLIENT_MAPPING.get(ai_client_name)
+    try:
+        client = ai_client_config.create_api_client_instance()
+    except ValueError as e:
+        return ai_client_config.name, f"Erro: {str(e)}"
 
-    if not ai_client_cls:
-        return ai_client_name, f"Erro: Cliente de IA '{ai_client_name}' não encontrado no mapeamento."
-
-    # Verificar se a IA pode ser treinada
-    if not ai_client_cls.can_train:
-        return ai_client_name, "Erro: Esta IA não suporta treinamento."
+    if not client.can_train:
+        return ai_client_config.name, "Erro: Esta IA não suporta treinamento."
 
     try:
         parametersAITraining = ai_client_config.training.training_parameters
-
-        client = ai_client_cls({
-            'api_key': ai_client_config.ai_client.api_key,
-            'model_name': ai_client_config.model_name,
-            'configurations': ai_client_config.configurations,
-            'base_instruction': '',
-            'prompt': '',
-            'responses': ''
-        })
         
         # Usar o arquivo de treinamento
         trained_model_name = client.train(training_file.file, parametersAITraining)
@@ -113,9 +97,9 @@ def perform_training_for_single_ai(user, token, ai_client_config, training_file)
         ai_client_config.training.save()
 
         logger.info(
-            f"IA {ai_client_name} treinada com sucesso para token {token.name}. Modelo: {trained_model_name}"
+            f"IA {client.name} treinada com sucesso para token {token.name}. Modelo: {trained_model_name}"
         )
-        return ai_client_name, f"Modelo treinado: {trained_model_name}"
+        return client.name, f"Modelo treinado: {trained_model_name}"
     except Exception as e:
-        logger.error(f"Erro ao treinar {ai_client_name} para token {token.name}: {e}")
-        return ai_client_name, f"Erro: {str(e)}"
+        logger.error(f"Erro ao treinar {client.name} para token {token.name}: {e}")
+        return client.name, f"Erro: {str(e)}"

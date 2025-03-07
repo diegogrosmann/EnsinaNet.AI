@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from celery.schedules import crontab
 
 load_dotenv()  # Carrega as variáveis de ambiente do arquivo .env
 
@@ -322,3 +323,21 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+# URL do broker Redis
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+
+# (Opcional) Configuração do backend para armazenar resultados das tasks
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+
+# Outras configurações (opcionais), como serialização:
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'America/Fortaleza'  # ou o fuso horário adequado
+
+CELERY_BEAT_SCHEDULE = {
+    'update_training_status_every_minute': {
+        'task': 'ai_config.tasks.update_training_status',
+        'schedule': crontab(),
+    },
+}

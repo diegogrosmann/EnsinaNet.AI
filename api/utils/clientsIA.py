@@ -15,34 +15,44 @@ Funções:
     register_ai_client: Decorador para registro de clientes
 """
 
+import html
 import json
 import logging
+import os
 import tempfile
 import time
-import html
+from datetime import datetime
+from typing import Any, TypeVar
+
+import anthropic
+
+
+from google import genai
+from google.genai import types
+
 import requests
-import ast
 
 from dotenv import load_dotenv
 
-from openai import OpenAI, AzureOpenAI
-import google.generativeai as genai
-import anthropic
-from llamaapi import LlamaAPI
 from azure.ai.inference import ChatCompletionsClient
 from azure.core.credentials import AzureKeyCredential
+from llamaapi import LlamaAPI
+from openai import AzureOpenAI, OpenAI
 
+from api.constants import AIClientConfig, TrainingResult, TrainingStatus
 from api.exceptions import APICommunicationError, MissingAPIKeyError
 from django.template import engines
-from api.constants import AIClientConfig
 
-# (NOVO) Import do circuito
 from api.utils.circuit_breaker import (
     attempt_call,
     record_failure,
     record_success,
     CircuitOpenError
 )
+
+import uuid
+
+T = TypeVar('T')
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -80,6 +90,7 @@ class APIClient:
         responses (str): Respostas personalizadas (opcional).
         api_url (str): URL da API (opcional).
         use_system_message (bool): Se deve usar "system message" (caso suportado).
+        config (AIClientConfig): Referência à configuração original.
 
     NOTA:
         Esta classe é virtual e não está persistida no banco de dados. Ela serve
@@ -89,27 +100,37 @@ class APIClient:
     """
     name = ''
     can_train = False
-    supports_system_message = True  # NOVO: indica suporte nativo a System Message
-
+    supports_system_message = True
+    
     def __init__(self, config: AIClientConfig):
-        """
-        Construtor para a classe base de clientes de IA.
+        """Construtor para a classe base de clientes de IA.
 
         Args:
-            config (AIClientConfig): Configurações de IA (api_key, model_name etc.).
+            config (AIClientConfig): Configurações de IA.
         """
-        self.api_key = config.api_key
-        self.model_name = config.model_name
-        self.configurations = config.configurations.copy() if config.configurations else {}
-        self.base_instruction = config.base_instruction or ""
-        self.prompt = config.prompt or ""
-        self.responses = config.responses or ""
-        self.api_url = config.api_url or None
-        self.use_system_message = config.use_system_message
+        # Armazena a referência à configuração original
+        self.config = config
+        
+        # Configura com base na nova estrutura de AIClientConfig
+        self.api_key = config.ai_global_config.get('api_key')
+        self.api_url = config.ai_global_config.get('api_url')
+        
+        # Extrair dados do ai_client_config
+        self.model_name = config.ai_client_config.get('model_name', '')
+        self.configurations = config.ai_client_config.get('configurations', {}).copy()
+        self.training_configurations = config.ai_client_config.get('training_configurations', {}).copy()
+        self.use_system_message = config.ai_client_config.get('use_system_message', True)
+        
+        # Propriedades de prompt a partir do dicionário prompt_config
+        self.base_instruction = config.prompt_config.get('base_instruction', '')
+        self.prompt = config.prompt_config.get('prompt', '')
+        self.responses = config.prompt_config.get('responses', '')
 
         if not self.api_key:
             raise MissingAPIKeyError(f"{self.name}: Chave de API não configurada.")
-        logger.debug(f"{self.__class__.__name__}.__init__: Inicializado com configurações: {self.configurations}")
+        
+        logger.debug(f"[{self.name}] {self.__class__.__name__}.__init__: Inicializado com configurações: "
+                    f"{self.configurations}")
 
     def _render_template(self, template: str, context: dict):
         """Renderiza um template usando a engine do Django.
@@ -140,8 +161,6 @@ class APIClient:
         try:
             kwargs['ai_name'] = self.name
             kwargs['answer_format'] = self.responses
-            kwargs['can_train'] = self.can_train
-            kwargs['train'] = self._prepare_train(**kwargs)
 
             base_instruction = html.unescape(self._render_template(self.base_instruction, kwargs))
             prompt = html.unescape(self._render_template(self.prompt, kwargs))
@@ -159,41 +178,13 @@ class APIClient:
                     'user_prompt': combined_prompt
                 }
         except Exception as e:
-            logger.error(f"{self.__class__.__name__}._prepare_prompts: Nenhuma mensagem retornada. Detalhe: {e}")
-            raise APICommunicationError("Nenhuma mensagem retornada.")
-
-    def _prepare_train(self, **kwargs) -> str:
-        """
-        Prepara dados de treinamento para fine-tuning, caso exista um arquivo de treinamento.
-
-        Args:
-            **kwargs: Pode conter 'training_file'.
-
-        Returns:
-            str: String com exemplos, pronta para ser anexada ao prompt.
-        """
-        training_file = kwargs.get('training_file')
-        training = ''
-        if training_file:
-            try:
-                with training_file.open('r') as f:
-                    training_data = json.load(f)
-                training_examples = ""
-                for example in training_data:
-                    system_message = example.get('system_message', '')
-                    user_message = example.get('user_message', '')
-                    response = example.get('response', '')
-                    training_examples += f"Exemplo:\n Mensagem do Sistema: {system_message}\n"\
-                                         f"Mensagem do Usuário: {user_message}\n"\
-                                         f"Resposta esperada: {response}\n\n"
-                training = training_examples
-            except Exception as e:
-                logger.error(f"{self.__class__.__name__}._prepare_train: Erro ao ler o arquivo de treinamento: {e}")
-        return training
+            logger.error(f"[{self.name}] {self.__class__.__name__}._prepare_prompts: "
+                         f"Erro na preparação do prompt: {e}")
+            raise APICommunicationError(f"Erro na preparação do prompt: {e}")
 
     def compare(self, data: dict) -> tuple:
         """
-        Compara dados usando a API de IA.
+        Compara dados usando a API de IA, com mecanismo de retry neste método.
 
         Args:
             data (dict): Dados para comparação.
@@ -201,10 +192,18 @@ class APIClient:
         Returns:
             tuple: (resposta da IA, system_message, user_message).
         """
-        prompts = self._prepare_prompts(**data)
-        response = self._call_api(prompts)
-        system_message = prompts.get('base_instruction', '')
-        user_message = prompts.get('user_prompt', '')
+        try:
+            logger.debug(f"[{self.name}] Iniciando comparação de dados")
+            prompts = self._prepare_prompts(**data)
+            system_message = prompts.get('base_instruction', '')
+            user_message = prompts.get('user_prompt', '')
+
+            # Implementando o retry aqui
+            response = self._call_api(prompts=prompts)
+        except Exception as e:
+            logger.error(f"[{self.name}] Erro durante compare: {e}")
+            raise e
+
         return (response, system_message, user_message)
 
     def _call_api(self, prompts: dict) -> str:
@@ -221,24 +220,163 @@ class APIClient:
         Raises:
             NotImplementedError: Se não for sobrescrito pela subclasse.
         """
-        raise NotImplementedError(f"{self.name}: Subclasses devem implementar o método _call_api.")
+        raise NotImplementedError(f"[{self.name}] Subclasses devem implementar o método _call_api.")
 
-    def train(self, training_file, parameters={}):
+    def _prepare_train(self, file_path: str) -> Any:
         """
-        Realiza o treinamento do modelo (fine-tuning) se suportado.
+        Prepara os dados para treinamento.
+        Subclasses podem sobrescrever para formatar os dados.
 
         Args:
-            training_file: Arquivo de treinamento.
-            parameters (dict): Parâmetros de treinamento (opcional).
+            file_path: Caminho do arquivo original.
+
+        Returns:
+            Any: Dados preparados no formato específico de cada IA.
+        """
+        logger.debug(f"[{self.name}] Preparando arquivo {file_path} para treinamento")
+        return file_path
+
+    def train(self, file_path: str) -> TrainingResult:
+        """
+        Prepara e inicia o treinamento.
+
+        Args:
+            file_path: Caminho do arquivo de treinamento.
+
+        Returns:
+            TrainingResult: Resultado inicial do treinamento com job_id.
+
+        Raises:
+            NotImplementedError: Se a IA não suportar treinamento.
+        """
+        if not self.can_train:
+            logger.warning(f"[{self.name}] Tentativa de treinamento em cliente sem suporte a treinamento")
+            raise NotImplementedError(f"[{self.name}] Este cliente não suporta treinamento.")
+
+        # Prepara o arquivo de treinamento
+        prepared_file_path = self._prepare_train(file_path)
+        
+        try:
+            # Inicia o treinamento com o arquivo preparado
+            return self._start_training(prepared_file_path)
+        finally:
+            # Limpa o arquivo temporário após o uso
+            if prepared_file_path and prepared_file_path != file_path:
+                try:
+                    os.remove(prepared_file_path)
+                except Exception as e:
+                    logger.warning(f"[{self.name}] Erro ao remover arquivo temporário {prepared_file_path}: {e}")
+
+    def _start_training(self, training_data: Any) -> TrainingResult:
+        """
+        Inicia o treinamento com os dados preparados.
+        As subclasses devem implementar.
+
+        Args:
+            training_data: Dados preparados para treinamento (arquivo, objeto, etc).
+
+        Returns:
+            TrainingResult: Resultado inicial com job_id.
+        """
+        raise NotImplementedError(f"[{self.name}] Subclasses devem implementar _start_training")
+
+    def get_training_status(self, job_id: str) -> TrainingResult:
+        """
+        Verifica o status atual do treinamento.
+
+        Args:
+            job_id: ID do job de treinamento.
+
+        Returns:
+            TrainingResult: Status atual do treinamento.
+
+        Raises:
+            NotImplementedError: Se não implementado pela subclasse.
+        """
+        raise NotImplementedError(f"[{self.name}] Subclasses devem implementar get_training_status.")
+
+    def _call_train_api(self, training_data: str) -> str:
+        """
+        Método abstrato para chamar a API de treinamento.
+        As subclasses que suportam treinamento devem implementar.
+
+        Args:
+            training_data (str): Dados de treinamento preparados.
 
         Returns:
             str: Nome do modelo treinado.
 
         Raises:
-            NotImplementedError: Se a IA não suportar treinamento.
+            NotImplementedError: Se não for sobrescrito pela subclasse.
         """
-        raise NotImplementedError("Este cliente não suporta treinamento.")
+        raise NotImplementedError(f"[{self.name}] Subclasses devem implementar o método _call_train_api.")
 
+    def list_trained_models(self) -> list:
+        """
+        Lista os modelos treinados disponíveis.
+
+        Returns:
+            list: Lista de modelos treinados.
+
+        Raises:
+            NotImplementedError: Se não implementado pela subclasse.
+        """
+        raise NotImplementedError(f"[{self.name}] Subclasses devem implementar list_trained_models.")
+
+    def cancel_training(self, id: str) -> bool:
+        """
+        Cancela um job de treinamento em andamento.
+
+        Args:
+            job_id (str): ID do job a ser cancelado.
+
+        Returns:
+            bool: True se cancelado com sucesso.
+
+        Raises:
+            NotImplementedError: Se não implementado pela subclasse.
+        """
+        raise NotImplementedError(f"[{self.name}] Subclasses devem implementar cancel_training.")
+
+    def delete_trained_model(self, model_name: str) -> bool:
+        """
+        Remove um modelo treinado.
+
+        Args:
+            model_name (str): Nome/ID do modelo a ser removido.
+
+        Returns:
+            bool: True se removido com sucesso.
+
+        Raises:
+            NotImplementedError: Se não implementado pela subclasse.
+        """
+        raise NotImplementedError(f"[{self.name}] Subclasses devem implementar delete_trained_model.")
+
+    def list_files(self) -> list:
+        """Lista todos os arquivos.
+
+        Returns:
+            list: Lista de arquivos.
+
+        Raises:
+            NotImplementedError: Se não implementado pela subclasse.
+        """
+        raise NotImplementedError(f"[{self.name}] Subclasses devem implementar list_training_files.")
+
+    def delete_file(self, file_id: str) -> bool:
+        """Remove um arquivo.
+
+        Args:
+            file_id (str): ID do arquivo a ser removido.
+
+        Returns:
+            bool: True se removido com sucesso.
+
+        Raises:
+            NotImplementedError: Se não implementado pela subclasse.
+        """
+        raise NotImplementedError(f"[{self.name}] Subclasses devem implementar delete_training_file.")
 
 @register_ai_client
 class OpenAiClient(APIClient):
@@ -262,7 +400,8 @@ class OpenAiClient(APIClient):
 
     def _call_api(self, prompts: dict) -> str:
         """
-        Realiza a chamada à API do OpenAI.
+        Realiza a chamada direta à API do OpenAI.
+        O retry agora é feito no método compare da classe base.
 
         Args:
             prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
@@ -273,18 +412,15 @@ class OpenAiClient(APIClient):
         Raises:
             APICommunicationError: Em caso de falha na comunicação.
         """
-        # (NOVO) Tenta "fechar" o circuito se estiver aberto
+        logger.debug(f"[{self.name}] Iniciando chamada para OpenAI")
+
         attempt_call(self.name)
-
         try:
-
-                        # Verifica se existe a chave 'base_instruction', se não existir, usa string vazia
+            # Verifica se existe a chave 'base_instruction'
             base_instruction = prompts.get('base_instruction', '').strip()
-            prompt = prompts.get('prompt', '').strip()
-            
-            # Monta o prompt final
-            final_prompt = f"{base_instruction}\n{prompt}" if base_instruction else prompt
 
+            # Monta o prompt final (se quisesse unificar system e user, mas aqui mantemos a lógica)
+            final_prompt = base_instruction if base_instruction else ""
             messages = []
             if final_prompt.strip():
                 messages.append({"role": "system", "content": final_prompt})
@@ -293,93 +429,331 @@ class OpenAiClient(APIClient):
             self.configurations['model'] = self.model_name
             self.configurations['messages'] = messages
 
-            try:
-                response = self.client.chat.completions.create(**self.configurations)
-            except Exception as e:
-                logger.error(f"{self.__class__.__name__}._call_api: Erro na chamada da API do OpenAI: {e}", exc_info=True)
-                raise APICommunicationError(f"Erro ao comunicar com a API: {e}") from e
+            response = self.client.chat.completions.create(**self.configurations)
 
             if not response:
                 logger.error(f"{self.__class__.__name__}._call_api: Nenhuma mensagem retornada do OpenAI.")
                 raise APICommunicationError("Nenhuma mensagem retornada do OpenAI.")
 
             if hasattr(response, 'choices') and response.choices:
-                # (NOVO) Deu certo => registra success no circuit
                 record_success(self.name)
+                logger.debug(f"[{self.name}] Chamada concluída com sucesso")
                 return response.choices[0].message.content
             else:
                 logger.error(f"{self.__class__.__name__}._call_api: Resposta do OpenAI inválida: {response}")
                 raise APICommunicationError("Resposta do OpenAI inválida.")
-
         except Exception as e:
-            # (NOVO) Qualquer falha => registra failure
             record_failure(self.name)
             if isinstance(e, CircuitOpenError):
-                # Se for especificamente o circuito aberto, relançamos
                 raise e
             logger.error(f"{self.__class__.__name__}._call_api: Erro ao comunicar com OpenAI: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
 
-    def train(self, training_file, parameters={}):
+    def _prepare_train(self, file_path: str) -> str:
         """
-        Realiza fine-tuning do modelo OpenAI.
+        Prepara o arquivo para treinamento no formato JSONL da OpenAI.
+        
+        Args:
+            file_path: Caminho do arquivo original JSON
+            
+        Returns:
+            str: Caminho do arquivo JSONL formatado
+        """
+        try:
+            # Lê o arquivo original
+            with open(file_path, 'r') as f:
+                training_data = json.load(f)
+
+            # Cria arquivo temporário JSONL
+            temp_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.jsonl')
+            
+            # Converte cada exemplo para o formato OpenAI
+            for example in training_data:
+                messages = []
+                
+                # Adiciona system message se existir
+                if example.get('system_message'):
+                    messages.append({
+                        "role": "system",
+                        "content": example['system_message']
+                    })
+                
+                # Adiciona mensagem do usuário
+                messages.append({
+                    "role": "user",
+                    "content": example['user_message']
+                })
+                
+                # Adiciona resposta do assistente
+                messages.append({
+                    "role": "assistant",
+                    "content": example['response']
+                })
+                
+                # Escreve a linha no formato JSONL
+                conversation = {"messages": messages}
+                temp_file.write(json.dumps(conversation) + '\n')
+            
+            temp_file.close()
+            return temp_file.name
+
+        except Exception as e:
+            logger.error(f"Erro ao preparar arquivo de treinamento: {e}")
+            raise APICommunicationError(f"Erro ao preparar arquivo: {e}")
+
+    def _start_training(self, training_data: Any) -> TrainingResult:
+        """Inicia treinamento assíncrono na OpenAI.
+        
+        Args:
+            training_data: Caminho do arquivo ou objeto com dados de treinamento.
+        """
+        attempt_call(self.name)
+        try:
+            with open(training_data, 'rb') as f:
+                ai_file = self.client.files.create(file=f, purpose='fine-tune')
+                        
+            # Inicia o job de fine-tuning
+            training_type = "supervised"
+            training_params = {}
+            
+            if self.training_configurations:
+                # Extrair o tipo se existir
+                if 'type' in self.training_configurations:
+                    training_type = self.training_configurations.pop('type')
+                
+                # Restante das configurações vai para hyperparameters
+                training_params = self.training_configurations
+            
+            job = self.client.fine_tuning.jobs.create(
+                training_file=ai_file.id,
+                model=self.model_name,
+                method={
+                    "type": training_type,
+                    training_type: {
+                        "hyperparameters": training_params
+                    }
+                }
+            )
+
+            record_success(self.name)
+            return TrainingResult(
+                job_id=job.id,
+                status=TrainingStatus.IN_PROGRESS,
+                details={'file_id': ai_file.id}
+            )
+
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"OpenAiClient _start_training: {e}")
+            raise APICommunicationError(f"Erro ao iniciar treinamento: {e}")
+
+    def get_training_status(self, job_id: str) -> TrainingResult:
+        """Verifica status do treinamento na OpenAI."""
+        attempt_call(self.name)
+        
+        try:
+            status = self.client.fine_tuning.jobs.retrieve(job_id)
+            
+            if status.status == 'succeeded':
+                return TrainingResult(
+                    job_id=job_id,
+                    status=TrainingStatus.COMPLETED,
+                    model_name=status.fine_tuned_model,
+                    completed_at=datetime.now(),
+                    details=status
+                )
+            elif status.status == 'failed':
+                return TrainingResult(
+                    job_id=job_id,
+                    status=TrainingStatus.FAILED,
+                    error=status.error,
+                    completed_at=datetime.now(),
+                    details=status
+                )
+            else:
+                return TrainingResult(
+                    job_id=job_id,
+                    status=TrainingStatus.IN_PROGRESS,
+                    details=status
+                )
+
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"OpenAiClient get_training_status: {e}")
+            raise APICommunicationError(f"Erro ao verificar status: {e}")
+
+    def _call_train_api(self, training_data: str) -> str:
+        """
+        Realiza o treinamento na API do OpenAI (exemplo de método síncrono).
 
         Args:
-            training_file: Arquivo de treinamento em JSON.
-            parameters (dict): Parâmetros de fine-tuning.
+            training_data (str): Dados de treinamento em formato JSONL.
 
         Returns:
             str: Nome do modelo treinado.
 
         Raises:
-            APICommunicationError: Em caso de erro no processo de fine-tuning.
+            APICommunicationError: Em caso de erro no processo.
         """
-        function_name = 'train'
-        logger.info(f"{self.__class__.__name__}.{function_name}: Treinamento iniciado.")
-        temp_file_path = None
+        attempt_call(self.name)
+
         try:
-            with training_file.open('r') as f:
-                raw_training_data = json.load(f)
-
-            if not isinstance(raw_training_data, list):
-                raise ValueError("O arquivo de treinamento deve conter uma lista de exemplos.")
-
-            jsonl_data = "\n".join([
-                json.dumps({
-                    "messages": [
-                        {"role": "system", "content": ex.get("system_message", "")},
-                        {"role": "user", "content": ex.get("user_message", "")},
-                        {"role": "assistant", "content": ex.get("response", "")}
-                    ]
-                })
-                for ex in raw_training_data
-            ])
-
             with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.jsonl') as temp_file:
-                temp_file.write(jsonl_data)
+                temp_file.write(training_data)
                 temp_file_path = temp_file.name
 
             with open(temp_file_path, 'rb') as f:
                 ai_file = self.client.files.create(file=f, purpose='fine-tune')
-
+            
             job = self.client.fine_tuning.jobs.create(
                 training_file=ai_file.id,
                 model=self.model_name,
-                hyperparameters=parameters
+                hyperparameters=self.configurations
             )
 
+            # Monitora o status do treinamento
             while True:
                 status = self.client.fine_tuning.jobs.retrieve(job.id)
                 if status.status == 'succeeded':
-                    logger.debug(f"{self.__class__.__name__}.{function_name}: Modelo treinado com sucesso.")
+                    record_success(self.name)
                     return status.fine_tuned_model
                 elif status.status == 'failed':
-                    raise APICommunicationError(f"{status.error}")
+                    raise APICommunicationError(f"Falha no treinamento: {status.error}")
                 time.sleep(5)
 
         except Exception as e:
-            logger.error(f"Erro ao treinar OpenAi: {e}")
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"OpenAiClient train: Erro no treinamento: {e}")
             raise APICommunicationError(f"Erro ao treinar o modelo: {e}")
+
+    def list_trained_models(self) -> list:
+        """Lista os modelos treinados disponíveis.
+
+        Returns:
+            list: Lista de dicionários com informações dos modelos.
+        """
+        attempt_call(self.name)
+        try:
+            response = self.client.models.list()
+            record_success(self.name)
+            
+            models = []
+            for model in response.data:
+                if model.id.startswith('ft:'):
+                    models.append({
+                        'name': model.id,
+                        'created_at': datetime.fromtimestamp(model.created)
+                    })
+                
+            return models
+            
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"OpenAiClient list_trained_models: {e}")
+            raise APICommunicationError(f"Erro ao listar modelos: {e}")
+
+    def cancel_training(self, job_id: str) -> bool:
+        """
+        Cancela um job de fine-tuning na OpenAI.
+
+        Args:
+            job_id (str): ID do job a ser cancelado.
+
+        Returns:
+            bool: True se cancelado com sucesso.
+        """
+        attempt_call(self.name)
+        try:
+            result = self.client.fine_tuning.jobs.cancel(job_id)
+            record_success(self.name)
+            return result.status == "cancelled"
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"OpenAiClient cancel_training: {e}")
+            raise APICommunicationError(f"Erro ao cancelar: {e}")
+
+    def delete_trained_model(self, model_name: str) -> bool:
+        """
+        Remove um modelo fine-tuned da OpenAI.
+
+        Args:
+            model_name (str): Nome/ID do modelo a ser removido.
+
+        Returns:
+            bool: True se removido com sucesso.
+        """
+        attempt_call(self.name)
+        try:
+            result = self.client.models.delete(model_name)
+            record_success(self.name)
+            return result.deleted
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"OpenAiClient delete_trained_model: {e}")
+            raise APICommunicationError(f"Erro ao remover modelo: {e}")
+
+    def list_files(self) -> list:
+        """Lista todos os arquivos da OpenAI.
+
+        Returns:
+            list: Lista de arquivos.
+        """
+        attempt_call(self.name)
+        try:
+            response = self.client.files.list()
+            record_success(self.name)
+            
+            files = []
+            for file in response.data:
+                files.append({
+                    'id': file.id,
+                    'filename': file.filename,
+                    'bytes': file.bytes,
+                    'created_at': datetime.fromtimestamp(file.created_at),
+                    'purpose': file.purpose
+                })
+            return files
+
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"OpenAiClient list_training_files: {e}")
+            raise APICommunicationError(f"Erro ao listar arquivos: {e}")
+
+    def delete_file(self, file_id: str) -> bool:
+        """Remove um arquivo da OpenAI.
+
+        Args:
+            file_id (str): ID do arquivo a ser removido.
+
+        Returns:
+            bool: True se removido com sucesso.
+        """
+        attempt_call(self.name)
+        try:
+            response = self.client.files.delete(file_id)
+            record_success(self.name)
+            return response.deleted
+
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"OpenAiClient delete_training_file: {e}")
+            raise APICommunicationError(f"Erro ao remover arquivo: {e}")
 
 
 @register_ai_client
@@ -398,38 +772,47 @@ class GeminiClient(APIClient):
             config (AIClientConfig): Contém api_key, model_name etc.
         """
         super().__init__(config)
-        genai.configure(api_key=self.api_key)
+        self.client = genai.Client(api_key=self.api_key)
 
     def _call_api(self, prompts: dict) -> str:
         """
-        Realiza a chamada à API do Gemini.
+        Realiza a chamada direta à API do Gemini (sem retry aqui).
+        O retry agora é feito no método compare da classe base.
 
         Args:
-            prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
-
+            prompts (dict): { 'base_instruction': X, 'user_prompt': Y }
+            
         Returns:
-            str: Texto gerado pela API.
-
+            str: Texto gerado pela API
+            
         Raises:
-            APICommunicationError: Em caso de falha na comunicação com Gemini.
+            APICommunicationError: Em caso de falha
         """
         attempt_call(self.name)
+        logger.debug(f"[{self.name}] Iniciando chamada para Gemini")
+
         try:
-            messages = []
-            if prompts['base_instruction'].strip():
-                messages.append({"role": "system", "content": prompts['base_instruction']})
-            messages.append({"role": "user", "content": prompts['user_prompt']})
+            base_instruction = prompts.get('base_instruction', '').strip()
+            if base_instruction:
+                system_instruction = [
+                    types.Part.from_text(text=base_instruction),
+                ]
+                config = types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    **self.configurations
+                )
+            else:
+                config = types.GenerateContentConfig(**self.configurations)
 
-            combined_prompt = ""
-            for m in messages:
-                combined_prompt += f"{m['role'].upper()}: {m['content']}\n"
-
-            gemini_config = genai.types.GenerationConfig(**self.configurations)
-            model = genai.GenerativeModel(model_name=self.model_name, system_instruction=None)
-            m = model.generate_content(combined_prompt, generation_config=gemini_config)
-
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompts['user_prompt'],
+                config=config
+            )
             record_success(self.name)
-            return m.text
+            logger.debug(f"[{self.name}] Chamada concluída com sucesso")
+            return response.text
+
         except Exception as e:
             record_failure(self.name)
             if isinstance(e, CircuitOpenError):
@@ -437,53 +820,217 @@ class GeminiClient(APIClient):
             logger.error(f"GeminiClient _call_api: Erro ao comunicar com Gemini: {e}")
             raise APICommunicationError(f"Erro ao comunicar com a API: {e}")
 
-    def train(self, training_file, parameters={}):
+    def _prepare_train(self, file_path: str) -> types.TuningDataset:
         """
-        Executa o treinamento do modelo Gemini.
-
+        Prepara os dados para treinamento no formato do Gemini usando TuningDataset.
+        
         Args:
-            training_file: Arquivo com dados de treinamento em formato JSON.
-            parameters (dict): Parâmetros adicionais (epoch_count, batch_size etc.).
-
+            file_path: Caminho do arquivo JSON com dados de treinamento
+            
         Returns:
-            str: Nome do modelo treinado.
-
-        Raises:
-            APICommunicationError: Em caso de erro no treinamento.
+            types.TuningDataset: Objeto TuningDataset com exemplos formatados
         """
         try:
-            with training_file.open('r') as f:
-                raw_training_data = json.load(f)
+            with open(file_path, 'r') as f:
+                training_data = json.load(f)
 
-            training_data = []
-            for example in raw_training_data:
-                text_input = example.get('user_message', '')
-                output = example.get('response', '')
-                training_data.append({'text_input': text_input, 'output': output})
+            examples = []
+            for item in training_data:
+                text_input = item['user_message']
+                if item.get('system_message'):
+                    text_input = f"{item['system_message']}\n {text_input}"
+                
+                examples.append(
+                    types.TuningExample(
+                        text_input=text_input,
+                        output=item['response']
+                    )
+                )
+            
+            return types.TuningDataset(examples=examples)
 
-            display_name = parameters.get('display_name', 'Fine-tuned Model')
-            epoch_count = int(parameters.get('epoch_count', 1))
-            batch_size = int(parameters.get('batch_size', 4))
-            learning_rate = float(parameters.get('learning_rate', 0.001))
-            source_model = "models/" + self.model_name
+        except Exception as e:
+            logger.error(f"GeminiClient _prepare_train: Erro ao preparar dados: {e}")
+            raise APICommunicationError(f"Erro ao preparar dados de treinamento: {e}")
 
-            operation = genai.create_tuned_model(
-                display_name=display_name,
-                source_model=source_model,
-                epoch_count=epoch_count,
-                batch_size=batch_size,
-                learning_rate=learning_rate,
-                training_data=training_data,
+    def _start_training(self, training_data: str) -> TrainingResult:
+        """Inicia o treinamento no Gemini."""
+        attempt_call(self.name)
+        try:
+            if 'tuned_model_display_name' not in self.training_configurations:
+                random_suffix = uuid.uuid4().hex[:8]
+                display_name = f"{self.model_name}-Tuned-{random_suffix}"
+                display_name = display_name[:40]
+                self.training_configurations['tuned_model_display_name'] = display_name
+
+            config=types.CreateTuningJobConfig(
+                **self.training_configurations
             )
 
-            while not operation.done():
-                time.sleep(10)
+            tuning_job = self.client.tunings.tune(
+                base_model=self.model_name if '/' in self.model_name else f'models/{self.model_name}',
+                training_dataset=training_data,
+                config=config
+            )
 
-            result = operation.result()
-            return result.name
+            record_success(self.name)
+            return TrainingResult(
+                job_id=tuning_job.name,
+                status=TrainingStatus.IN_PROGRESS,
+                details=tuning_job
+            )
+
         except Exception as e:
-            logger.error(f"Erro ao treinar Gemini: {e}")
-            raise APICommunicationError(f"Erro ao treinar o modelo: {e}")
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"GeminiClient _start_training: {e}")
+            raise APICommunicationError(f"Erro ao iniciar treinamento: {e}")
+
+    def get_training_status(self, job_id: str) -> TrainingResult:
+        """Verifica status do treinamento no Gemini."""
+        attempt_call(self.name)
+        try:
+            operacao = genai.get_operation(job_id)
+
+            if operacao.done():
+                if operacao.exception():
+                    return TrainingResult(
+                        job_id=job_id,
+                        status=TrainingStatus.FAILED,
+                        error=operacao.exception(),
+                        completed_at=datetime.now(),
+                        progress=1
+                    )
+                
+                if operacao.result():
+                    result = operacao.result()
+                    return TrainingResult(
+                        job_id=job_id,
+                        status=TrainingStatus.COMPLETED,
+                        model_name=operacao.metadata.tuned_model,
+                        completed_at=result.tuning_task.complete_time,
+                        details=operacao.result(),
+                        progress=1
+                    )
+            else:
+                return TrainingResult(
+                    job_id=job_id,
+                    status=TrainingStatus.IN_PROGRESS,
+                    progress=operacao.metadata.completed_percent/100
+                )
+
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"GeminiClient get_training_status: {e}")
+            raise APICommunicationError(f"Erro ao verificar status: {e}")
+
+    def cancel_training(self, operation_name: str) -> bool:
+        """
+        Cancela um job de fine-tuning no Gemini.
+
+        Args:
+            operation_name (str): Nome da operação a ser cancelada.
+
+        Returns:
+            bool: True se cancelado com sucesso.
+        """
+        attempt_call(self.name)
+        try:
+            op = genai.get_operation(operation_name)
+            op.cancel()
+            record_success(self.name)
+            return True
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"Gemini cancel_training: {e}")
+            raise APICommunicationError(f"Erro ao cancelar a operação: {e}")
+
+    def list_trained_models(self) -> list:
+        """Lista os modelos treinados disponíveis no Gemini."""
+        attempt_call(self.name)
+        try:
+            models = []
+            for model in genai.list_tuned_models():
+                models.append({
+                    'name': model.name,
+                    'display_name': model.display_name,
+                    'created_at': datetime.fromtimestamp(model.create_time)
+                })
+            
+            record_success(self.name)
+            return models
+
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"GeminiClient list_trained_models: {e}")
+            raise APICommunicationError(f"Erro ao listar modelos: {e}")
+
+    def delete_trained_model(self, model_name: str) -> bool:
+        """
+        Remove um modelo treinado do Gemini.
+
+        Args:
+            model_name (str): Nome/ID do modelo a ser removido.
+
+        Returns:
+            bool: True se removido com sucesso.
+        """
+        attempt_call(self.name)
+        try:
+            genai.delete_tuned_model(model_name)
+            record_success(self.name)
+            return True
+
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"GeminiClient delete_trained_model: {e}")
+            raise APICommunicationError(f"Erro ao remover modelo: {e}")
+
+    def list_files(self) -> list:
+        """Lista todos os arquivos disponíveis no Gemini."""
+        attempt_call(self.name)
+        try:
+            files = []
+            for file in genai.list_files():
+                files.append({
+                    'id': file.name,
+                    'filename': file.display_name,
+                    'created_at': datetime.fromtimestamp(file.create_time)
+                })
+            
+            record_success(self.name)
+            return files
+
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"GeminiClient list_files: {e}")
+            raise APICommunicationError(f"Erro ao listar arquivos: {e}")
+
+    def delete_file(self, file_id: str) -> bool:
+        """Remove um arquivo do Gemini."""
+        attempt_call(self.name)
+        try:
+            genai.delete_file(file_id)
+            record_success(self.name)
+            return True
+
+        except Exception as e:
+            record_failure(self.name)
+            if isinstance(e, CircuitOpenError):
+                raise e
+            logger.error(f"GeminiClient delete_file: {e}")
+            raise APICommunicationError(f"Erro ao remover arquivo: {e}")
 
 
 @register_ai_client
@@ -501,11 +1048,16 @@ class AnthropicClient(APIClient):
             config (AIClientConfig): Contém api_key, model_name etc.
         """
         super().__init__(config)
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+        try:
+            self.client = anthropic.Anthropic(api_key=self.api_key)
+        except Exception as e:
+            logger.error(f"{self.__class__.__name__}.__init__: Erro ao inicializar cliente Anthropic: {e}")
+            raise APICommunicationError(f"Erro ao inicializar cliente Anthropic: {e}")
 
     def _call_api(self, prompts: dict) -> str:
         """
-        Realiza a chamada à API do Claude 3.
+        Realiza a chamada direta à API do Claude 3 (sem retry aqui).
+        O retry agora é feito no método compare da classe base.
 
         Args:
             prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
@@ -518,12 +1070,13 @@ class AnthropicClient(APIClient):
         """
         attempt_call(self.name)
         try:
-            system = prompts['base_instruction']
-            user_prompt = prompts['user_prompt']
+            system = prompts.get('base_instruction', '')
+            user_prompt = prompts.get('user_prompt', '')
 
             self.configurations['model'] = self.model_name
             if system.strip():
                 self.configurations['system'] = system
+
             self.configurations['messages'] = [{"role": "user", "content": user_prompt}]
             self.configurations['max_tokens'] = self.configurations.get('max_tokens', 1024)
 
@@ -561,7 +1114,8 @@ class PerplexityClient(APIClient):
 
     def _call_api(self, prompts: dict) -> str:
         """
-        Realiza a chamada à API da Perplexity.
+        Realiza a chamada direta à API da Perplexity (sem retry aqui).
+        O retry agora é feito no método compare da classe base.
 
         Args:
             prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
@@ -576,9 +1130,10 @@ class PerplexityClient(APIClient):
         try:
             url = self.api_url if self.api_url else "https://api.perplexity.ai/chat/completions"
 
+            base_instruction = prompts.get('base_instruction', '').strip()
             messages = []
-            if prompts['base_instruction'].strip():
-                messages.append({"role": "system", "content": prompts['base_instruction']})
+            if base_instruction:
+                messages.append({"role": "system", "content": base_instruction})
             messages.append({"role": "user", "content": prompts['user_prompt']})
 
             self.configurations['model'] = self.model_name
@@ -628,7 +1183,8 @@ class LlamaClient(APIClient):
 
     def _call_api(self, prompts: dict) -> str:
         """
-        Realiza a chamada à API do Llama.
+        Realiza a chamada direta à API do Llama (sem retry aqui).
+        O retry agora é feito no método compare da classe base.
 
         Args:
             prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
@@ -641,34 +1197,51 @@ class LlamaClient(APIClient):
         """
         attempt_call(self.name)
         try:
+            base_instruction = prompts.get('base_instruction', '').strip()
+            user_prompt = prompts.get('user_prompt', '')
+
             messages = []
-            if prompts['base_instruction'].strip():
-                messages.append({"role": "system", "content": prompts['base_instruction']})
-            messages.append({"role": "user", "content": prompts['user_prompt']})
+            if base_instruction:
+                messages.append({"role": "system", "content": base_instruction})
+            messages.append({"role": "user", "content": user_prompt})
 
             self.configurations['model'] = self.model_name
             self.configurations['messages'] = messages
             self.configurations['stream'] = self.configurations.get('stream', False)
 
+            logger.debug(f"[{self.name}] Enviando requisição para a API Llama")
             response = self.client.run(self.configurations)
 
             if not response:
-                raise APICommunicationError("Nenhum texto retornado de Llama.")
+                logger.warning(f"[{self.name}] A API retornou uma resposta vazia")
+                raise APICommunicationError(f"[{self.name}] Nenhum texto retornado de Llama.")
 
-            response = response.json()
-            if "choices" not in response:
-                error_str = response[0].get('error', 'Erro Llama')
+            response_json = response.json()
+            
+            if "choices" not in response_json:
+                if isinstance(response_json, list):
+                    if response_json and isinstance(response_json[0], dict):
+                        error_str = response_json[0].get('error', f'[{self.name}] Erro não especificado')
+                    else:
+                        error_str = f"[{self.name}] Resposta inesperada: {response_json}"
+                elif isinstance(response_json, dict):
+                    error_str = response_json.get('detail', response_json.get('error', f'[{self.name}] Erro não especificado'))
+                else:
+                    error_str = f"[{self.name}] Formato de resposta desconhecido: {response_json}"
+                
+                logger.error(f"[{self.name}] Erro na API: {error_str}")
                 raise APICommunicationError(error_str)
 
             record_success(self.name)
-            return response["choices"][0]["message"]["content"]
+            logger.debug(f"[{self.name}] Resposta recebida com sucesso")
+            return response_json["choices"][0]["message"]["content"]
 
         except Exception as e:
             record_failure(self.name)
             if isinstance(e, CircuitOpenError):
                 raise e
-            logger.error(f"LlamaClient _call_api: {e}")
-            raise APICommunicationError(f"Erro Llama: {e}")
+            logger.error(f"[{self.name}] _call_api: {e}")
+            raise APICommunicationError(f"[{self.name}] Erro: {e}")
 
 
 @register_ai_client
@@ -718,7 +1291,8 @@ class AzureClient(APIClient):
 
     def _call_api(self, prompts: dict) -> str:
         """
-        Realiza a chamada à API do Azure.
+        Realiza a chamada direta à API do Azure (sem retry aqui).
+        O retry agora é feito no método compare da classe base.
 
         Args:
             prompts (dict): { 'base_instruction': X, 'user_prompt': Y }.
@@ -731,18 +1305,18 @@ class AzureClient(APIClient):
         """
         attempt_call(self.name)
         try:
-            messages = []
-            if prompts['base_instruction'].strip():
-                messages.append({"role": "system", "content": prompts['base_instruction']})
-            messages.append({"role": "user", "content": prompts['user_prompt']})
-            self.configurations['messages'] = messages
+            base_instruction = prompts.get('base_instruction', '').strip()
+            user_prompt = prompts.get('user_prompt', '')
 
+            messages = []
+            if base_instruction:
+                messages.append({"role": "system", "content": base_instruction})
+            messages.append({"role": "user", "content": user_prompt})
+
+            self.configurations['messages'] = messages
             response = self.client.complete(**self.configurations)
 
-            if not response:
-                raise APICommunicationError("Nenhuma mensagem retornada de Azure.")
-
-            if not hasattr(response, 'choices') or not response.choices:
+            if not response or not hasattr(response, 'choices') or not response.choices:
                 raise APICommunicationError("Resposta inválida da Azure API")
 
             record_success(self.name)

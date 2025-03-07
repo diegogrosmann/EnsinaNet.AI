@@ -4,14 +4,13 @@
             <div class="modal-header">
                 <h5 class="modal-title" id="createTokenModalLabel">
                     <i class="bi bi-key-fill text-primary me-2"></i>
-                    Criar Novo Token
+                    Criar Token
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             
-            <form method="post" action="{% url 'accounts:token_create' %}" id="createTokenForm">
+            <form id="createTokenForm" method="POST" action="{% url 'accounts:token_create' %}">
                 {% csrf_token %}
-                <input type="hidden" name="create_token" value="true">
                 
                 <div class="modal-body">
                     <!-- Nome do Token -->
@@ -21,25 +20,22 @@
                             <span class="input-group-text">
                                 <i class="bi bi-tag"></i>
                             </span>
-                            <input type="text" name="name" id="id_name" 
-                                   class="form-control {% if form.name.errors %}is-invalid{% endif %}"
-                                   required placeholder="Ex: Meu Token"
-                                   pattern="[A-Za-z0-9 _\-]+"
-                                   title="Apenas letras, números, espaços, _ e -">
-                            {% if form.name.errors %}
-                                <div class="invalid-feedback">{{ form.name.errors|join:", " }}</div>
-                            {% endif %}
+                            <input type="text" class="form-control" id="id_name" name="name" />
                         </div>
+                        <div class="invalid-feedback" id="tokenNameError"></div>
                         <div class="form-text">
                             Use um nome descritivo e único para identificar este token.
                         </div>
                     </div>
+                    
+                    <!-- Área para exibir erros gerais -->
+                    <div class="alert alert-danger d-none" id="tokenFormErrors" role="alert"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                         <i class="bi bi-x-lg me-1"></i>Cancelar
                     </button>
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" id="createTokenButton">
                         <i class="bi bi-check-lg me-1"></i>Criar Token
                     </button>
                 </div>
@@ -49,89 +45,193 @@
 </div>
 
 <script>
-// Função para verificar o nome do token em tempo real
-document.getElementById('id_name').addEventListener('input', function() {
-    const name = this.value;
-    // Procura um feedback já existente
-    let feedback = this.parentNode.querySelector('.invalid-feedback');
-
-    // Se não houver feedback, cria um novo, senão, utiliza o já existente
-    if (!feedback) {
-        feedback = document.createElement('div');
-        feedback.className = 'invalid-feedback';
-        this.parentNode.appendChild(feedback);
-    }
-
-    // Validação: caracteres permitidos
-    if (!/^[A-Za-z0-9 _-]+$/.test(name)) {
-        this.classList.add('is-invalid');
-        feedback.textContent = 'Use apenas letras, números, espaços, _ e -';
-        return;
-    }
-
-    // Validação: tamanho mínimo
-    if (name.length < 3) {
-        this.classList.add('is-invalid');
-        feedback.textContent = 'O nome deve ter pelo menos 3 caracteres';
-        return;
-    }
+document.addEventListener('DOMContentLoaded', function() {
+    const createTokenForm = document.querySelector('#createTokenForm');
+    const tokenNameInput = document.querySelector('#id_name');
+    const tokenNameError = document.querySelector('#tokenNameError');
+    const tokenFormErrors = document.querySelector('#tokenFormErrors');
+    const createTokenButton = document.querySelector('#createTokenButton');
     
-    // Se não houver erros, remove a classe de erro e o feedback
-    this.classList.remove('is-invalid');
-    feedback.remove();
-});
-
-// Função para limpar o formulário ao fechar o modal
-document.getElementById('createTokenModal').addEventListener('hidden.bs.modal', function() {
-    document.getElementById('createTokenForm').reset();
-    const invalidInputs = this.querySelectorAll('.is-invalid');
-    invalidInputs.forEach(input => input.classList.remove('is-invalid'));
-    const feedbacks = this.querySelectorAll('.invalid-feedback');
-    feedbacks.forEach(feedback => feedback.remove());
-});
-
-// Suporte a ctrl+enter para enviar
-document.getElementById('createTokenForm').addEventListener('keydown', function(e) {
-    if (e.ctrlKey && e.key === 'Enter') {
-        e.preventDefault();
-        this.submit();
-    }
-});
-
-// Aqui é onde precisamos corrigir o endpoint da requisição
-document.querySelector('#createTokenModal form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    const form = this;
-    const formData = new FormData(form);
-    
-    fetch("{% url 'accounts:token_create' %}", {  // Aqui está a correção principal
-        method: 'POST',
-        body: formData,
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+    // Função de validação do nome do token
+    function validateTokenName(name) {
+        if (!name || name.trim() === '') {
+            return 'O nome do token é obrigatório';
         }
-    })
-    .then(response => {
-        if (response.ok) {
-            // Se a resposta for bem sucedida, recarrega a página
-            window.location.reload();
+        
+        // Verificar comprimento do nome
+        if (name.length < 3) {
+            return 'O nome do token deve ter pelo menos 3 caracteres';
+        }
+        
+        // Verificar caracteres inválidos (opcional - modifique conforme necessário)
+        const invalidCharsRegex = /[<>\/\\\|\:;\*\?\"]/;
+        if (invalidCharsRegex.test(name)) {
+            return 'O nome contém caracteres inválidos';
+        }
+        
+        return null; // Sem erros
+    }
+    
+    // Validação em tempo real ao digitar
+    tokenNameInput.addEventListener('input', function() {
+        const error = validateTokenName(this.value);
+        if (error) {
+            tokenNameInput.classList.add('is-invalid');
+            tokenNameError.textContent = error;
+            tokenNameError.style.display = 'block';
+        } else {
+            tokenNameInput.classList.remove('is-invalid');
+            tokenNameInput.classList.add('is-valid');
+            tokenNameError.style.display = 'none';
+        }
+    });
+    
+    // Função para exibir erros gerais - melhorada
+    function showFormErrors(errors) {       
+        if (typeof errors === 'string') {
+            tokenFormErrors.textContent = errors;
+            tokenFormErrors.classList.remove('d-none');
+        } else if (Array.isArray(errors)) {
+            tokenFormErrors.textContent = errors.join(', ');
+            tokenFormErrors.classList.remove('d-none');
+        } else if (typeof errors === 'object') {
+            const errorMessages = [];
+            for (const field in errors) {
+                if (field === 'name') {
+                    tokenNameInput.classList.add('is-invalid');
+                    // Garante que podemos lidar com mensagens como string ou array
+                    const errorMsg = Array.isArray(errors[field]) ? errors[field][0] : errors[field];
+                    tokenNameError.textContent = errorMsg;
+                    tokenNameError.style.display = 'block';
+                } else if (field === '__all__' || field === 'non_field_errors') {
+                    const fieldErrors = Array.isArray(errors[field]) ? errors[field] : [errors[field]];
+                    errorMessages.push(...fieldErrors);
+                } else {
+                    const fieldErrors = Array.isArray(errors[field]) ? errors[field][0] : errors[field];
+                    errorMessages.push(`${field}: ${fieldErrors}`);
+                }
+            }
+            if (errorMessages.length > 0) {
+                tokenFormErrors.textContent = errorMessages.join(', ');
+                tokenFormErrors.classList.remove('d-none');
+            }
+        }
+    }
+    
+    // Manipular envio do formulário via AJAX - melhorado
+    createTokenForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Limpar erros anteriores
+        tokenFormErrors.classList.add('d-none');
+        tokenFormErrors.textContent = '';
+        tokenNameError.style.display = 'none';
+        tokenNameInput.classList.remove('is-invalid');
+        
+        // Validar o nome do token
+        const tokenName = tokenNameInput.value;
+        const error = validateTokenName(tokenName);
+        if (error) {
+            tokenNameInput.classList.add('is-invalid');
+            tokenNameError.textContent = error;
+            tokenNameError.style.display = 'block';
             return;
         }
-        // Se houver erros, atualiza o modal com os erros
-        return response.text().then(html => {
-            const modalBody = form.querySelector('.modal-body');
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = html;
-            const newModalBody = tempDiv.querySelector('.modal-body');
-            if (newModalBody) {
-                modalBody.innerHTML = newModalBody.innerHTML;
+        
+        // Desabilitar botão durante o envio
+        createTokenButton.disabled = true;
+        createTokenButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Criando...';
+        
+        // Preparar e enviar os dados via AJAX
+        const formData = new FormData(this);
+        
+        fetch(this.action, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => {
+            
+            if (!response.ok) {
+                return response.json()
+                    .catch(() => {
+                        // Caso não seja JSON, tenta obter como texto
+                        return response.text().then(text => {
+                            return { success: false, errors: { __all__: ['Erro no servidor'] } };
+                        });
+                    })
+                    .then(data => {
+                        // Adiciona o status para identificar como erro
+                        data._errorStatus = response.status;
+                        return data;
+                    });
             }
+            return response.json().catch(() => response.text());
+        })
+        .then(data => {
+
+            // Verificando se é um erroq
+            if (data._errorStatus) {
+                showFormErrors(data.errors || "Erro no servidor");
+                throw new Error(`Erro ${data._errorStatus}`);
+            }
+            
+            // Verificações para tratamentos de diferentes formatos de resposta
+            if (data && data.errors) {
+                showFormErrors(data.errors);
+                throw new Error('Erro de validação');
+            } else if (data && data.success === false) {
+                showFormErrors(data.message || 'Erro ao criar token');
+                throw new Error('Erro ao criar token');
+            } else if (typeof data === 'string') {
+                if (data.includes('invalid-feedback')) {
+                    // Caso a resposta seja HTML com erros
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = data;
+                    const errors = tempDiv.querySelectorAll('.invalid-feedback');
+                    if (errors.length > 0) {
+                        const errorMessages = Array.from(errors).map(el => el.textContent);
+                        showFormErrors(errorMessages.join(', '));
+                        throw new Error('Erro de validação');
+                    }
+                }
+            }
+            
+            // Sucesso: fechar modal e recarregar página
+            const modal = bootstrap.Modal.getInstance(document.getElementById('createTokenModal'));
+            modal.hide();
+            window.location.reload();
+        })
+        .finally(() => {
+            // Reativar botão
+            createTokenButton.disabled = false;
+            createTokenButton.innerHTML = '<i class="bi bi-check-lg me-1"></i>Criar Token';
         });
-    })
-    .catch(error => {
-        console.error('Erro:', error);
+    });
+    
+    // Reiniciar formulário quando o modal for fechado
+    document.getElementById('createTokenModal').addEventListener('hidden.bs.modal', function () {
+        createTokenForm.reset();
+        tokenNameInput.classList.remove('is-invalid', 'is-valid');
+        tokenNameError.style.display = 'none';
+        tokenFormErrors.classList.add('d-none');
+        tokenFormErrors.textContent = '';
     });
 });
 </script>
+<style>
+.invalid-feedback {
+    display: none;
+    width: 100%;
+    margin-top: 0.25rem;
+    font-size: 0.875em;
+    color: #dc3545;
+}
+
+#createTokenForm .is-invalid ~ .invalid-feedback {
+    display: block;
+}
+</style>

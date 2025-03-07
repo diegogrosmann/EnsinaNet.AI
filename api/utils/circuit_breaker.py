@@ -15,94 +15,118 @@ Funções:
         Registra sucesso. Se estiver half_open, fecha o circuito.
 """
 
+import logging
 import time
 import threading
-import logging  # Adicionado import do logging
+from datetime import datetime, timedelta
+from typing import Dict, Any
 
-# Configuração do logger
 logger = logging.getLogger(__name__)
 
+# Estado do circuit breaker para cada API
+circuit_state: Dict[str, Dict[str, Any]] = {}
+locks: Dict[str, threading.RLock] = {}
+
+# Configuração padrão
+DEFAULT_ERROR_THRESHOLD = 100  # Reduzido para 5 para ser mais sensível a falhas
+DEFAULT_TIMEOUT_SECONDS = 30  # Reduzido para 30s para permitir que APIs se recuperem mais rápido
+DEFAULT_SUCCESS_THRESHOLD = 1  # Reduzido para 1 para permitir recuperação mais rápida
+
 class CircuitOpenError(Exception):
-    """Exceção lançada quando o circuito está aberto para determinado cliente."""
+    """Erro levantado quando o circuito está aberto."""
     pass
 
-# (NOVO) Dicionário global que mantém o estado do circuito para cada cliente de IA:
-# Exemplo de estrutura:
-# CIRCUIT_STATE[client_name] = {
-#     "state": "closed"/"open"/"half_open",
-#     "failure_count": int,
-#     "opened_at": float,  # timestamp em que o circuito foi aberto
-# }
-CIRCUIT_STATE = {}
-CIRCUIT_LOCK = threading.Lock()
-
-# (NOVO) Configurações simples do circuito
-FAILURE_THRESHOLD = 3   # Número máximo de falhas para "abrir" o circuito
-OPEN_SECONDS = 30       # Tempo (segundos) que o circuito permanece aberto antes de 'half_open'
-
-def attempt_call(client_name: str):
-    """Verifica se é possível chamar o cliente de IA.
-
+def get_or_create_state(api_name: str) -> Dict[str, Any]:
+    """
+    Recupera ou cria o estado do circuit breaker para uma API.
+    
     Args:
-        client_name (str): Nome do cliente de IA.
+        api_name (str): Nome identificador da API
+        
+    Returns:
+        Dict[str, Any]: Estado atual do circuito para a API
+    """
+    if api_name not in circuit_state:
+        circuit_state[api_name] = {
+            'state': 'closed',  # closed, open, half-open
+            'failures': 0,
+            'successes': 0,
+            'last_failure': None,
+            'reset_timeout': DEFAULT_TIMEOUT_SECONDS,
+            'error_threshold': DEFAULT_ERROR_THRESHOLD,
+            'success_threshold': DEFAULT_SUCCESS_THRESHOLD
+        }
+        locks[api_name] = threading.RLock()
+    
+    return circuit_state[api_name]
 
+def attempt_call(api_name: str) -> None:
+    """
+    Verifica se é possível realizar uma chamada para a API.
+    
+    Args:
+        api_name (str): Nome identificador da API
+        
     Raises:
-        CircuitOpenError: Se o circuito estiver aberto ou não puder prosseguir.
+        CircuitOpenError: Se o circuito estiver aberto
     """
-    with CIRCUIT_LOCK:
-        if client_name not in CIRCUIT_STATE:
-            CIRCUIT_STATE[client_name] = {
-                "state": "closed",
-                "failure_count": 0,
-                "opened_at": 0
-            }
-            return
-
-        state = CIRCUIT_STATE[client_name]
+    with locks.get(api_name, threading.RLock()):
+        state = get_or_create_state(api_name)
         
-        # Se estiver aberto, verifica timeout
-        if state["state"] == "open":
-            if time.time() - state["opened_at"] > OPEN_SECONDS:
-                state["state"] = "half_open"
-                logger.info(f"Circuito em half-open para {client_name}")
+        # Se o circuito estiver aberto
+        if state['state'] == 'open':
+            # Verifica se o tempo de timeout foi alcançado
+            if (state['last_failure'] + timedelta(seconds=state['reset_timeout']) < datetime.now()):
+                logger.info(f"Circuito para {api_name} mudou para meio-aberto após timeout")
+                state['state'] = 'half-open'
+                state['successes'] = 0
             else:
-                raise CircuitOpenError(f"Circuito aberto para {client_name}")
+                # Circuito ainda está aberto
+                raise CircuitOpenError(f"Circuito para {api_name} está aberto. Tente novamente mais tarde.")
 
-def record_failure(client_name: str):
-    """Registra uma falha na chamada do cliente de IA.
-
-    Args:
-        client_name (str): Nome do cliente de IA.
+def record_success(api_name: str) -> None:
     """
-    with CIRCUIT_LOCK:
-        if client_name not in CIRCUIT_STATE:
-            CIRCUIT_STATE[client_name] = {
-                "state": "closed",
-                "failure_count": 0,
-                "opened_at": 0
-            }
+    Registra uma chamada bem-sucedida.
+    
+    Args:
+        api_name (str): Nome identificador da API
+    """
+    with locks.get(api_name, threading.RLock()):
+        state = get_or_create_state(api_name)
         
-        state = CIRCUIT_STATE[client_name]
-        state["failure_count"] += 1
+        # Reseta contador de falhas
+        state['failures'] = 0
+        
+        # Se o circuito estiver meio-aberto, incrementa sucessos
+        if state['state'] == 'half-open':
+            state['successes'] += 1
+            
+            # Se atingiu o limiar de sucessos, fecha o circuito
+            if state['successes'] >= state['success_threshold']:
+                logger.info(f"Circuito para {api_name} fechado após {state['successes']} sucessos")
+                state['state'] = 'closed'
+                state['successes'] = 0
 
-        if state["failure_count"] >= FAILURE_THRESHOLD:
-            state["state"] = "open"
-            state["opened_at"] = time.time()
-            logger.warning(f"Circuito aberto para {client_name} após {state['failure_count']} falhas")
-
-def record_success(client_name: str):
-    """Registra sucesso na chamada do cliente de IA.
-
-    Args:
-        client_name (str): Nome do cliente de IA.
+def record_failure(api_name: str) -> None:
     """
-    with CIRCUIT_LOCK:
-        if client_name not in CIRCUIT_STATE:
+    Registra uma falha na chamada à API.
+    
+    Args:
+        api_name (str): Nome identificador da API
+    """
+    with locks.get(api_name, threading.RLock()):
+        state = get_or_create_state(api_name)
+        state['failures'] += 1
+        state['last_failure'] = datetime.now()
+        
+        # Se está no estado meio-aberto, qualquer falha já abre o circuito novamente
+        if state['state'] == 'half-open':
+            logger.info(f"Circuito para {api_name} reaberto após falha no estado meio-aberto")
+            state['state'] = 'open'
+            state['failures'] = state['error_threshold']  # força o estado aberto
             return
             
-        state = CIRCUIT_STATE[client_name]
-        
-        if state["state"] == "half_open":
-            state["state"] = "closed"
-            state["failure_count"] = 0
-            logger.info(f"Circuito fechado para {client_name} após sucesso")
+        # Se atingiu o limiar de erros, abre o circuito
+        if state['failures'] >= state['error_threshold'] and state['state'] == 'closed':
+            logger.warning(f"Circuito para {api_name} aberto após {state['failures']} falhas consecutivas")
+            state['state'] = 'open'

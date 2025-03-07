@@ -1,19 +1,24 @@
-from .ai_configurations import (
-    ai_config_manage,
-    ai_config_create,
-    ai_config_edit,
-    ai_config_delete,
-    ai_config_toggle,
-    get_token_ais
+from .ai_client import (
+    manage_ai,
+    create_ai,
+    edit_ai,
+    delete_ai,
+    ai_available_tokens,
+    ai_link_token
 )
 
-from .prompt_config import (
+from .token import (
     prompt_config,
+    token_ai_link,
 )
 
 from .training import (
     training_center,
-    training_ai
+    training_ai,
+    training_status,
+    training_progress,
+    training_cancel,
+    training_delete
 )
 
 from .training_files import (
@@ -29,15 +34,20 @@ from .training_capture import (
 )
 
 __all__ = [
-    'ai_config_manage',
-    'ai_config_create',
-    'ai_config_edit',
-    'ai_config_delete',
-    'ai_config_toggle',
-    'get_token_ais',
+    'manage_ai',
+    'create_ai',
+    'edit_ai',
+    'delete_ai',
+    'ai_available_tokens',
+    'ai_link_token',
     'prompt_config',
+    'token_ai_link',
     'training_center',
     'training_ai',
+    'training_status',
+    'training_progress',
+    'training_cancel',
+    'training_delete',
     'training_file_create',
     'training_file_upload',
     'training_file_download',

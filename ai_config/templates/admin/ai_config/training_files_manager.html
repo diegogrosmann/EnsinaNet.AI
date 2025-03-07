@@ -1,0 +1,138 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_list %}
+
+{% block content %}
+<div id="content-main">
+    
+    <div class="module">
+        <form method="get" class="mb-3">
+            <select name="ai_config" class="form-select" onchange="this.form.submit()">
+                <option value="">Selecione uma IA</option>
+                {% for config in global_configs %}
+                <option value="{{ config.id }}" {% if selected_config == config.id|stringformat:"s" %}selected{% endif %}>
+                    {{ config.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+
+        {% if files %}
+        <form id="files-form">
+            <div class="actions">
+                <button type="button" class="button" onclick="deleteSelected()">Excluir Selecionados</button>
+            </div>
+            
+            <table id="result_list">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="select-all"></th>
+                        <th>ID</th>
+                        <th>Nome</th>
+                        <th>Tamanho</th>
+                        <th>Data de Criação</th>
+                        <th>Propósito</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in files %}
+                    <tr>
+                        <td><input type="checkbox" name="selected_files" value="{{ file.id }}"></td>
+                        <td>{{ file.id }}</td>
+                        <td>{{ file.filename }}</td>
+                        <td>{{ file.bytes|filesizeformat }}</td>
+                        <td>{{ file.created_at|date:"d/m/Y H:i" }}</td>
+                        <td>{{ file.purpose }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </form>
+        {% elif selected_config %}
+        <p>Nenhum arquivo encontrado.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.getElementById('select-all').onclick = function() {
+    var checkboxes = document.getElementsByName('selected_files');
+    for (var checkbox of checkboxes) {
+        checkbox.checked = this.checked;
+    }
+};
+
+function deleteSelected() {
+    var selected = Array.from(document.getElementsByName('selected_files'))
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
+    
+    if (selected.length === 0) {
+        alert('Selecione pelo menos um arquivo');
+        return;
+    }
+    
+    if (!confirm('Tem certeza que deseja excluir os arquivos selecionados?')) {
+        return;
+    }
+    
+    // Adiciona indicador de carregamento
+    const deleteButton = document.querySelector('button[onclick="deleteSelected()"]');
+    const originalText = deleteButton.innerHTML;
+    deleteButton.disabled = true;
+    deleteButton.innerHTML = '<span class="loading-spinner"></span> Excluindo...';
+    
+    const formData = new FormData();
+    formData.append('ai_config', '{{ selected_config }}');
+    selected.forEach(fileId => {
+        formData.append('file_ids[]', fileId);
+    });
+    
+    fetch('{% url "admin:delete_training_files" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (data.errors.length > 0) {
+                alert(`Excluídos: ${data.deleted}\nErros: ${data.errors.join('\n')}`);
+            } else {
+                alert(`${data.deleted} arquivo(s) excluído(s) com sucesso`);
+            }
+            location.reload();
+        } else {
+            alert(data.error || 'Erro ao excluir arquivos');
+            // Restaura o botão em caso de erro
+            deleteButton.disabled = false;
+            deleteButton.innerHTML = originalText;
+        }
+    })
+    .catch(error => {
+        alert('Erro ao excluir arquivos');
+        // Restaura o botão em caso de erro
+        deleteButton.disabled = false;
+        deleteButton.innerHTML = originalText;
+    });
+}
+</script>
+
+<style>
+.loading-spinner {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    border: 2px solid rgba(255,255,255,.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 8px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+</style>
+{% endblock %}

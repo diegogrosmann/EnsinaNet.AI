@@ -6,7 +6,7 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_POST
 
 from accounts.models import UserToken
-from ai_config.models import AIClientConfiguration, TrainingCapture
+from ai_config.models import AIClientConfiguration, TrainingCapture, AIClientTokenConfig
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,24 @@ def capture_toggle(request: HttpRequest) -> JsonResponse:
                 }, status=400)
             
             token = get_object_or_404(UserToken, id=token_id, user=request.user)
-            ai_client_config = get_object_or_404(AIClientConfiguration, id=ai_client_config_id, token=token)
+            ai_client_config = get_object_or_404(AIClientConfiguration, user=request.user, id=ai_client_config_id)
+            
+            # Verificar se a IA está habilitada para este token
+            try:
+                token_ai_config = AIClientTokenConfig.objects.get(
+                    token=token, 
+                    ai_config=ai_client_config
+                )
+                
+                if not token_ai_config.enabled:
+                    return JsonResponse({
+                        'error': 'A IA selecionada não está habilitada para este token. Por favor, habilite-a primeiro nas configurações do token.'
+                    }, status=403)
+                    
+            except AIClientTokenConfig.DoesNotExist:
+                return JsonResponse({
+                    'error': 'A IA selecionada não está habilitada para este token. Por favor, habilite-a primeiro nas configurações do token.'
+                }, status=403)
 
             capture, created = TrainingCapture.objects.get_or_create(
                 token=token,
@@ -64,9 +81,8 @@ def capture_get_examples(request: HttpRequest, token_id: str, ai_id: int) -> Jso
     """Retorna os exemplos de treinamento capturados para uma IA."""
     token = get_object_or_404(UserToken, id=token_id, user=request.user)
     ai_config = get_object_or_404(AIClientConfiguration, 
-        token=token, 
         id=ai_id,
-        enabled=True
+        user=request.user
     )
     
     try:
@@ -82,9 +98,12 @@ def capture_get_examples(request: HttpRequest, token_id: str, ai_id: int) -> Jso
         temp_file = capture.temp_file
         if not temp_file:
             return JsonResponse({'examples': []})
-            
-        with temp_file.open('r') as f:
-            training_data = json.load(f)
+        
+        try:
+            with temp_file.open('r') as f:
+                training_data = json.load(f)
+        except json.JSONDecodeError:
+            training_data = []
             
         # Limpa o arquivo temporário após ler
         with temp_file.open('w') as f:

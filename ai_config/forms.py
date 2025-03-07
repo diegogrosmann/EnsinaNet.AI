@@ -16,7 +16,6 @@ from .models import (
     AIClientConfiguration, 
     TokenAIConfiguration, 
     AITrainingFile, 
-    AIClientTraining, 
     TrainingCapture,
     UserToken
 )
@@ -96,7 +95,7 @@ class AIClientGlobalConfigForm(forms.ModelForm):
     def clean_api_key(self):
         """Processa o campo 'api_key' para retornar o valor correto.
 
-        Retorna a chave original se o valor not tiver sido alterado.
+        Retorna a chave original se o valor não tiver sido alterado.
 
         Returns:
             str: API key válida.
@@ -111,10 +110,44 @@ class AIClientGlobalConfigForm(forms.ModelForm):
             return api_key
 
 class AIClientConfigurationForm(forms.ModelForm):
-    """Formulário para criação/edição de AIClientConfiguration.
+    """Formulário para criação/edição de AIClientConfiguration."""
+    
+    name = forms.CharField(
+        label='Nome',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control'
+        }),
+        help_text='Insira o nome da configuração.',
+        required=True
+    )
 
-    Converte o campo 'configurations' de dicionário para um formato 'key=value' multiline.
-    """
+    ai_client = forms.ModelChoiceField(
+        queryset=AIClientGlobalConfiguration.objects.all(),
+        widget=forms.Select(
+            attrs={'class': 'form-select'}
+        ),
+        help_text='Selecione a API a ser utilizada.',
+        required=True
+    )
+
+    model_name = forms.CharField(
+        label='Modelo',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control'
+        }),
+        help_text='Insira o nome do Modelo.',
+        required=True
+    )
+
+    use_system_message = forms.CharField(
+        label='Usar Mensagem de Sistema',
+        widget=forms.CheckboxInput(attrs={
+            'class': 'form-check-input'
+        }),
+        help_text='Selecione se o modelo suporta mensagem de sistema.',
+        required=True
+    )    
+
     configurations = forms.CharField(
         label='Configurações',
         widget=forms.Textarea(attrs={
@@ -126,24 +159,42 @@ class AIClientConfigurationForm(forms.ModelForm):
         required=False
     )
 
+    training_configurations = forms.CharField(
+        label='Configurações de Treinamento',
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 5,
+            'placeholder': 'Exemplo:\nbatch_size=4\nepochs=3'
+        }),
+        help_text='Insira os parâmetros no formato chave=valor, um por linha.',
+        required=False
+    )
+
     class Meta:
         model = AIClientConfiguration
-        fields = ['name', 'ai_client', 'enabled', 'model_name', 'configurations', 'use_system_message']
+        fields = ['name', 'ai_client', 'model_name', 'configurations', 'training_configurations', 'use_system_message']
+
 
     def __init__(self, *args, **kwargs):
         """Inicializa o formulário e converte os dados existentes do JSON para texto multiline."""
         super().__init__(*args, **kwargs)
+
+        # Processa configurations
         if self.instance and self.instance.configurations:
             if isinstance(self.instance.configurations, dict) and len(self.instance.configurations) > 0:
                 lines = []
                 for k, v in self.instance.configurations.items():
                     lines.append(f"{k}={v}")
-                self.initial['configurations'] = "\n".join(lines)
-            else:
-                self.initial['configurations'] = ""
-        else:
-            self.initial['configurations'] = ""
+                self.initial['configurations'] = "\n".join(lines)               
         
+        # Processa training_configurations
+        if self.instance and self.instance.training_configurations:
+            if isinstance(self.instance.training_configurations, dict) and len(self.instance.training_configurations) > 0:
+                lines = []
+                for k, v in self.instance.training_configurations.items():
+                    lines.append(f"{k}={v}")
+                self.initial['training_configurations'] = "\n".join(lines)
+
         if self.instance and not self.instance._state.adding and self.instance.ai_client_id:
             client_class = AI_CLIENT_MAPPING.get(self.instance.ai_client.api_client_class)
             if client_class and not getattr(client_class, "supports_system_message", False):
@@ -154,14 +205,17 @@ class AIClientConfigurationForm(forms.ModelForm):
         """Valida o formulário garantindo consistência com a classe da API."""
         cleaned_data = super().clean()
         ai_client = cleaned_data.get('ai_client')
+        
+        # Valida o uso de system_message com base no cliente de API
         if ai_client:
             client_class = AI_CLIENT_MAPPING.get(ai_client.api_client_class)
             if client_class and not getattr(client_class, "supports_system_message", False):
                 cleaned_data['use_system_message'] = False
+                
         return cleaned_data
-    
+
     def clean_name(self):
-        """Valida que o campo 'name' not esteja vazio nem contenha espaços em excesso.
+        """Valida que o campo 'name' não esteja vazio nem contenha espaços em excesso.
 
         Returns:
             str: Nome validado.
@@ -171,29 +225,33 @@ class AIClientConfigurationForm(forms.ModelForm):
         """
         name = self.cleaned_data.get('name', '').strip()
         if not name:
-            raise forms.ValidationError("Nome not pode ser vazio.")
+            raise forms.ValidationError("Nome não pode ser vazio.")
         return name
 
-    def clean_configurations(self):
-        """Converte o campo 'configurations' de texto para dicionário.
+    def _convert_dictionary(self, field_name):
+        """Converte um campo de texto para dicionário.
 
-        Retorna:
+        Args:
+            field_name (str): O nome do campo a ser limpo ('configurations' ou 'training_configurations').
+
+        Returns:
             dict: Dicionário com as configurações.
 
         Raises:
             forms.ValidationError: Se alguma linha estiver no formato incorreto.
         """
-        data = self.cleaned_data.get('configurations', '').strip()
-        config_dict = {}
+        data = self.data.get(field_name) or ''
+        data = data.strip()
 
         if data:
+            config_dict = {}
             for line_number, line in enumerate(data.splitlines(), start=1):
                 line = line.strip()
                 if not line:
                     continue
                 if '=' not in line:
                     raise forms.ValidationError(
-                        f"Linha {line_number}: '{line}' not está no formato chave=valor."
+                        f"Linha {line_number}: '{line}' não está no formato chave=valor."
                     )
                 key, value = line.split('=', 1)
                 key = key.strip()
@@ -217,9 +275,53 @@ class AIClientConfigurationForm(forms.ModelForm):
                     pass
 
                 config_dict[key] = value
+            return config_dict
+        return ''
 
-        return config_dict
-    
+    def clean_configurations(self):
+        """Converte o campo 'configurations' de texto para dicionário.
+
+        Returns:
+            dict: Dicionário com as configurações.
+
+        Raises:
+            forms.ValidationError: Se alguma linha estiver no formato incorreto.
+        """
+        try:
+            return self._convert_dictionary('configurations')
+        except forms.ValidationError as e:
+            # Relança o erro específico para este campo
+            raise forms.ValidationError(
+                f"Erro nas configurações: {str(e)}"
+            )
+        except Exception:
+            # Tratamento genérico para outros erros
+            raise forms.ValidationError(
+                "Formato inválido. Por favor, use o formato chave=valor, um por linha."
+            )
+
+    def clean_training_configurations(self):
+        """Converte o campo 'training_configurations' de texto para dicionário.
+
+        Returns:
+            dict: Dicionário com as configurações de treinamento.
+
+        Raises:
+            forms.ValidationError: Se alguma linha estiver no formato incorreto.
+        """
+        try:
+            return self._convert_dictionary('training_configurations')
+        except forms.ValidationError as e:
+            # Relança o erro específico para este campo
+            raise forms.ValidationError(
+                f"Erro nas configurações de treinamento: {str(e)}"
+            )
+        except Exception:
+            # Tratamento genérico para outros erros
+            raise forms.ValidationError(
+                "Formato inválido. Por favor, use o formato chave=valor, um por linha."
+            )
+
 class TokenAIConfigurationForm(forms.ModelForm):
     """Formulário para criação/edição de TokenAIConfiguration."""
     base_instruction = forms.CharField(
@@ -295,6 +397,12 @@ class TrainingCaptureForm(forms.ModelForm):
         empty_label="Selecione um token",
         required=True
     )
+    
+    ai_client_config = forms.ModelChoiceField(
+        queryset=AIClientConfiguration.objects.none(),
+        empty_label="Selecione um cliente de IA",
+        required=True
+    )
 
     class Meta:
         model = TrainingCapture
@@ -305,6 +413,7 @@ class TrainingCaptureForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if user:
             self.fields['token'].queryset = UserToken.objects.filter(user=user)
+            self.fields['ai_client_config'].queryset = AIClientConfiguration.objects.filter(user=user)
 
 class AITrainingFileForm(forms.ModelForm):
     """Formulário para upload de arquivo de treinamento."""
@@ -323,98 +432,6 @@ class AITrainingFileForm(forms.ModelForm):
         """
         file = self.cleaned_data.get('file')
         return file
-    
-class AIClientTrainingForm(forms.ModelForm):
-    """Formulário para configuração de treinamento de um cliente de IA.
-
-    Converte os parâmetros de treinamento para o formato 'key=value'.
-    """
-    training_parameters = forms.CharField(
-        label='Parâmetros de Treinamento',
-        widget=forms.Textarea(attrs={
-            'class': 'form-control',
-            'rows': 5,
-            'placeholder': 'Exemplo:\nparam1=valor1\nparam2=valor2'
-        }),
-        help_text='Insira os parâmetros no formato chave=valor, um por linha.',
-        required=False
-    )
-
-    trained_model_name = forms.CharField(
-        label='Nome do Modelo Treinado',
-        required=False,
-        widget=forms.TextInput(attrs={
-            'class': 'form-control',
-            'readonly': 'readonly',
-        }),
-    )
-
-    class Meta:
-        model = AIClientTraining
-        fields = ['training_parameters']
-
-    def __init__(self, *args, **kwargs):
-        """Inicializa o formulário e converte o JSON para texto multiline."""
-        super(AIClientTrainingForm, self).__init__(*args, **kwargs)
-        if self.instance and self.instance.training_parameters:
-            training_lines = [f"{key}={value}" for key, value in self.instance.training_parameters.items()]
-            self.initial['training_parameters'] = "\n".join(training_lines)
-        else:
-            self.initial['training_parameters'] = ""
-        self.fields['trained_model_name'].initial = self.instance.trained_model_name
-        self.fields['trained_model_name'].widget.attrs['readonly'] = True
-
-    def clean_trained_model_name(self):
-        """Garante que o nome do modelo treinado not seja modificado.
-
-        Returns:
-            str: Nome do modelo treinado.
-        """
-        return self.initial.get('trained_model_name', self.instance.trained_model_name)
-
-    def save(self, commit=True):
-        """Salva o formulário garantido que o 'trained_model_name' permaneça inalterado."""
-        self.instance.trained_model_name = self.initial.get('trained_model_name', self.instance.trained_model_name)
-        return super().save(commit=commit)
-
-    def clean_training_parameters(self):
-        """Valida e converte os parâmetros de treinamento para um dicionário.
-
-        Returns:
-            dict: Configurações de treinamento.
-        
-        Raises:
-            forms.ValidationError: Se alguma linha not estiver no formato válido.
-        """
-        configurations_text = self.cleaned_data.get('training_parameters', '').strip()
-        configurations_dict = {}
-        
-        if configurations_text:
-            for line_number, line in enumerate(configurations_text.splitlines(), start=1):
-                if not line.strip():
-                    continue
-                if '=' not in line:
-                    raise forms.ValidationError(f"Linha {line_number}: '{line}' not está no formato chave=valor.")
-                key, value = line.split('=', 1)
-                key = key.strip()
-                value = value.strip()
-                
-                if not key:
-                    raise forms.ValidationError(f"Linha {line_number}: Chave vazia.")
-                if not value:
-                    raise forms.ValidationError(f"Linha {line_number}: Valor vazio para a chave '{key}'.")
-                
-                try:
-                    if '.' in value:
-                        value = float(value)
-                    else:
-                        value = int(value)
-                except ValueError:
-                    pass
-                
-                configurations_dict[key] = value
-        
-        return configurations_dict
 
 class UserAITrainingFileForm(forms.ModelForm):
     """Formulário para upload de arquivo de treinamento vinculado ao usuário."""

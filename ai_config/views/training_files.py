@@ -240,15 +240,17 @@ def training_file_download(request: HttpRequest, file_id: int) -> HttpResponse:
 
 @login_required
 def training_file_delete(request: HttpRequest, file_id: int) -> HttpResponse:
-    """Exibe a confirmação e processa a exclusão de um arquivo de treinamento."""
+    """Exclui um arquivo de treinamento."""
     user = request.user
-    training_file = get_object_or_404(AITrainingFile, id=file_id, user=user)
-    if request.method == 'POST':
-        file_path = training_file.file.path
-        training_file.file.delete()
-        logger.debug(f"Arquivo físico deletado: {file_path}")
-        training_file.delete()
-        messages.success(request, 'Arquivo excluído com sucesso!')
-        return redirect('ai_config:training_center')
-    context = {'training_file': training_file}
-    return render(request, 'training/file_confirm_delete.html', context)
+    try:
+        training_file = get_object_or_404(AITrainingFile, id=file_id, user=user)
+        if request.method == 'POST':
+            file_path = training_file.file.path
+            training_file.file.delete()
+            logger.debug(f"Arquivo físico deletado: {file_path}")
+            training_file.delete()
+            return JsonResponse({'success': True, 'message': 'Arquivo excluído com sucesso!'})
+        return JsonResponse({'error': 'Método não permitido'}, status=405)
+    except Exception as e:
+        logger.error(f"Erro ao excluir arquivo: {str(e)}")
+        return JsonResponse({'error': 'Erro ao excluir arquivo'}, status=500)

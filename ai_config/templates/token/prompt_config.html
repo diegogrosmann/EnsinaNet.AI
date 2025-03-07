@@ -85,28 +85,53 @@
 .markdownx {
     display: flex;
     gap: 1rem;
+    position: relative;
 }
 
 /* Editor de markdown */
 .markdownx-editor {
     flex: 1;
-    min-height: 200px;
+    min-height: 150px; /* Altura mínima */
     padding: 1rem;
     border: 1px solid #dee2e6;
     border-radius: 0.375rem;
     font-family: monospace;
-    resize: vertical;
+    resize: none; /* Remove resize padrão para usar nossa implementação */
+    overflow-y: auto;
 }
 
 /* Preview do markdown (apenas para o preview nativo do markdownx) */
 .markdownx-preview {
     flex: 1;
-    min-height: 200px;
     padding: 1rem;
     border: 1px solid #dee2e6;
     border-radius: 0.375rem;
     background-color: #f8f9fa;
     overflow-y: auto;
+}
+
+/* Classe auxiliar para definir a altura personalizada */
+.editor-height-custom {
+    height: 500px !important;
+}
+
+/* Manipulador de redimensionamento para editor e preview */
+.resizer {
+    height: 10px;
+    background-color: #f0f0f0;
+    border-top: 1px solid #ccc;
+    border-bottom: 1px solid #ccc;
+    cursor: ns-resize;
+    position: absolute;
+    bottom: -5px;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    border-radius: 0 0 0.375rem 0.375rem;
+}
+
+.resizer:hover {
+    background-color: #ddd;
 }
 
 /* Responsividade */
@@ -264,6 +289,74 @@ document.addEventListener('DOMContentLoaded', function() {
             this.previousElementSibling.querySelector('.bi-chevron-down').style.transform = 'rotate(0deg)';
         });
     });
+    
+    // Adiciona o redimensionador aos elementos markdownx
+    setupResizers();
+    
+    // Define a altura inicial dos editores e previews com um pequeno atraso
+    setTimeout(initializeEditorHeights, 100);
 });
+
+// Função para definir a altura inicial dos editores e previews
+function initializeEditorHeights() {
+    document.querySelectorAll('.markdownx').forEach(markdownArea => {
+        const editor = markdownArea.querySelector('.markdownx-editor');
+        const preview = markdownArea.querySelector('.markdownx-preview');
+        
+        if (!editor || !preview) return;
+        
+        // Adiciona uma classe CSS com !important em vez de estilo inline
+        editor.classList.add('editor-height-custom');
+        preview.classList.add('editor-height-custom');
+        
+        // Como backup, também define via JavaScript
+        const defaultHeight = 500; // altura padrão em pixels
+        editor.style.setProperty('height', `${defaultHeight}px`, 'important');
+        preview.style.setProperty('height', `${defaultHeight}px`, 'important');
+        
+        // Força um redimensionamento para assegurar que o layout seja atualizado
+        editor.setAttribute('style', editor.getAttribute('style') + '; height: 500px !important');
+    });
+}
+
+// Função para configurar os redimensionadores para todos os campos markdownx
+function setupResizers() {
+    document.querySelectorAll('.markdownx').forEach(markdownArea => {
+        const editor = markdownArea.querySelector('.markdownx-editor');
+        const preview = markdownArea.querySelector('.markdownx-preview');
+        
+        if (!editor || !preview) return;
+        
+        // Criar o elemento resizer
+        const resizer = document.createElement('div');
+        resizer.className = 'resizer';
+        markdownArea.appendChild(resizer);
+        
+        // Configurar os eventos de redimensionamento
+        resizer.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            
+            const startY = e.clientY;
+            const startHeight = parseInt(window.getComputedStyle(editor).height);
+            
+            document.addEventListener('mousemove', resize);
+            document.addEventListener('mouseup', stopResize);
+            
+            function resize(e) {
+                const newHeight = startHeight + e.clientY - startY;
+                if (newHeight >= 150) { // Respeitar a altura mínima
+                    // Usar setProperty com '!important' para garantir que sobrescreva outros estilos
+                    editor.style.setProperty('height', `${newHeight}px`, 'important');
+                    preview.style.setProperty('height', `${newHeight}px`, 'important');
+                }
+            }
+            
+            function stopResize() {
+                document.removeEventListener('mousemove', resize);
+                document.removeEventListener('mouseup', stopResize);
+            }
+        });
+    });
+}
 </script>
 {% endblock %}

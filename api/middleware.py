@@ -6,8 +6,13 @@ de requisições da API.
 
 import logging
 import time
-from django.http import JsonResponse
+import json
+import traceback
+from django.http import JsonResponse, HttpResponseRedirect
 from django.utils.deprecation import MiddlewareMixin
+from django.contrib import messages
+from django.core.exceptions import PermissionDenied, ValidationError
+from rest_framework import status
 
 from .exceptions import APIClientError, FileProcessingError
 from api.models import APILog
@@ -29,6 +34,24 @@ class GlobalExceptionMiddleware:
         """
         self.get_response = get_response
 
+    def is_ajax(self, request):
+        """Verifica se a requisição é AJAX."""
+        return request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+               request.content_type == 'application/json' or \
+               request.headers.get('Accept') == 'application/json' or \
+               request.path.startswith('/api/')
+
+    def format_error_response(self, error, status_code=500):
+        """Formata a resposta de erro de maneira padronizada."""
+        return {
+            'success': False,
+            'error': {
+                'message': str(error),
+                'type': error.__class__.__name__,
+                'code': status_code
+            }
+        }
+
     def __call__(self, request):
         """Processa a requisição e captura exceções.
         
@@ -38,16 +61,53 @@ class GlobalExceptionMiddleware:
         Returns:
             JsonResponse: Em caso de erro.
             HttpResponse: Resposta normal caso não haja erros.
-        """
+"""
         try:
             response = self.get_response(request)
             return response
+
         except APIClientError as e:
-            logger.error(f"Erro do cliente API: {str(e)}")
-            return JsonResponse({"error": str(e)}, status=400)
+            # Erros conhecidos da API
+            logger.warning(f"API Client Error: {str(e)}", exc_info=True)
+            error_response = self.format_error_response(e, status.HTTP_400_BAD_REQUEST)
+            return JsonResponse(error_response, status=status.HTTP_400_BAD_REQUEST)
+
+        except ValidationError as e:
+            # Erros de validação
+            logger.warning(f"Validation Error: {str(e)}")
+            error_response = self.format_error_response(e, status.HTTP_422_UNPROCESSABLE_ENTITY)
+            return JsonResponse(error_response, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        except PermissionDenied as e:
+            # Erros de permissão
+            logger.warning(f"Permission Denied: {str(e)}")
+            error_response = self.format_error_response(e, status.HTTP_403_FORBIDDEN)
+            return JsonResponse(error_response, status=status.HTTP_403_FORBIDDEN)
+
         except Exception as e:
-            logger.exception("Erro não tratado no middleware global")
-            return JsonResponse({"error": "Erro interno do servidor"}, status=500)
+            # Erros não tratados
+            logger.error(
+                "Erro não tratado no middleware global",
+                exc_info=True,
+                extra={
+                    'request_path': request.path,
+                    'request_method': request.method,
+                    'traceback': traceback.format_exc()
+                }
+            )
+
+            if self.is_ajax(request):
+                error_response = self.format_error_response(
+                    "Erro interno do servidor. Por favor, tente novamente mais tarde.",
+                    status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+                return JsonResponse(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            else:
+                messages.error(
+                    request,
+                    'Ocorreu um erro inesperado. Nossa equipe foi notificada.'
+                )
+                return HttpResponseRedirect(request.META.get('HTTP_REFERER', '/'))
 
 class MonitoringMiddleware(MiddlewareMixin):
     """Middleware para monitoramento de requisições.

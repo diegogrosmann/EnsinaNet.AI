@@ -1,33 +1,22 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 
 @dataclass
 class AIClientConfig:
-    """Configuração para clientes de IA.
+    """Configuração essencial para clientes de IA.
 
     Args:
-        api_key (str): Chave de API.
-        model_name (str): Nome do modelo.
-        base_instruction (str, optional): Instrução base.
-        prompt (str, optional): Prompt inicial.
-        responses (str, optional): Respostas padrão.
-        configurations (Dict, optional): Configurações adicionais.
-        created_at (datetime, optional): Data de criação.
-        enabled (bool, optional): Indica se está habilitado.
-        api_url (str, optional): URL da API.
-        use_system_message (bool, optional): Indica se utiliza "system message".
+        ai_global_config (Dict): Configuração global da API (api_key, api_url, etc.).
+        ai_client_config (Dict): Configurações específicas do cliente.
+        prompt_config (Dict): Configuração de prompts (base_instruction, prompt, responses).
+        kwargs (Dict, optional): Parâmetros adicionais para configuração flexível.
     """
-    api_key: str
-    model_name: str
-    base_instruction: str = ""
-    prompt: str = ""
-    responses: str = ""
-    configurations: Dict = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.now)
-    enabled: bool = True,
-    api_url: str = None
-    use_system_message: bool = False
+    ai_global_config: Dict = field(default_factory=dict)
+    ai_client_config: Dict = field(default_factory=dict)
+    prompt_config: Dict = field(default_factory=dict)
+    kwargs: Dict = field(default_factory=dict)
 
 @dataclass
 class ProcessingResult:
@@ -43,4 +32,33 @@ class ProcessingResult:
     message: str
     data: Optional[Dict] = None
     error: Optional[str] = None
+
+class TrainingStatus(Enum):
+    """Status possíveis do treinamento."""
+    NOT_STARTED = "not_started"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+@dataclass
+class TrainingResult:
+    """Resultado do treinamento.
+    
+    Args:
+        job_id (str): ID do job de treinamento.
+        status (TrainingStatus): Status atual do treinamento.
+        model_name (Optional[str]): Nome do modelo se concluído.
+        error (Optional[str]): Mensagem de erro se falhou.
+        created_at (datetime): Data de criação.
+        completed_at (Optional[datetime]): Data de conclusão.
+        details (Dict[str, Any]): Detalhes adicionais do treinamento.
+    """
+    job_id: str
+    status: TrainingStatus
+    model_name: Optional[str] = None
+    error: Optional[str] = None
+    created_at: datetime = datetime.now()
+    completed_at: Optional[datetime] = None
+    details: Dict[str, Any] = None
+    progress: Optional[float] = 0.0
 

@@ -1,12 +1,9 @@
 <!-- Modal -->
-<div class="modal fade" id="deleteTokenModal" tabindex="-1" aria-labelledby="deleteTokenModalLabel" aria-hidden="true">
+<div class="modal fade" id="deleteConfirmationModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="deleteTokenModalLabel">
-                    <i class="bi bi-trash3-fill text-danger me-2"></i>
-                    Deletar Token
-                </h5>
+                <h5 class="modal-title">Confirmar Exclusão</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
             </div>
             <div class="modal-body">
@@ -30,18 +27,59 @@
 
 <!-- Script para suporte a teclas de atalho -->
 <script>
-document.addEventListener('keydown', function(e) {
-    const deleteModal = document.getElementById('deleteTokenModal');
-    if (!deleteModal.classList.contains('show')) return;
-    
-    if (e.key === 'Escape') {
-        const modal = bootstrap.Modal.getInstance(deleteModal);
-        modal.hide();
-    } else if (e.key === 'Enter' && !document.getElementById('confirmDeleteBtn').disabled) {
-        e.preventDefault();
-        document.getElementById('confirmDeleteBtn').click();
-    }
-});
+    // Corrigido o código para verificar se o elemento existe
+    document.addEventListener('keydown', function(e) {
+        const deleteConfirmationModal = document.getElementById('deleteConfirmationModal');
+        if (!deleteConfirmationModal || !deleteConfirmationModal.classList.contains('show')) return;
+        
+        if (e.key === 'Escape') {
+            const modal = bootstrap.Modal.getInstance(deleteConfirmationModal);
+            modal.hide();
+        } else if (e.key === 'Enter' && !document.getElementById('confirmDeleteBtn').disabled) {
+            e.preventDefault();
+            document.getElementById('confirmDeleteBtn').click();
+        }
+    });
+
+    // Lógica para deleção de token via modal
+    const deleteTokenModal = document.getElementById('deleteConfirmationModal');
+    deleteTokenModal.addEventListener('show.bs.modal', function (event) {
+        const button = event.relatedTarget;
+        const tokenId = button.getAttribute('data-token-id'); 
+        document.getElementById('delete_token_id').value = tokenId;
+    });
+
+    const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+    confirmDeleteBtn.addEventListener('click', function() {
+        const form = document.getElementById('deleteTokenForm');
+        const formData = new FormData(form);
+        const tokenId = formData.get('token_id');
+        const url = `/accounts/tokens/${tokenId}/delete/`;
+
+        fetch(url, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Erro ao deletar token');
+            }
+            return response.json().catch(() => ({})); 
+        })
+        .then(data => {
+            if (data.success === false && data.error) {
+                console.error('Erro do servidor:', data.error);
+            } else {
+                window.location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Erro ao deletar token:', error);
+        });
+    });
 </script>
 
 <!-- Estilos aplicados -->

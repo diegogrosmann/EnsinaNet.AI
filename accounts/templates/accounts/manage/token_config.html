@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container py-4">
+    <h2 class="mb-4 text-center d-flex align-items-center justify-content-center">
+        Configurações para o Token "{{ token.name }}"
+        <button class="btn btn-link text-secondary ms-2" data-bs-toggle="modal" data-bs-target="#editTokenNameModal" title="Editar nome do token">
+            <i class="bi bi-pencil-square"></i>
+        </button>
+    </h2>
+
+    <!-- Cards de Navegação -->
+    <div class="row row-cols-1 row-cols-md-3 g-4 mb-4">
+        
+        <!-- Card de Configurações de Prompt -->
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-chat-left-text-fill text-success me-2"></i>
+                        Configurações de Prompt
+                    </h5>
+                    <p class="card-text">Configure instruções base e prompts personalizados.</p>
+                    <a href="{% url 'ai_config:token_prompt_config' token.id %}" class="btn btn-success w-100">
+                        <i class="bi bi-arrow-right"></i> Acessar
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Card de Vinculação de IAs -->
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-robot text-primary me-2"></i>
+                        Vinculação de IAs
+                    </h5>
+                    <p class="card-text">Selecione quais IAs estarão disponíveis para este token.</p>
+                    <a href="{% url 'ai_config:token_ai_link' token.id %}" class="btn btn-primary w-100">
+                        <i class="bi bi-arrow-right"></i> Gerenciar IAs
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Botões de Ação -->
+    <div class="d-flex justify-content-between">
+        <a href="{% url 'accounts:tokens_manage' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Voltar
+        </a>
+    </div>
+</div>
+
+<div class="container my-4">
+    <div class="card shadow-sm">
+        <div class="card-body">
+        </div>
+    </div>
+</div>
+
+<!-- Modal para editar nome do token -->
+<div class="modal fade" id="editTokenNameModal" tabindex="-1" aria-labelledby="editTokenNameModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editTokenNameModalLabel">Editar Nome do Token</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="{% url 'accounts:token_edit_name' token.id %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="token_name">Novo nome</label>
+                        <input type="text" class="form-control" id="token_name" name="name" value="{{ token.name }}" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+.card-title i {
+    font-size: 1.5rem;
+}
+
+.btn {
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+@media (max-width: 768px) {
+    .btn-group {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .btn-group .btn {
+        margin-bottom: 0.5rem;
+        border-radius: 0.375rem !important;
+    }
+}
+</style>
+{% endblock %}
