@@ -26,21 +26,19 @@ from typing import Any, TypeVar
 
 import anthropic
 
-
 from google import genai
 from google.genai import types
-
 import requests
-
 from dotenv import load_dotenv
-
 from azure.ai.inference import ChatCompletionsClient
 from azure.core.credentials import AzureKeyCredential
 from llamaapi import LlamaAPI
 from openai import AzureOpenAI, OpenAI
+from openai.types.file_object import FileObject
+from openai.types.fine_tuning import FineTuningJob
 
 from api.constants import AIClientConfig, TrainingResult, TrainingStatus
-from api.exceptions import APICommunicationError, MissingAPIKeyError
+from core.exceptions import APICommunicationError, MissingAPIKeyError
 from django.template import engines
 
 from api.utils.circuit_breaker import (
@@ -509,8 +507,10 @@ class OpenAiClient(APIClient):
         """
         attempt_call(self.name)
         try:
+            # Upload do arquivo para OpenAI
+            file_obj: FileObject = None
             with open(training_data, 'rb') as f:
-                ai_file = self.client.files.create(file=f, purpose='fine-tune')
+                file_obj = self.client.files.create(file=f, purpose='fine-tune')
                         
             # Inicia o job de fine-tuning
             training_type = "supervised"
@@ -524,22 +524,17 @@ class OpenAiClient(APIClient):
                 # Restante das configurações vai para hyperparameters
                 training_params = self.training_configurations
             
-            job = self.client.fine_tuning.jobs.create(
-                training_file=ai_file.id,
+            job: FineTuningJob = self.client.fine_tuning.jobs.create(
+                training_file=file_obj.id,
                 model=self.model_name,
-                method={
-                    "type": training_type,
-                    training_type: {
-                        "hyperparameters": training_params
-                    }
-                }
+                hyperparameters=training_params
             )
 
             record_success(self.name)
             return TrainingResult(
                 job_id=job.id,
                 status=TrainingStatus.IN_PROGRESS,
-                details={'file_id': ai_file.id}
+                details={'file_id': file_obj.id}
             )
 
         except Exception as e:
@@ -548,6 +543,14 @@ class OpenAiClient(APIClient):
                 raise e
             logger.error(f"OpenAiClient _start_training: {e}")
             raise APICommunicationError(f"Erro ao iniciar treinamento: {e}")
+        finally:
+            # Remover arquivo temporário após uso
+            try:
+                import os
+                if os.path.exists(training_data):
+                    os.unlink(training_data)
+            except Exception as e:
+                logger.warning(f"Não foi possível remover arquivo temporário {training_data}: {e}")
 
     def get_training_status(self, job_id: str) -> TrainingResult:
         """Verifica status do treinamento na OpenAI."""
@@ -562,21 +565,29 @@ class OpenAiClient(APIClient):
                     status=TrainingStatus.COMPLETED,
                     model_name=status.fine_tuned_model,
                     completed_at=datetime.now(),
-                    details=status
+                    details=status,
+                    progress=1.0
                 )
             elif status.status == 'failed':
                 return TrainingResult(
                     job_id=job_id,
                     status=TrainingStatus.FAILED,
-                    error=status.error,
+                    error=getattr(status, 'error', 'Falha desconhecida'),
                     completed_at=datetime.now(),
-                    details=status
+                    details=status,
+                    progress=status.trained_tokens / status.training_file_tokens if hasattr(status, 'trained_tokens') and hasattr(status, 'training_file_tokens') else 0
                 )
             else:
+                # Calcular o progresso se disponível
+                progress = 0.0
+                if hasattr(status, 'trained_tokens') and hasattr(status, 'training_file_tokens') and status.training_file_tokens > 0:
+                    progress = status.trained_tokens / status.training_file_tokens
+                
                 return TrainingResult(
                     job_id=job_id,
                     status=TrainingStatus.IN_PROGRESS,
-                    details=status
+                    details=status,
+                    progress=progress
                 )
 
         except Exception as e:
@@ -888,82 +899,62 @@ class GeminiClient(APIClient):
             raise APICommunicationError(f"Erro ao iniciar treinamento: {e}")
 
     def get_training_status(self, job_id: str) -> TrainingResult:
-        """Verifica status do treinamento no Gemini."""
-        attempt_call(self.name)
         try:
-            operacao = genai.get_operation(job_id)
-
-            if operacao.done():
-                if operacao.exception():
-                    return TrainingResult(
-                        job_id=job_id,
-                        status=TrainingStatus.FAILED,
-                        error=operacao.exception(),
-                        completed_at=datetime.now(),
-                        progress=1
-                    )
-                
-                if operacao.result():
-                    result = operacao.result()
+            # Obtém a operação pelo ID do job
+            operation = self.client.tunings.get(
+                name=job_id
+            )
+            if operation.has_ended:
+                if operation.has_succeeded:
                     return TrainingResult(
                         job_id=job_id,
                         status=TrainingStatus.COMPLETED,
-                        model_name=operacao.metadata.tuned_model,
-                        completed_at=result.tuning_task.complete_time,
-                        details=operacao.result(),
-                        progress=1
+                        model_name=operation.name,
+                        completed_at=operation.end_time,
+                        progress=1.0
+                    )    
+                else:
+                    return TrainingResult(
+                        job_id=job_id,
+                        status=TrainingStatus.FAILED,
+                        error=str(operation.error),
+                        completed_at=datetime.now(),
+                        progress=1.0
                     )
-            else:
+            else:               
                 return TrainingResult(
                     job_id=job_id,
                     status=TrainingStatus.IN_PROGRESS,
-                    progress=operacao.metadata.completed_percent/100
+                    progress=0
                 )
 
         except Exception as e:
-            record_failure(self.name)
-            if isinstance(e, CircuitOpenError):
-                raise e
-            logger.error(f"GeminiClient get_training_status: {e}")
-            raise APICommunicationError(f"Erro ao verificar status: {e}")
+            # Trata qualquer exceção durante o processo
+            return TrainingResult(
+                job_id=job_id,
+                status=TrainingStatus.FAILED,
+                error=str(e),
+                completed_at=datetime.now(),
+                progress=0.0
+            )
 
-    def cancel_training(self, operation_name: str) -> bool:
-        """
-        Cancela um job de fine-tuning no Gemini.
-
-        Args:
-            operation_name (str): Nome da operação a ser cancelada.
-
-        Returns:
-            bool: True se cancelado com sucesso.
-        """
+    def _list_models(self, query_base: bool = True)-> list[str]:
+        """Lista todos os modelos disponíveis no Gemini."""
         attempt_call(self.name)
         try:
-            op = genai.get_operation(operation_name)
-            op.cancel()
-            record_success(self.name)
-            return True
-        except Exception as e:
-            record_failure(self.name)
-            if isinstance(e, CircuitOpenError):
-                raise e
-            logger.error(f"Gemini cancel_training: {e}")
-            raise APICommunicationError(f"Erro ao cancelar a operação: {e}")
+            config = types.ListModelsConfig(
+                page_size=10,
+                query_base=query_base,   # True => base models, False => tuned models
+            )
 
-    def list_trained_models(self) -> list:
-        """Lista os modelos treinados disponíveis no Gemini."""
-        attempt_call(self.name)
-        try:
-            models = []
-            for model in genai.list_tuned_models():
-                models.append({
-                    'name': model.name,
-                    'display_name': model.display_name,
-                    'created_at': datetime.fromtimestamp(model.create_time)
-                })
+            pager = self.client.models.list(config=config)
+
+            nomes_modelos = []
+            for page in pager:
+                for model in page:
+                    nomes_modelos.append(model.name)
             
-            record_success(self.name)
-            return models
+            return nomes_modelos
 
         except Exception as e:
             record_failure(self.name)
@@ -971,6 +962,10 @@ class GeminiClient(APIClient):
                 raise e
             logger.error(f"GeminiClient list_trained_models: {e}")
             raise APICommunicationError(f"Erro ao listar modelos: {e}")
+
+    def list_trained_models(self) -> list:
+        """Lista os modelos treinados disponíveis no Gemini."""
+        return self._list_models(False)
 
     def delete_trained_model(self, model_name: str) -> bool:
         """
@@ -984,7 +979,7 @@ class GeminiClient(APIClient):
         """
         attempt_call(self.name)
         try:
-            genai.delete_tuned_model(model_name)
+            self.client.models.delete(model_name)
             record_success(self.name)
             return True
 
@@ -1000,28 +995,28 @@ class GeminiClient(APIClient):
         attempt_call(self.name)
         try:
             files = []
-            for file in genai.list_files():
-                files.append({
-                    'id': file.name,
-                    'filename': file.display_name,
-                    'created_at': datetime.fromtimestamp(file.create_time)
-                })
-            
+            pager = self.client.files.list(config={'page_size': 10})
+            for page in pager:
+                for file in page:
+                    files.append({
+                        'id': file.name,
+                        'filename': file.display_name,
+                        'created_at': datetime.fromtimestamp(file.create_time)
+                    })
             record_success(self.name)
             return files
-
         except Exception as e:
             record_failure(self.name)
             if isinstance(e, CircuitOpenError):
                 raise e
             logger.error(f"GeminiClient list_files: {e}")
             raise APICommunicationError(f"Erro ao listar arquivos: {e}")
-
+        
     def delete_file(self, file_id: str) -> bool:
         """Remove um arquivo do Gemini."""
         attempt_call(self.name)
         try:
-            genai.delete_file(file_id)
+            self.client.files.delete(name=file_id)
             record_success(self.name)
             return True
 

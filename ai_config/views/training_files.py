@@ -164,7 +164,7 @@ def training_file_create(request: HttpRequest, file_id: Optional[int] = None) ->
                     'name_form': name_form,
                     'capture_form': TrainingCaptureForm(prefix='capture', user=user)
                 }
-                return render(request, 'training/file_create.html', context)
+                return render(request, 'training/file_form.html', context)
             
             with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.json') as temp_file:
                 json.dump(examples, temp_file, ensure_ascii=False, indent=4)
@@ -185,7 +185,7 @@ def training_file_create(request: HttpRequest, file_id: Optional[int] = None) ->
                     if AITrainingFile.objects.filter(user=user, name=name).exists():
                         messages.error(request, 'Já existe um arquivo com este nome.')
                         os.remove(temp_file_path)
-                        return render(request, 'training/file_create.html', {
+                        return render(request, 'training/file_form.html', {
                             'formset': formset,
                             'name_form': name_form,
                             'capture_form': TrainingCaptureForm(prefix='capture', user=user)
@@ -228,7 +228,7 @@ def training_file_create(request: HttpRequest, file_id: Optional[int] = None) ->
         'active_capture': active_capture,
     }
     
-    return render(request, 'training/file_create.html', context)
+    return render(request, 'training/file_form.html', context)
 
 @login_required
 def training_file_download(request: HttpRequest, file_id: int) -> HttpResponse:

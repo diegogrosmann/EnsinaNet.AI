@@ -1,47 +1,42 @@
-<div class="modal fade" id="createTokenModal" tabindex="-1" aria-labelledby="createTokenModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="createTokenModalLabel">
-                    <i class="bi bi-key-fill text-primary me-2"></i>
-                    Criar Token
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+<div class="modal" id="createTokenModal" tabindex="-1" aria-labelledby="createTokenModalLabel" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="createTokenModalLabel">
+          <i class="bi bi-key-fill text-primary me-2"></i>
+          Criar Token
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      
+      <form id="createTokenForm" method="POST" action="{% url 'accounts:token_create' %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="id_name" class="form-label">Nome do Token</label>
+            <div class="input-group mb-3">
+              <span class="input-group-text"><i class="bi bi-tag"></i></span>
+              <input type="text" class="form-control" id="id_name" name="name" placeholder="Nome descritivo para o token">
             </div>
-            
-            <form id="createTokenForm" method="POST" action="{% url 'accounts:token_create' %}">
-                {% csrf_token %}
-                
-                <div class="modal-body">
-                    <!-- Nome do Token -->
-                    <div class="mb-3">
-                        <label for="id_name" class="form-label">Nome do Token</label>
-                        <div class="input-group">
-                            <span class="input-group-text">
-                                <i class="bi bi-tag"></i>
-                            </span>
-                            <input type="text" class="form-control" id="id_name" name="name" />
-                        </div>
-                        <div class="invalid-feedback" id="tokenNameError"></div>
-                        <div class="form-text">
-                            Use um nome descritivo e único para identificar este token.
-                        </div>
-                    </div>
-                    
-                    <!-- Área para exibir erros gerais -->
-                    <div class="alert alert-danger d-none" id="tokenFormErrors" role="alert"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="bi bi-x-lg me-1"></i>Cancelar
-                    </button>
-                    <button type="submit" class="btn btn-primary" id="createTokenButton">
-                        <i class="bi bi-check-lg me-1"></i>Criar Token
-                    </button>
-                </div>
-            </form>
+            <div class="invalid-feedback" id="tokenNameError"></div>
+            <small class="form-text text-muted">Use um nome descritivo e único para identificar este token.</small>
+          </div>
+          
+          <!-- Área para exibir erros gerais -->
+          <div class="alert alert-danger d-none mt-3" id="tokenFormErrors" role="alert"></div>
         </div>
+        
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            <i class="bi bi-x-lg me-1"></i>Cancelar
+          </button>
+          <button type="submit" class="btn btn-primary" id="createTokenButton">
+            <i class="bi bi-check-lg me-1"></i>Criar Token
+          </button>
+        </div>
+      </form>
     </div>
+  </div>
 </div>
 
 <script>
@@ -58,12 +53,10 @@ document.addEventListener('DOMContentLoaded', function() {
             return 'O nome do token é obrigatório';
         }
         
-        // Verificar comprimento do nome
         if (name.length < 3) {
             return 'O nome do token deve ter pelo menos 3 caracteres';
         }
         
-        // Verificar caracteres inválidos (opcional - modifique conforme necessário)
         const invalidCharsRegex = /[<>\/\\\|\:;\*\?\"]/;
         if (invalidCharsRegex.test(name)) {
             return 'O nome contém caracteres inválidos';
@@ -77,12 +70,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const error = validateTokenName(this.value);
         if (error) {
             tokenNameInput.classList.add('is-invalid');
+            tokenNameInput.classList.remove('is-valid');
             tokenNameError.textContent = error;
-            tokenNameError.style.display = 'block';
         } else {
             tokenNameInput.classList.remove('is-invalid');
             tokenNameInput.classList.add('is-valid');
-            tokenNameError.style.display = 'none';
+            tokenNameError.textContent = '';
         }
     });
     
@@ -99,7 +92,6 @@ document.addEventListener('DOMContentLoaded', function() {
             for (const field in errors) {
                 if (field === 'name') {
                     tokenNameInput.classList.add('is-invalid');
-                    // Garante que podemos lidar com mensagens como string ou array
                     const errorMsg = Array.isArray(errors[field]) ? errors[field][0] : errors[field];
                     tokenNameError.textContent = errorMsg;
                     tokenNameError.style.display = 'block';
@@ -122,13 +114,11 @@ document.addEventListener('DOMContentLoaded', function() {
     createTokenForm.addEventListener('submit', function(e) {
         e.preventDefault();
         
-        // Limpar erros anteriores
         tokenFormErrors.classList.add('d-none');
         tokenFormErrors.textContent = '';
         tokenNameError.style.display = 'none';
         tokenNameInput.classList.remove('is-invalid');
         
-        // Validar o nome do token
         const tokenName = tokenNameInput.value;
         const error = validateTokenName(tokenName);
         if (error) {
@@ -138,11 +128,9 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        // Desabilitar botão durante o envio
         createTokenButton.disabled = true;
         createTokenButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Criando...';
         
-        // Preparar e enviar os dados via AJAX
         const formData = new FormData(this);
         
         fetch(this.action, {
@@ -154,17 +142,14 @@ document.addEventListener('DOMContentLoaded', function() {
             credentials: 'same-origin'
         })
         .then(response => {
-            
             if (!response.ok) {
                 return response.json()
                     .catch(() => {
-                        // Caso não seja JSON, tenta obter como texto
                         return response.text().then(text => {
                             return { success: false, errors: { __all__: ['Erro no servidor'] } };
                         });
                     })
                     .then(data => {
-                        // Adiciona o status para identificar como erro
                         data._errorStatus = response.status;
                         return data;
                     });
@@ -172,14 +157,11 @@ document.addEventListener('DOMContentLoaded', function() {
             return response.json().catch(() => response.text());
         })
         .then(data => {
-
-            // Verificando se é um erroq
             if (data._errorStatus) {
                 showFormErrors(data.errors || "Erro no servidor");
                 throw new Error(`Erro ${data._errorStatus}`);
             }
             
-            // Verificações para tratamentos de diferentes formatos de resposta
             if (data && data.errors) {
                 showFormErrors(data.errors);
                 throw new Error('Erro de validação');
@@ -188,7 +170,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error('Erro ao criar token');
             } else if (typeof data === 'string') {
                 if (data.includes('invalid-feedback')) {
-                    // Caso a resposta seja HTML com erros
                     const tempDiv = document.createElement('div');
                     tempDiv.innerHTML = data;
                     const errors = tempDiv.querySelectorAll('.invalid-feedback');
@@ -200,13 +181,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
             
-            // Sucesso: fechar modal e recarregar página
             const modal = bootstrap.Modal.getInstance(document.getElementById('createTokenModal'));
             modal.hide();
             window.location.reload();
         })
         .finally(() => {
-            // Reativar botão
             createTokenButton.disabled = false;
             createTokenButton.innerHTML = '<i class="bi bi-check-lg me-1"></i>Criar Token';
         });
@@ -222,16 +201,3 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-<style>
-.invalid-feedback {
-    display: none;
-    width: 100%;
-    margin-top: 0.25rem;
-    font-size: 0.875em;
-    color: #dc3545;
-}
-
-#createTokenForm .is-invalid ~ .invalid-feedback {
-    display: block;
-}
-</style>

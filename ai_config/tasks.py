@@ -1,15 +1,10 @@
 from celery import shared_task
 from .models import AITraining
-#import debugpy
 
 @shared_task
 def update_training_status():
-
-    #debugpy.listen(5678)
-    #print("Aguardando conexão do debugger...")
-    #debugpy.wait_for_client()
-
-    """Atualiza o status de todos os treinamentos em andamento."""
+    print('Iniciando update_training_status')
+    # O restante da tarefa continua normalmente
     trainings = AITraining.objects.filter(status='in_progress').select_related('ai_config')
     
     for training in trainings:

@@ -4,21 +4,23 @@
 <div class="container py-5">
     <div class="row justify-content-center">
         <div class="col-md-6">
-            <div class="card shadow-sm">
-                <div class="card-body text-center p-5">
-                    <!-- Ícone de Email -->
+            <div class="card border-primary mb-3">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="card-title mb-0 text-center">Confirmação de Email</h4>
+                </div>
+                <div class="card-body text-center p-4">
                     <div class="mb-4">
                         <i class="bi bi-envelope-check text-primary" style="font-size: 4rem;"></i>
                     </div>
 
-                    <h2 class="h3 mb-4">Email de Confirmação Enviado</h2>
+                    <h3 class="card-title mb-3">Email de Confirmação Enviado</h3>
                     
-                    <p class="text-muted mb-4">
+                    <p class="card-text text-body-secondary mb-4">
                         Enviamos um email de confirmação para o seu endereço. 
                         Por favor, verifique sua caixa de entrada e clique no link de confirmação.
                     </p>
 
-                    <div class="alert alert-info mb-4" role="alert">
+                    <div class="alert alert-dismissible alert-info mb-4">
                         <i class="bi bi-info-circle me-2"></i>
                         Caso não encontre o email, verifique também sua pasta de spam.
                     </div>
@@ -45,12 +47,14 @@ let resendTimeout;
 function resendConfirmation() {
     const btn = document.getElementById('resendBtn');
     btn.disabled = true;
+    btn.classList.add('disabled');
     
     setTimeout(() => {
         btn.innerHTML = '<i class="bi bi-check-lg me-2"></i>Email Reenviado!';
         
         resendTimeout = setTimeout(() => {
             btn.disabled = false;
+            btn.classList.remove('disabled');
             btn.innerHTML = '<i class="bi bi-arrow-clockwise me-2"></i>Reenviar Email';
         }, 30000);
     }, 1000);
@@ -62,43 +66,4 @@ window.onbeforeunload = function() {
     }
 };
 </script>
-
-<style>
-.card {
-    border: none;
-}
-
-.bi-envelope-check {
-    animation: float 3s ease-in-out infinite;
-}
-
-@keyframes float {
-    0% {
-        transform: translateY(0px);
-    }
-    50% {
-        transform: translateY(-10px);
-    }
-    100% {
-        transform: translateY(0px);
-    }
-}
-
-.btn {
-    transition: all 0.3s ease;
-}
-
-.btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11);
-}
-
-.btn:disabled {
-    cursor: not-allowed;
-}
-
-.alert {
-    border-left: 4px solid #0dcaf0;
-}
-</style>
 {% endblock %}

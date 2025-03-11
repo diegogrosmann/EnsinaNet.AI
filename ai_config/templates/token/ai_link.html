@@ -3,175 +3,184 @@
 
 {% block content %}
 <div class="container py-4">
-    <!-- Card Principal - Usando shadow-sm do custom.css -->
-    <div class="card shadow-sm">
-        <!-- Header do Card com melhor contraste -->
-        <div class="card-header bg-white d-flex justify-content-between align-items-center">
-            <h2 class="h4 mb-0 text-primary">
-                <i class="bi bi-link me-2"></i>
-                Gerenciar IAs para o Token "{{ token.name }}"
-            </h2>
-            <a href="{% url 'accounts:token_config' token.id %}" class="btn btn-outline-secondary btn-sm" aria-label="Voltar para tela anterior">
-                <i class="bi bi-arrow-left"></i> Voltar
-            </a>
-        </div>
+    <div class="bs-component">
+        <!-- Card Principal usando estrutura padrão do Bootswatch -->
+        <div class="card border-primary mb-3">
+            <!-- Header do Card com estilo Bootswatch -->
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="card-title mb-0">
+                    <i class="bi bi-link me-2"></i>
+                    Gerenciar IAs para o Token "{{ token.name }}"
+                </h2>
+                <a href="{% url 'accounts:token_config' token.id %}" class="btn btn-outline-secondary btn-sm" aria-label="Voltar para tela anterior">
+                    <i class="bi bi-arrow-left"></i> Voltar
+                </a>
+            </div>
 
-        <!-- Corpo do Card -->
-        <div class="card-body">
-            {% if ai_configs %}
-                <div class="mb-3">
-                    <!-- Filtros e Controles -->
-                    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
-                        <!-- Controles do lado esquerdo - Responsivo em coluna em dispositivos pequenos -->
-                        <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
-                            <button class="btn btn-sm btn-outline-secondary toggle-filters" type="button" aria-expanded="true" aria-controls="filterControls">
-                                <i class="bi bi-funnel me-1"></i>Filtros
-                                <i class="bi bi-chevron-down ms-1"></i>
-                            </button>
-                            
-                            <!-- Informação de paginação - Responsiva -->
-                            <div class="pagination-info d-none d-sm-block">
-                                Mostrando <span id="paginationFrom">1</span> a <span id="paginationTo">10</span> de <span id="paginationTotal">{{ ai_configs|length }}</span>
+            <!-- Corpo do Card usando componentes Bootswatch -->
+            <div class="card-body">
+                {% if ai_configs %}
+                    <div class="mb-3">
+                        <!-- Filtros e Controles com componentes Bootswatch -->
+                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
+                            <!-- Controles à esquerda -->
+                            <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
+                                <button class="btn btn-sm btn-outline-primary toggle-filters" type="button" aria-expanded="true" aria-controls="filterControls">
+                                    <i class="bi bi-funnel me-1"></i>Filtros
+                                    <i class="bi bi-chevron-down ms-1"></i>
+                                </button>
+                                
+                                <!-- Informação de paginação -->
+                                <div class="text-muted d-none d-sm-block">
+                                    Mostrando <span id="paginationFrom">1</span> a <span id="paginationTo">10</span> de <span id="paginationTotal">{{ ai_configs|length }}</span>
+                                </div>
                             </div>
+                            
+                            <!-- Controles à direita - MODIFICADO para ser mais compacto -->
+                            <div class="input-group input-group-sm" style="width: auto; max-width: 200px;">
+                                <span class="input-group-text">Itens por página</span>
+                                <select id="itemsPerPage" class="form-select form-select-sm">
+                                    <option value="5">5</option>
+                                    <option value="10" selected>10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Filtros Expandidos usando card do Bootswatch -->
+                        <div class="card bg-light mb-3" id="filterControls">
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <!-- Filtro por Nome -->
+                                    <div class="col-12 col-md-4">
+                                        <label for="filterName" class="form-label">Nome da IA</label>
+                                        <input type="text" id="filterName" class="form-control form-control-sm filter" placeholder="Filtrar por nome...">
+                                    </div>
+                                    
+                                    <!-- Filtro por Cliente de API -->
+                                    <div class="col-12 col-md-4">
+                                        <label for="filterClient" class="form-label">Cliente API</label>
+                                        <select id="filterClient" class="form-select form-select-sm filter">
+                                            <option value="">Todos os clientes</option>
+                                            {% for client_id, client in unique_clients.items %}
+                                                <option value="{{ client_id }}">{{ client }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Filtro por Status -->
+                                    <div class="col-12 col-md-4">
+                                        <label for="filterStatus" class="form-label">Status</label>
+                                        <select id="filterStatus" class="form-select form-select-sm filter">
+                                            <option value="">Todos os status</option>
+                                            <option value="1">Ativas</option>
+                                            <option value="0">Inativas</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tabela Responsiva no estilo Bootswatch -->
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" class="sortable" data-sort-key="name">
+                                            Nome da IA
+                                            <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                        </th>
+                                        <th scope="col" class="sortable d-none d-md-table-cell" data-sort-key="client">
+                                            Cliente API
+                                            <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                        </th>
+                                        <th scope="col" class="sortable d-none d-md-table-cell" data-sort-key="model">
+                                            Modelo
+                                            <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                        </th>
+                                        <th scope="col" class="sortable" data-sort-key="status">
+                                            Status
+                                            <i class="sort-icon bi bi-sort-numeric-down"></i>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody id="aiTable">
+                                    {% for config in ai_configs %}
+                                    <tr data-value="{{ config.name|lower }}">
+                                        <th scope="row" data-value="{{ config.name|lower }}">
+                                            <a href="{% url 'ai_config:ai_edit' config.id %}" class="text-decoration-none">
+                                                {{ config.name }}
+                                            </a>
+                                            <!-- Informações extras para telas pequenas -->
+                                            <div class="d-md-none mt-1">
+                                                <small class="d-block text-muted">
+                                                    <strong>Cliente:</strong> {{ config.ai_client }}
+                                                </small>
+                                                <small class="d-block text-muted">
+                                                    <strong>Modelo:</strong> <span class="badge bg-secondary">{{ config.model_name }}</span>
+                                                </small>
+                                            </div>
+                                        </th>
+                                        <td class="d-none d-md-table-cell" data-value="{{ config.ai_client.id }}">
+                                            {{ config.ai_client }}
+                                        </td>
+                                        <td class="d-none d-md-table-cell" data-value="{{ config.model_name }}">
+                                            <span class="badge bg-secondary">{{ config.model_name }}</span>
+                                        </td>
+                                        <td data-value="{% if config.id in enabled_config_ids %}1{% else %}0{% endif %}">
+                                            <div class="form-check form-switch">
+                                                <input type="checkbox" 
+                                                      class="form-check-input ai-toggle" 
+                                                      id="toggle-{{ config.id }}" 
+                                                      data-ai-id="{{ config.id }}" 
+                                                      {% if config.id in enabled_config_ids %}checked{% endif %}>
+                                                <span class="badge {% if config.id in enabled_config_ids %}bg-success{% else %}bg-secondary{% endif %}">
+                                                    {% if config.id in enabled_config_ids %}Ativa{% else %}Inativa{% endif %}
+                                                </span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
                         </div>
                         
-                        <!-- Controles do lado direito -->
-                        <div class="d-flex align-items-center gap-2">
-                            <label for="itemsPerPage" class="form-label mb-0 text-nowrap d-none d-sm-block">Itens por página:</label>
-                            <select id="itemsPerPage" class="form-select form-select-sm items-per-page">
-                                <option value="5">5</option>
-                                <option value="10" selected>10</option>
-                                <option value="25">25</option>
-                                <option value="50">50</option>
-                                <option value="100">100</option>
-                            </select>
-                        </div>
+                        <!-- Paginação no estilo Bootswatch -->
+                        <nav aria-label="Paginação da tabela de IAs" class="mt-3">
+                            <ul class="pagination pagination-sm justify-content-center" id="pagination">
+                                <li class="page-item disabled">
+                                    <a class="page-link" href="#" id="prevPage" aria-label="Página anterior">
+                                        <span aria-hidden="true">&laquo;</span>
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="#" id="nextPage" aria-label="Próxima página">
+                                        <span aria-hidden="true">&raquo;</span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </nav>
                     </div>
-
-                    <!-- Filtros Expandidos - Colapsáveis em dispositivos móveis -->
-                    <div class="filter-controls p-3 bg-light rounded border mb-3" id="filterControls">
-                        <div class="row g-3">
-                            <!-- Filtro por Nome -->
-                            <div class="col-12 col-md-4">
-                                <label for="filterName" class="form-label small text-secondary">Nome da IA</label>
-                                <input type="text" id="filterName" class="form-control form-control-sm filter" placeholder="Filtrar por nome...">
-                            </div>
-                            
-                            <!-- Filtro por Cliente de API -->
-                            <div class="col-12 col-md-4">
-                                <label for="filterClient" class="form-label small text-secondary">Cliente API</label>
-                                <select id="filterClient" class="form-select form-select-sm filter">
-                                    <option value="">Todos os clientes</option>
-                                    {% for client_id, client in unique_clients.items %}
-                                        <option value="{{ client_id }}">{{ client }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            
-                            <!-- Filtro por Status -->
-                            <div class="col-12 col-md-4">
-                                <label for="filterStatus" class="form-label small text-secondary">Status</label>
-                                <select id="filterStatus" class="form-select form-select-sm filter">
-                                    <option value="">Todos os status</option>
-                                    <option value="1">Ativas</option>
-                                    <option value="0">Inativas</option>
-                                </select>
+                {% else %}
+                    <!-- Feedback quando não há IAs configuradas usando alerta do Bootswatch -->
+                    <div class="alert alert-info mt-3" role="alert">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-info-circle-fill me-2"></i>
+                            <div>
+                                <h5 class="alert-heading mb-1">Nenhuma IA Disponível</h5>
+                                <p class="mb-0">Não há configurações de IA disponíveis para este token. Primeiro, crie uma configuração de IA na seção de gerenciamento de IAs.</p>
                             </div>
                         </div>
-                    </div>
-
-                    <!-- Tabela Responsiva -->
-                    <div class="table-responsive">
-                        <table class="table table-management table-hover table-sortable mb-0" aria-label="Tabela de IAs disponíveis para este token">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" data-sort-key="name">
-                                        Nome da IA
-                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
-                                    </th>
-                                    <th class="sortable" data-sort-key="client">
-                                        Cliente API
-                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
-                                    </th>
-                                    <th class="sortable" data-sort-key="model">
-                                        Modelo
-                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
-                                    </th>
-                                    <th class="sortable" data-sort-key="status">
-                                        Status
-                                        <i class="sort-icon bi bi-sort-numeric-down"></i>
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody id="aiTable">
-                                {% for config in ai_configs %}
-                                <tr data-value="{{ config.name|lower }}">
-                                    <td data-value="{{ config.name|lower }}">
-                                        <a href="{% url 'ai_config:ai_edit' config.id %}" class="table-link">
-                                            <strong class="d-block mb-1">{{ config.name }}</strong>
-                                            <small class="text-muted d-block d-md-none">
-                                                <span class="text-dark">Cliente:</span> {{ config.ai_client }}
-                                            </small>
-                                        </a>
-                                    </td>
-                                    <td data-value="{{ config.ai_client.id }}">
-                                        <span class="d-none d-md-inline">{{ config.ai_client }}</span>
-                                    </td>
-                                    <td data-value="{{ config.model_name }}">
-                                        <span class="badge bg-secondary">{{ config.model_name }}</span>
-                                    </td>
-                                    <td data-value="{% if config.id in enabled_config_ids %}1{% else %}0{% endif %}">
-                                        <div class="form-switch d-flex align-items-center">
-                                            <input type="checkbox" 
-                                                   class="form-check-input ai-toggle me-2" 
-                                                   id="toggle-{{ config.id }}" 
-                                                   data-ai-id="{{ config.id }}" 
-                                                   aria-label="Ativar ou desativar a IA {{ config.name }}"
-                                                   {% if config.id in enabled_config_ids %}checked{% endif %}>
-                                            <span class="status-badge ms-2 badge {% if config.id in enabled_config_ids %}bg-success{% else %}bg-secondary{% endif %}">
-                                                {% if config.id in enabled_config_ids %}Ativa{% else %}Inativa{% endif %}
-                                            </span>
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <!-- Paginação Acessível -->
-                    <nav aria-label="Paginação da tabela de IAs" class="mt-3">
-                        <ul class="pagination pagination-sm justify-content-center" id="pagination">
-                            <li class="page-item disabled">
-                                <a class="page-link" href="#" id="prevPage" aria-label="Página anterior">
-                                    <span aria-hidden="true">&laquo;</span>
-                                </a>
-                            </li>
-                            <li class="page-item">
-                                <a class="page-link" href="#" id="nextPage" aria-label="Próxima página">
-                                    <span aria-hidden="true">&raquo;</span>
-                                </a>
-                            </li>
-                        </ul>
-                    </nav>
-                </div>
-            {% else %}
-                <!-- Feedback quando não há IAs configuradas -->
-                <div class="alert alert-info mt-3" role="alert">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-info-circle-fill me-2"></i>
-                        <div>
-                            <h5 class="alert-heading mb-1">Nenhuma IA Disponível</h5>
-                            <p class="mb-0">Não há configurações de IA disponíveis para este token. Primeiro, crie uma configuração de IA na seção de gerenciamento de IAs.</p>
+                        <div class="text-center mt-3">
+                            <a href="{% url 'ai_config:ai_manage' %}" class="btn btn-primary">
+                                <i class="bi bi-gear me-2"></i>Gerenciar IAs
+                            </a>
                         </div>
                     </div>
-                    <div class="text-center mt-3">
-                        <a href="{% url 'ai_config:ai_manage' %}" class="btn btn-primary">
-                            <i class="bi bi-gear me-2"></i>Gerenciar IAs
-                        </a>
-                    </div>
-                </div>
-            {% endif %}
+                {% endif %}
+            </div>
         </div>
     </div>
 </div>
@@ -180,79 +189,68 @@
     document.addEventListener('DOMContentLoaded', function() {
         // Função para salvar a configuração via AJAX
         function toggleAI(aiId, isActive) {
-            // Encontrar o switch e mostrar spinner de carregamento
             const toggle = document.getElementById(`toggle-${aiId}`);
             const statusBadge = toggle.nextElementSibling;
             
-            // Desabilitar o switch durante o processamento
+            // Desabilita o switch e mostra "Salvando"
             toggle.disabled = true;
             statusBadge.innerHTML = `
                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
                 Salvando...
             `;
             
-            // Mostrar indicador de carregamento global
-            showAjaxLoading();
-            
-            // Configurar os dados para envio
+            // Monta dados para envio
             const formData = new FormData();
             formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
             
             if (isActive) {
-                formData.append('ai_configs', aiId);
                 formData.append('enabled_configs', aiId);
             } else {
                 // Quando desativamos, enviamos o ID da IA explicitamente
                 formData.append('ai_id', aiId);
             }
             
-            // Enviar a requisição
             fetch(window.location.href, {
                 method: 'POST',
                 body: formData,
                 headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
+                    'X-CSRFToken': '{{ csrf_token }}',
+                    'X-Requested-With': 'XMLHttpRequest'  // Adicionar header XMLHttpRequest
                 }
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
-                // Restaurar o switch e atualizar a interface
-                toggle.disabled = false;
-                
                 if (data.status === 'success') {
-                    // Atualizar o badge de status
-                    statusBadge.className = isActive ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
+                    statusBadge.className = isActive
+                        ? 'badge ms-2 bg-success'
+                        : 'badge ms-2 bg-secondary';
                     statusBadge.textContent = isActive ? 'Ativa' : 'Inativa';
-                    
-                    // Usar o sistema do template base para mostrar mensagem
                     showMessage('success', 'IA ' + (isActive ? 'ativada' : 'desativada') + ' com sucesso!');
                 } else {
-                    // Reverter o estado do switch em caso de erro
-                    toggle.checked = !isActive;
-                    statusBadge.className = !isActive ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
-                    statusBadge.textContent = !isActive ? 'Ativa' : 'Inativa';
-                    
-                    // Mostrar mensagem de erro
-                    showMessage('danger', data.message || 'Ocorreu um erro ao processar sua solicitação.');
+                    throw new Error(data.message || 'Erro ao processar solicitação');
                 }
             })
             .catch(error => {
-                // Tratar erros de rede ou outros
-                toggle.disabled = false;
-                toggle.checked = !isActive;
-                statusBadge.className = !isActive ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
-                statusBadge.textContent = !isActive ? 'Ativa' : 'Inativa';
-                
-                showMessage('danger', 'Erro de conexão. Tente novamente.');
                 console.error('Erro:', error);
+                // Restaurar estado do switch em caso de erro
+                toggle.checked = !isActive;
+                statusBadge.className = !isActive
+                    ? 'badge ms-2 bg-success'
+                    : 'badge ms-2 bg-secondary';
+                statusBadge.textContent = !isActive ? 'Ativa' : 'Inativa';
+                showMessage('danger', 'Erro ao processar solicitação. Tente novamente.');
             })
             .finally(() => {
-                // Esconder indicador de carregamento
-                hideAjaxLoading();
+                toggle.disabled = false;
             });
         }
         
-        // Adicionar listeners para os switches
+        // Listeners para os switches
         document.querySelectorAll('.ai-toggle').forEach(toggle => {
             toggle.addEventListener('change', function() {
                 const aiId = this.dataset.aiId;
@@ -263,29 +261,29 @@
 
         // ----- CÓDIGO PARA GERENCIAMENTO DE TABELA -----
         
-        // Variáveis para gerenciamento de paginação
         let currentPage = 1;
         let itemsPerPage = parseInt(document.getElementById('itemsPerPage').value) || 10;
         let filteredRows = [];
         let sortKey = 'name';
         let sortDirection = 'asc';
         
-        // Função para atualizar a tabela com base nos filtros e paginação
+        // Atualiza a tabela (filtros, ordenação, paginação)
         function updateTable() {
             const tbody = document.getElementById('aiTable');
+            if (!tbody) return;
+            
             const rows = Array.from(tbody.querySelectorAll('tr'));
             
-            // Aplicar filtros
-            const nameFilter = document.getElementById('filterName').value.toLowerCase();
-            const clientFilter = document.getElementById('filterClient').value;
-            const statusFilter = document.getElementById('filterStatus').value;
+            // Captura filtros
+            const nameFilter = document.getElementById('filterName')?.value.toLowerCase() || '';
+            const clientFilter = document.getElementById('filterClient')?.value || '';
+            const statusFilter = document.getElementById('filterStatus')?.value || '';
             
             filteredRows = rows.filter(row => {
-                const name = row.querySelector('td[data-value]:nth-child(1)').getAttribute('data-value').toLowerCase();
-                const client = row.querySelector('td[data-value]:nth-child(2)').getAttribute('data-value');
-                const status = row.querySelector('td[data-value]:nth-child(4)').getAttribute('data-value');
+                const name = row.querySelector('th').textContent.toLowerCase();
+                const client = row.querySelector('td[data-value]')?.getAttribute('data-value') || '';
+                const status = row.querySelectorAll('td')[row.querySelectorAll('td').length-1]?.getAttribute('data-value') || '';
                 
-                // Verificar cada filtro
                 const nameMatch = name.includes(nameFilter);
                 const clientMatch = !clientFilter || client === clientFilter;
                 const statusMatch = !statusFilter || status === statusFilter;
@@ -293,66 +291,80 @@
                 return nameMatch && clientMatch && statusMatch;
             });
             
-            // Ordenar linhas
             sortTable();
             
-            // Atualizar contador total
             const totalItems = filteredRows.length;
-            document.getElementById('paginationTotal').textContent = totalItems;
+            const totalCounter = document.getElementById('paginationTotal');
+            if (totalCounter) totalCounter.textContent = totalItems;
             
-            // Calcular páginas totais
             const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
             
-            // Ajustar página atual se necessário
             if (currentPage > totalPages) {
                 currentPage = totalPages;
             }
             
-            // Determinar intervalo de itens a mostrar
             const startIndex = (currentPage - 1) * itemsPerPage;
             const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
             
-            // Atualizar informação de paginação
-            document.getElementById('paginationFrom').textContent = totalItems === 0 ? 0 : startIndex + 1;
-            document.getElementById('paginationTo').textContent = endIndex;
+            const fromCounter = document.getElementById('paginationFrom');
+            const toCounter = document.getElementById('paginationTo');
             
-            // Esconder todas as linhas
+            if (fromCounter) fromCounter.textContent = totalItems === 0 ? 0 : startIndex + 1;
+            if (toCounter) toCounter.textContent = endIndex;
+            
             rows.forEach(row => row.style.display = 'none');
-            
-            // Mostrar apenas as linhas filtradas da página atual
             filteredRows.slice(startIndex, endIndex).forEach(row => row.style.display = '');
             
-            // Atualizar a navegação da paginação
             updatePagination(totalPages);
         }
         
-        // Função para ordenar as linhas da tabela
+        // Ordenação
         function sortTable() {
             const tbody = document.getElementById('aiTable');
+            if (!tbody) return;
             
             filteredRows.sort((a, b) => {
-                const aValue = a.querySelector(`td[data-value]:nth-child(${getColumnIndex(sortKey)})`).getAttribute('data-value');
-                const bValue = b.querySelector(`td[data-value]:nth-child(${getColumnIndex(sortKey)})`).getAttribute('data-value');
+                let aValue, bValue;
                 
-                // Compare valores como números se forem numéricos
-                if (!isNaN(aValue) && !isNaN(bValue)) {
-                    return sortDirection === 'asc' ? 
-                        Number(aValue) - Number(bValue) : 
-                        Number(bValue) - Number(aValue);
+                if (sortKey === 'name') {
+                    aValue = a.querySelector('th').getAttribute('data-value');
+                    bValue = b.querySelector('th').getAttribute('data-value');
+                } else if (sortKey === 'status') {
+                    const aCell = a.querySelectorAll('td')[a.querySelectorAll('td').length-1];
+                    const bCell = b.querySelectorAll('td')[b.querySelectorAll('td').length-1];
+                    aValue = aCell ? aCell.getAttribute('data-value') : '0';
+                    bValue = bCell ? bCell.getAttribute('data-value') : '0';
+                } else {
+                    // Encontrar a célula correspondente (cliente ou modelo)
+                    const aCell = a.querySelector(`td[data-value][data-sort-key="${sortKey}"]`) || 
+                                  Array.from(a.querySelectorAll('td')).find(cell => cell.getAttribute('data-value'));
+                    const bCell = b.querySelector(`td[data-value][data-sort-key="${sortKey}"]`) || 
+                                  Array.from(b.querySelectorAll('td')).find(cell => cell.getAttribute('data-value'));
+                                  
+                    aValue = aCell ? aCell.getAttribute('data-value') : '';
+                    bValue = bCell ? bCell.getAttribute('data-value') : '';
                 }
                 
-                // Compare como strings para texto
-                return sortDirection === 'asc' ? 
-                    aValue.localeCompare(bValue) : 
-                    bValue.localeCompare(aValue);
+                // Comparação numérica para status
+                if (sortKey === 'status') {
+                    return sortDirection === 'asc'
+                        ? Number(aValue) - Number(bValue)
+                        : Number(bValue) - Number(aValue);
+                }
+                
+                // Comparação de texto para outros campos
+                return sortDirection === 'asc'
+                    ? String(aValue).localeCompare(String(bValue))
+                    : String(bValue).localeCompare(String(aValue));
             });
             
-            // Atualizar os ícones de ordenação
+            // Atualiza ícones
             document.querySelectorAll('th.sortable').forEach(th => {
                 const icon = th.querySelector('.sort-icon');
+                if (!icon) return;
+                
                 const key = th.dataset.sortKey;
                 
-                // Remover classes anteriores e active-sort de todas as colunas
                 th.classList.remove('active-sort');
                 icon.classList.remove(
                     'bi-sort-alpha-down', 
@@ -363,7 +375,6 @@
                 
                 if (key === sortKey) {
                     const isNumeric = key === 'status';
-                    // Adicionar classes apropriadas baseadas na direção e tipo
                     if (sortDirection === 'asc') {
                         icon.classList.add(isNumeric ? 'bi-sort-numeric-down' : 'bi-sort-alpha-down');
                     } else {
@@ -371,53 +382,37 @@
                     }
                     th.classList.add('active-sort');
                 } else {
-                    // Para colunas não ordenadas, mostrar ícone padrão
                     icon.classList.add(key === 'status' ? 'bi-sort-numeric-down' : 'bi-sort-alpha-down');
                 }
             });
 
-            // Reordenar os elementos no DOM
             filteredRows.forEach(row => tbody.appendChild(row));
         }
 
-        // Função auxiliar para obter o índice da coluna com base na chave
-        function getColumnIndex(key) {
-            const keyToIndex = {
-                'name': 1,
-                'client': 2,
-                'model': 3,
-                'status': 4
-            };
-            return keyToIndex[key] || 1;
-        }
-        
-        // Função para atualizar os controles de paginação
+        // Atualizar paginação
         function updatePagination(totalPages) {
             const pagination = document.getElementById('pagination');
-            const prevPageBtn = document.getElementById('prevPage').parentElement;
-            const nextPageBtn = document.getElementById('nextPage').parentElement;
+            if (!pagination) return;
             
-            // Atualizar estado dos botões anterior/próximo
-            prevPageBtn.classList.toggle('disabled', currentPage <= 1);
-            nextPageBtn.classList.toggle('disabled', currentPage >= totalPages);
+            const prevPageBtn = pagination.querySelector('li:first-child');
+            const nextPageBtn = pagination.querySelector('li:last-child');
             
-            // Remover os links de página existentes (exceto anterior/próximo)
+            if (prevPageBtn) prevPageBtn.classList.toggle('disabled', currentPage <= 1);
+            if (nextPageBtn) nextPageBtn.classList.toggle('disabled', currentPage >= totalPages);
+            
+            // Remover páginas existentes
             Array.from(pagination.querySelectorAll('li:not(:first-child):not(:last-child)')).forEach(li => li.remove());
             
-            // Determinar quais páginas mostrar
             let pagesToShow = [];
             if (totalPages <= 5) {
-                // Mostrar todas as páginas se forem 5 ou menos
                 pagesToShow = Array.from({length: totalPages}, (_, i) => i + 1);
             } else {
-                // Mostrar páginas ao redor da página atual
                 pagesToShow = [1];
                 
                 if (currentPage > 3) {
                     pagesToShow.push('...');
                 }
                 
-                // Páginas ao redor da atual
                 for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
                     pagesToShow.push(i);
                 }
@@ -426,25 +421,24 @@
                     pagesToShow.push('...');
                 }
                 
-                pagesToShow.push(totalPages);
+                if (totalPages > 1) {
+                    pagesToShow.push(totalPages);
+                }
             }
             
-            // Criar os links das páginas
             const nextPageElement = pagination.querySelector('li:last-child');
+            if (!nextPageElement) return;
             
             pagesToShow.forEach(pageNum => {
                 const li = document.createElement('li');
                 
                 if (pageNum === '...') {
-                    // Elemento de elipse para paginação longa
                     li.className = 'page-item disabled';
                     li.innerHTML = '<span class="page-link">...</span>';
                 } else {
-                    // Link de página normal
                     li.className = `page-item ${currentPage === pageNum ? 'active' : ''}`;
                     li.innerHTML = `<a class="page-link" href="#" data-page="${pageNum}">${pageNum}</a>`;
                     
-                    // Adicionar listener para mudar de página
                     if (currentPage !== pageNum) {
                         li.querySelector('a').addEventListener('click', function(e) {
                             e.preventDefault();
@@ -458,21 +452,17 @@
             });
         }
         
-        // Adicionar listener para ordenação nas colunas
+        // Event Listeners
         document.querySelectorAll('th.sortable').forEach(header => {
             header.addEventListener('click', function() {
                 const key = this.dataset.sortKey;
-                
-                // Se clicou na mesma coluna, inverte a direção
                 if (key === sortKey) {
                     sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
                 } else {
-                    // Nova coluna, começa com ascendente
                     sortKey = key;
                     sortDirection = 'asc';
                 }
                 
-                // Salvar preferências do usuário
                 sessionStorage.setItem('aiTableSortKey', sortKey);
                 sessionStorage.setItem('aiTableSortDirection', sortDirection);
                 
@@ -480,8 +470,7 @@
             });
         });
         
-        // Navegação de paginação
-        document.getElementById('prevPage').addEventListener('click', function(e) {
+        document.getElementById('prevPage')?.addEventListener('click', function(e) {
             e.preventDefault();
             if (currentPage > 1) {
                 currentPage--;
@@ -489,7 +478,7 @@
             }
         });
         
-        document.getElementById('nextPage').addEventListener('click', function(e) {
+        document.getElementById('nextPage')?.addEventListener('click', function(e) {
             e.preventDefault();
             const totalPages = Math.ceil(filteredRows.length / itemsPerPage);
             if (currentPage < totalPages) {
@@ -498,27 +487,27 @@
             }
         });
         
-        // Mudar itens por página
-        document.getElementById('itemsPerPage').addEventListener('change', function() {
+        document.getElementById('itemsPerPage')?.addEventListener('change', function() {
             itemsPerPage = parseInt(this.value);
-            currentPage = 1;  // Resetar para primeira página
+            currentPage = 1;
             sessionStorage.setItem('aiTableItemsPerPage', itemsPerPage);
             updateTable();
         });
         
-        // Manipuladores de filtros
         document.querySelectorAll('.filter').forEach(filter => {
             filter.addEventListener('input', function() {
-                this.classList.toggle('filter-active', this.value !== '');
-                currentPage = 1;  // Voltar para a primeira página ao filtrar
+                this.classList.toggle('is-valid', this.value !== '');
+                currentPage = 1;
                 updateTable();
             });
         });
         
-        // Alternar exibição dos filtros
-        document.querySelector('.toggle-filters').addEventListener('click', function() {
-            const filterControls = document.querySelector('.filter-controls');
+        document.querySelector('.toggle-filters')?.addEventListener('click', function() {
+            const filterControls = document.querySelector('#filterControls');
+            if (!filterControls) return;
+            
             const icon = this.querySelector('i:last-child');
+            if (!icon) return;
             
             if (filterControls.style.display === 'none') {
                 filterControls.style.display = 'block';
@@ -528,28 +517,30 @@
                 icon.classList.replace('bi-chevron-down', 'bi-chevron-up');
             }
             
-            // Salvar preferência
             sessionStorage.setItem('aiTableFiltersVisible', filterControls.style.display !== 'none');
         });
         
-        // Restaurar configurações salvas da sessão
+        // Restaurar preferências
         function restoreUserPreferences() {
-            // Restaurar itens por página
             const savedItemsPerPage = sessionStorage.getItem('aiTableItemsPerPage');
-            if (savedItemsPerPage) {
+            const itemsPerPageSelect = document.getElementById('itemsPerPage');
+            
+            if (savedItemsPerPage && itemsPerPageSelect) {
                 itemsPerPage = parseInt(savedItemsPerPage);
-                document.getElementById('itemsPerPage').value = savedItemsPerPage;
+                if (itemsPerPageSelect.querySelector(`option[value="${itemsPerPage}"]`)) {
+                    itemsPerPageSelect.value = savedItemsPerPage;
+                }
             }
             
-            // Restaurar visibilidade dos filtros
             const filtersVisible = sessionStorage.getItem('aiTableFiltersVisible');
-            if (filtersVisible === 'false') {
-                const filterControls = document.querySelector('.filter-controls');
+            const filterControls = document.querySelector('#filterControls');
+            const toggleFiltersIcon = document.querySelector('.toggle-filters i:last-child');
+            
+            if (filtersVisible === 'false' && filterControls && toggleFiltersIcon) {
                 filterControls.style.display = 'none';
-                document.querySelector('.toggle-filters i:last-child').classList.replace('bi-chevron-down', 'bi-chevron-up');
+                toggleFiltersIcon.classList.replace('bi-chevron-down', 'bi-chevron-up');
             }
             
-            // Restaurar a ordenação anterior
             const savedSortKey = sessionStorage.getItem('aiTableSortKey');
             const savedSortDirection = sessionStorage.getItem('aiTableSortDirection');
             
@@ -562,24 +553,7 @@
             updateTable();
         }
         
-        // Inicializar a tabela e restaurar preferências
         restoreUserPreferences();
-
-        // Adicionar este código para manipular cliques nas linhas sem interferir nos links
-        document.querySelectorAll('#aiTable tr').forEach(row => {
-            row.addEventListener('click', function(e) {
-                // Se o clique for em um link, toggle ou outro controle interativo, não faça nada
-                if (e.target.closest('a, input, .form-switch, .status-badge')) {
-                    return;
-                }
-                
-                // Se não for em um elemento interativo, procure o link na linha e navegue para ele
-                const link = this.querySelector('td:first-child a');
-                if (link) {
-                    link.click();
-                }
-            });
-        });
     });
 </script>
 {% endblock %}

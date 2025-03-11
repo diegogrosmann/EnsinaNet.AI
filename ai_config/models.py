@@ -15,7 +15,7 @@ from django.conf import settings
 from jsonschema import ValidationError
 
 from accounts.models import UserToken
-from api.constants import AIClientConfig
+from api.constants import AIClientConfig, TrainingStatus
 from api.utils.clientsIA import AI_CLIENT_MAPPING, APIClient
 
 from .storage import OverwriteStorage
@@ -344,6 +344,48 @@ class AIClientConfiguration(models.Model):
         except Exception as e:
             logger.error(f"Erro ao comparar dados: {e}")
             raise
+
+    def perform_training(self, training_file) -> dict:
+        """Realiza o treinamento para esta configuração de IA.
+
+        Args:
+            training_file: Arquivo de treinamento associado
+
+        Returns:
+            dict: Resultado do treinamento contendo status e informações
+        """
+        try:
+            client = self.create_api_client_instance()
+            
+            if not client.can_train:
+                return {
+                    'ai_name': self.name,
+                    'error': "Esta IA não suporta treinamento",
+                    'status': TrainingStatus.FAILED
+                }
+                
+            result = client.train(training_file.file.path)
+            
+            training = AITraining.objects.create(
+                ai_config=self,
+                file=training_file,
+                job_id=result.job_id,
+                status=result.status.value
+            )
+            
+            return {
+                'ai_name': self.name,
+                'job_id': training.job_id,
+                'status': TrainingStatus.IN_PROGRESS
+            }
+            
+        except Exception as e:
+            logger.error(f"Erro ao iniciar treinamento para IA {self.id}: {e}", exc_info=True)
+            return {
+                'ai_name': self.name,
+                'error': str(e),
+                'status': TrainingStatus.FAILED
+            }
 
 class AIClientTokenConfig(models.Model):
     """Configuração de associação entre Token e IA.

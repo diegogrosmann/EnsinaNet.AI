@@ -7,6 +7,7 @@ gerenciamento de tokens, configuração, redefinição de senha e confirmação 
 
 import logging
 from typing import Any, Dict
+from datetime import datetime
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
@@ -15,6 +16,7 @@ from django.contrib.auth.views import PasswordResetView
 from django.contrib.auth.decorators import login_required
 from django.contrib.sites.shortcuts import get_current_site
 from django.core.mail import send_mail
+from django.template.loader import render_to_string
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.safestring import mark_safe
@@ -224,10 +226,23 @@ class CustomConfirmEmailView(ConfirmEmailView):
             user.is_active = True
             user.save()
             logger.info(f"Email confirmado para {user.email}")
+            
+            # Prepara o contexto para o email
+            current_site = get_current_site(request)
+            context = {
+                'user': user,
+                'confirmation_date': datetime.now().strftime("%d/%m/%Y %H:%M"),
+                'current_site': current_site
+            }
+            
+            # Renderiza o email HTML
+            email_html = render_to_string('account/email/user_confirmed_email.html', context)
+            
             admin_email = settings.ADMIN_EMAIL
             subject = 'Novo Usuário Confirmado'
             message = f'O usuário "{user.email}" confirmou seu email.'
-            send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [admin_email])
+            send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [admin_email], html_message=email_html)
+            
             messages.success(request, 'Email confirmado com sucesso!')
             return redirect('accounts:login')
         except Exception as e:
@@ -454,4 +469,4 @@ def user_settings(request: HttpRequest) -> HttpResponse:
     context = {
         'form': form,
     }
-    return render(request, 'accounts/user_settings.html', context)
+    return render(request, 'accounts/settings/user.html', context)

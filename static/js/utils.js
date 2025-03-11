@@ -25,52 +25,11 @@ $.ajaxSetup({
     }
 });
 
-// Função utilitária para mostrar mensagens toast
-function showMessage(type, message) {
-    const toast = $('<div>').addClass('toast').addClass(`bg-${type}`).attr('role', 'alert')
-        .append($('<div>').addClass('toast-body').text(message));
-    
-    $('#toast-container').append(toast);
-    toast.toast({delay: 3000}).toast('show');
-    
-    toast.on('hidden.bs.toast', function() {
-        $(this).remove();
-    });
-}
-
-// Função para formatar datas
-function formatDate(date) {
-    return new Date(date).toLocaleDateString('pt-BR');
-}
-
-// Inicializações globais quando DOM estiver pronto
-document.addEventListener('DOMContentLoaded', function() {
-    // Inicializa todos os tooltips
-    $('[data-bs-toggle="tooltip"]').tooltip();
-
-    // Inicializa todos os popovers
-    $('[data-bs-toggle="popover"]').popover();
-    
-    // Adiciona handlers para modais
-    $('.modal').on('show.bs.modal', function() {
-        document.body.style.overflow = 'hidden';
-    });
-    
-    $('.modal').on('hidden.bs.modal', function() {
-        document.body.style.overflow = '';
-    });
-});
-
-function buildUrl(url, tempID, replaceID) {
-    return url.replace(tempID, replaceID);
-}
-
-// Sistema unificado de mensagens/toasts
+// Função de mensagens/toasts com ícone
 function showMessage(type, message, duration = 5000) {
     const toastContainer = document.querySelector('.toast-container');
     if (!toastContainer) return;
     
-    // Definir classes e ícones com base no tipo
     let bgClass, iconClass;
     switch(type) {
         case 'success':
@@ -114,30 +73,47 @@ function showMessage(type, message, duration = 5000) {
     toast.addEventListener('hidden.bs.toast', () => toast.remove());
 }
 
+// Inicializa todos os toasts estáticos na página
+function initToasts() {
+    const toastElList = document.querySelectorAll('.toast');
+    toastElList.forEach(function(toastEl) {
+        const toast = new bootstrap.Toast(toastEl);
+        toast.show();
+    });
+}
+
 // Gerenciamento de indicador de carregamento AJAX
-function showAjaxLoading() {
+function showLoading() {
     document.querySelector('.ajax-loading').style.display = 'flex';
 }
 
-function hideAjaxLoading() {
+function hideLoading() {
     document.querySelector('.ajax-loading').style.display = 'none';
 }
 
-// Interceptar solicitações AJAX para mostrar indicador de carregamento
-(function() {
-    const originalFetch = window.fetch;
-    window.fetch = function() {
-        showAjaxLoading();
-        return originalFetch.apply(this, arguments).finally(hideAjaxLoading);
-    };
+// Funções utilitárias para indicadores de carregamento em botões
+function showButtonLoading(button, loadingText = 'Carregando...') {
+    if (!button) return;
     
-    const originalXHROpen = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function() {
-        this.addEventListener('loadstart', showAjaxLoading);
-        this.addEventListener('loadend', hideAjaxLoading);
-        originalXHROpen.apply(this, arguments);
-    };
-})();
+    // Guardar o texto original
+    button.dataset.originalHtml = button.innerHTML;
+    button.disabled = true;
+    
+    // Adicionar spinner e texto
+    button.innerHTML = `
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        <span class="ms-1">${loadingText}</span>
+    `;
+}
+
+function hideButtonLoading(button) {
+    if (!button || !button.dataset.originalHtml) return;
+    
+    // Restaurar o estado original
+    button.innerHTML = button.dataset.originalHtml;
+    button.disabled = false;
+    delete button.dataset.originalHtml;
+}
 
 // Controle de mudanças não salvas
 window.hasUnsavedChanges = false;
@@ -147,4 +123,53 @@ window.addEventListener('beforeunload', function(e) {
         e.preventDefault();
         return 'Você tem alterações não salvas. Deseja realmente sair?';
     }
+});
+
+// Sistema de detecção e gerenciamento de tema
+function initThemeDetection() {
+    // Inicialização do sistema de temas (se disponível)
+    if (typeof initThemeSystem === 'function') {
+        // O novo sistema de temas irá gerenciar tudo
+        initThemeSystem();
+    }
+}
+
+// Alternar tema manualmente - função legada, mantida apenas para compatibilidade
+function toggleTheme() {
+    // Se o novo sistema de temas estiver disponível, use-o
+    if (typeof toggleThemeMode === 'function') {
+        toggleThemeMode();
+    }
+}
+
+function buildUrl(url, tempID, replaceID) {
+    return url.replace(tempID, replaceID);
+}
+
+// Funções do MarkdownX são delegadas para o arquivo markdownx.js
+// Aliases para manter compatibilidade com código existente
+function initMarkdownX() {
+    if (typeof MarkdownX !== 'undefined') {
+        MarkdownX.init();
+    } else {
+        console.warn('MarkdownX não está disponível');
+    }
+}
+
+function setupMarkdownResizers() {
+    if (typeof MarkdownX !== 'undefined') {
+        MarkdownX.setupResizers();
+    }
+}
+
+function resetMarkdownHeight() {
+    if (typeof MarkdownX !== 'undefined') {
+        MarkdownX.resetHeight();
+    }
+}
+
+// Inicializações gerais
+document.addEventListener('DOMContentLoaded', function() {
+    initToasts();
+    initThemeDetection();
 });

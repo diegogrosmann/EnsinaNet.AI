@@ -1,0 +1,45 @@
+{% load i18n %}
+{% autoescape off %}
+<div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+    <h2 style="color: #333;">Sua conta foi aprovada!</h2>
+    
+    <p>Olá {{ user.first_name|default:"" }},</p>
+    
+    <p>Temos o prazer de informar que sua conta na plataforma {{ current_site.name }} foi aprovada pelo administrador.</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ login_url }}" 
+           style="background-color: #198754; 
+                  color: white; 
+                  padding: 12px 24px; 
+                  text-decoration: none; 
+                  border-radius: 4px; 
+                  display: inline-block;">
+            Faça Login
+        </a>
+    </div>
+    
+    <p>Agora você tem acesso completo a todas as funcionalidades da nossa plataforma.</p>
+    
+    <div style="background-color: #f8f9fa; border-left: 4px solid #0dcaf0; padding: 15px; margin: 20px 0;">
+        <strong>Próximos passos:</strong>
+        <ul style="margin: 10px 0; padding-left: 20px;">
+            <li>Faça login com seu email e senha</li>
+            <li>Configure seu perfil</li>
+            <li>Crie tokens para acessar a API</li>
+        </ul>
+    </div>
+    
+    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+    
+    <p style="color: #666; font-size: 14px;">
+        Atenciosamente,<br>
+        Equipe {{ current_site.name }}
+    </p>
+    
+    <p style="color: #999; font-size: 12px; text-align: center; margin-top: 20px;">
+        Este é um email automático, não responda a esta mensagem.<br>
+        {{ current_site.domain }}
+    </p>
+</div>
+{% endautoescape %}

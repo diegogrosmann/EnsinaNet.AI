@@ -1,0 +1,44 @@
+{% load i18n %}
+{% autoescape off %}
+<div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+    <h2 style="color: #333;">Novo Usuário Registrado para Aprovação</h2>
+    
+    <p>Olá Administrador,</p>
+    
+    <p>Um novo usuário se registrou na plataforma {{ current_site.name }} e está aguardando aprovação.</p>
+    
+    <div style="background-color: #f8f9fa; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+        <p><strong>Detalhes do usuário:</strong></p>
+        <ul style="margin: 10px 0; padding-left: 20px;">
+            <li><strong>Email:</strong> {{ user.email }}</li>
+            <li><strong>Data de registro:</strong> {{ registration_date }}</li>
+        </ul>
+    </div>
+    
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ admin_url }}" 
+           style="background-color: #0d6efd; 
+                  color: white; 
+                  padding: 12px 24px; 
+                  text-decoration: none; 
+                  border-radius: 4px; 
+                  display: inline-block;">
+            Acessar Painel Admin
+        </a>
+    </div>
+    
+    <p>Por favor, avalie o registro e aprove se adequado.</p>
+    
+    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+    
+    <p style="color: #666; font-size: 14px;">
+        Atenciosamente,<br>
+        Sistema {{ current_site.name }}
+    </p>
+    
+    <p style="color: #999; font-size: 12px; text-align: center; margin-top: 20px;">
+        Este é um email automático, não responda a esta mensagem.<br>
+        {{ current_site.domain }}
+    </p>
+</div>
+{% endautoescape %}

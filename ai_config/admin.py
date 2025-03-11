@@ -26,8 +26,6 @@ from .forms import (
 )
 
 
-from .utils import perform_training
-
 logger = logging.getLogger(__name__)
 
 class AIClientGlobalConfigAdmin(admin.ModelAdmin):

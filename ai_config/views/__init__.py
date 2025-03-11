@@ -15,8 +15,7 @@ from .token import (
 from .training import (
     training_center,
     training_ai,
-    training_status,
-    training_progress,
+    training_monitor,
     training_cancel,
     training_delete
 )
@@ -44,8 +43,7 @@ __all__ = [
     'token_ai_link',
     'training_center',
     'training_ai',
-    'training_status',
-    'training_progress',
+    'training_monitor',
     'training_cancel',
     'training_delete',
     'training_file_create',

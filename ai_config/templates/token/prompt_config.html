@@ -3,11 +3,14 @@
 
 {% block content %}
 <div class="container py-4">
-    <div class="card shadow-sm">
-        <!-- Header do Card -->
-        <div class="card-header bg-white d-flex justify-content-between align-items-center">
-            <h2 class="h4 mb-0">Configurações de Prompt para "{{ token.name }}"</h2>
-            <a href="{% url 'accounts:token_config' token.id %}" class="btn btn-outline-secondary btn-sm">
+    <!-- Card com estilo nativo do Bootswatch -->
+    <div class="card border-primary mb-3">
+        <!-- Header do Card em estilo Bootswatch -->
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h4 class="card-title mb-0">
+                <i class="bi bi-chat-left-text me-2"></i>Configurações de Prompt para "{{ token.name }}"
+            </h4>
+            <a href="{% url 'accounts:token_config' token.id %}" class="btn btn-outline-light">
                 <i class="bi bi-arrow-left"></i> Voltar
             </a>
         </div>
@@ -19,186 +22,86 @@
                 
                 <!-- Instrução Base -->
                 <div class="mb-4">
-                    <div class="d-flex justify-content-between align-items-center mb-2 collapse-header" role="button" data-bs-toggle="collapse" data-bs-target="#baseInstructionCollapse">
-                        <label for="id_base_instruction" class="form-label mb-0">
-                            <i class="bi bi-book-fill text-primary me-2"></i>
-                            Instrução Base
-                        </label>
-                        <i class="bi bi-chevron-down"></i>
-                    </div>
-                    <div class="collapse show" id="baseInstructionCollapse">
-                        {{ form.base_instruction }}
-                        <small class="text-muted">
-                            Instruções gerais que serão aplicadas em todas as comparações.
-                        </small>
+                    <div class="card border-light">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center" role="button" data-bs-toggle="collapse" data-bs-target="#baseInstructionCollapse">
+                            <h5 class="mb-0">
+                                <i class="bi bi-book-fill text-primary me-2"></i>
+                                Instrução Base
+                            </h5>
+                            <i class="bi bi-chevron-down"></i>
+                        </div>
+                        <div class="collapse show" id="baseInstructionCollapse">
+                            <div class="card-body">
+                                {{ form.base_instruction }}
+                                <div class="form-text">
+                                    Instruções gerais que serão aplicadas em todas as comparações.
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Prompt -->
                 <div class="mb-4">
-                    <div class="d-flex justify-content-between align-items-center mb-2 collapse-header" role="button" data-bs-toggle="collapse" data-bs-target="#promptCollapse">
-                        <label for="id_prompt" class="form-label mb-0">
-                            <i class="bi bi-chat-left-text-fill text-success me-2"></i>
-                            Prompt <span class="text-danger">*</span>
-                        </label>
-                        <i class="bi bi-chevron-down"></i>
-                    </div>
-                    <div class="collapse show" id="promptCollapse">
-                        {{ form.prompt }}
-                        <div class="invalid-feedback" id="promptFeedback">
-                            Este campo é obrigatório.
+                    <div class="card border-light">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center" role="button" data-bs-toggle="collapse" data-bs-target="#promptCollapse">
+                            <h5 class="mb-0">
+                                <i class="bi bi-chat-left-text-fill text-success me-2"></i>
+                                Prompt <span class="text-danger">*</span>
+                            </h5>
+                            <i class="bi bi-chevron-down"></i>
                         </div>
-                        <small class="text-muted">
-                            Prompt específico para cada comparação.
-                        </small>
+                        <div class="collapse show" id="promptCollapse">
+                            <div class="card-body">
+                                {{ form.prompt }}
+                                <div class="invalid-feedback" id="promptFeedback">
+                                    Este campo é obrigatório.
+                                </div>
+                                <div class="form-text">
+                                    Prompt específico para cada comparação.
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Respostas -->
                 <div class="mb-4">
-                    <div class="d-flex justify-content-between align-items-center mb-2 collapse-header" role="button" data-bs-toggle="collapse" data-bs-target="#responsesCollapse">
-                        <label for="id_responses" class="form-label mb-0">
-                            <i class="bi bi-reply-all-fill text-warning me-2"></i>
-                            Formato de Respostas
-                        </label>
-                        <i class="bi bi-chevron-down"></i>
-                    </div>
-                    <div class="collapse show" id="responsesCollapse">
-                        {{ form.responses }}
-                        <small class="text-muted">
-                            Respostas padrão que serão utilizadas nas comparações.
-                        </small>
+                    <div class="card border-light">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center" role="button" data-bs-toggle="collapse" data-bs-target="#responsesCollapse">
+                            <h5 class="mb-0">
+                                <i class="bi bi-reply-all-fill text-warning me-2"></i>
+                                Formato de Respostas
+                            </h5>
+                            <i class="bi bi-chevron-down"></i>
+                        </div>
+                        <div class="collapse show" id="responsesCollapse">
+                            <div class="card-body">
+                                {{ form.responses }}
+                                <div class="form-text">
+                                    Respostas padrão que serão utilizadas nas comparações.
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Botão de Salvar -->
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-save"></i> Salvar Configurações
-                </button>
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-2"></i>Salvar Configurações
+                    </button>
+                </div>
             </form>
+        </div>
+        <div class="card-footer text-body-secondary">
+            <small>
+                <i class="bi bi-info-circle me-1"></i>
+                Pressione <kbd>Ctrl</kbd> + <kbd>S</kbd> para salvar rapidamente suas alterações
+            </small>
         </div>
     </div>
 </div>
-
-<style>
-/* Editor e Preview lado a lado */
-.markdownx {
-    display: flex;
-    gap: 1rem;
-    position: relative;
-}
-
-/* Editor de markdown */
-.markdownx-editor {
-    flex: 1;
-    min-height: 150px; /* Altura mínima */
-    padding: 1rem;
-    border: 1px solid #dee2e6;
-    border-radius: 0.375rem;
-    font-family: monospace;
-    resize: none; /* Remove resize padrão para usar nossa implementação */
-    overflow-y: auto;
-}
-
-/* Preview do markdown (apenas para o preview nativo do markdownx) */
-.markdownx-preview {
-    flex: 1;
-    padding: 1rem;
-    border: 1px solid #dee2e6;
-    border-radius: 0.375rem;
-    background-color: #f8f9fa;
-    overflow-y: auto;
-}
-
-/* Classe auxiliar para definir a altura personalizada */
-.editor-height-custom {
-    height: 500px !important;
-}
-
-/* Manipulador de redimensionamento para editor e preview */
-.resizer {
-    height: 10px;
-    background-color: #f0f0f0;
-    border-top: 1px solid #ccc;
-    border-bottom: 1px solid #ccc;
-    cursor: ns-resize;
-    position: absolute;
-    bottom: -5px;
-    left: 0;
-    right: 0;
-    z-index: 10;
-    border-radius: 0 0 0.375rem 0.375rem;
-}
-
-.resizer:hover {
-    background-color: #ddd;
-}
-
-/* Responsividade */
-@media (max-width: 768px) {
-    .markdownx {
-        flex-direction: column;
-    }
-    
-    .markdownx-editor,
-    .markdownx-preview {
-        width: 100%;
-    }
-}
-
-/* Feedback visual */
-.form-control:focus {
-    border-color: #86b7fe;
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-}
-
-/* Animações */
-.btn {
-    transition: all 0.3s ease;
-}
-
-.btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11);
-}
-
-/* Estilo para os cabeçalhos colapsáveis */
-.collapse-header {
-    cursor: pointer;
-    padding: 0.5rem;
-    border-radius: 0.375rem;
-    transition: background-color 0.2s ease;
-}
-
-.collapse-header:hover {
-    background-color: rgba(0,0,0,0.05);
-}
-
-/* Animação para o ícone de chevron */
-.collapse.show + .btn-link .bi-chevron-down {
-    transform: rotate(180deg);
-}
-
-.bi-chevron-down {
-    transition: transform 0.3s ease;
-}
-
-/* Estilos para feedback de validação */
-.invalid-feedback {
-    display: none;
-    color: #dc3545;
-    font-size: 0.875em;
-    margin-top: 0.25rem;
-}
-
-.is-invalid {
-    border-color: #dc3545 !important;
-}
-
-.is-invalid:focus {
-    box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25) !important;
-}
-</style>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -218,11 +121,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Função para salvar o formulário via AJAX
     function saveForm() {
+        console.log('Função saveForm() chamada - tentativa de salvamento');
         if (!validateForm()) {
             return;
         }
         const form = document.getElementById('tokenConfigForm');
         const formData = new FormData(form);
+        
+        // Encontrar botão de submit ou criar referência para feedback
+        const submitButton = form.querySelector('button[type="submit"]');
+        
+        // Mostrar estado de carregamento
+        showButtonLoading(submitButton, 'Salvando...');
 
         fetch(window.location.href, {
             method: 'POST',
@@ -233,48 +143,53 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(response => {
             if (response.ok) {
-                // Criar elemento de mensagem no estilo do base.html
-                const messageContainer = document.createElement('div');
-                messageContainer.className = 'container mt-3';
-                messageContainer.innerHTML = `
-                    <div class="alert alert-success alert-dismissible fade show" role="alert">
-                        Configurações salvas com sucesso!
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
-                    </div>
-                `;
-                
-                // Inserir a mensagem logo após a navbar
-                const navbar = document.querySelector('nav');
-                navbar.parentNode.insertBefore(messageContainer, navbar.nextSibling);
-
-                // Remover a mensagem após 3 segundos
-                setTimeout(() => {
-                    const alert = messageContainer.querySelector('.alert');
-                    const bsAlert = new bootstrap.Alert(alert);
-                    bsAlert.close();
-                    setTimeout(() => messageContainer.remove(), 150);
-                }, 3000);
+                if (typeof showMessage === 'function') {
+                    showMessage('success', 'Configurações salvas com sucesso!');
+                } else {
+                    // Fallback para alerta bootstrap nativo
+                    const alertHtml = `
+                        <div class="alert alert-dismissible alert-success">
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            <strong>Sucesso!</strong> Configurações salvas com sucesso!
+                        </div>
+                    `;
+                    const container = document.querySelector('.container');
+                    container.insertAdjacentHTML('afterbegin', alertHtml);
+                    
+                    // Remover o alerta após 3 segundos
+                    setTimeout(() => {
+                        const alert = document.querySelector('.alert');
+                        if (alert) {
+                            const bsAlert = new bootstrap.Alert(alert);
+                            bsAlert.close();
+                        }
+                    }, 3000);
+                }
+            } else {
+                if (typeof showMessage === 'function') {
+                    showMessage('error', 'Erro ao salvar configurações');
+                }
             }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            if (typeof showMessage === 'function') {
+                showMessage('error', 'Erro ao salvar configurações');
+            }
+        })
+        .finally(() => {
+            hideButtonLoading(submitButton);
         });
     }
 
     // Adiciona validação em tempo real ao campo prompt
-    document.querySelector('#id_prompt').addEventListener('input', function() {
-        validateForm();
-    });
-
-    // Atualiza o evento de submit do formulário
-    document.getElementById('tokenConfigForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        if (validateForm()) {
-            this.submit();
-        }
-    });
+    document.querySelector('#id_prompt').addEventListener('input', validateForm);
 
     // Suporte ao ctrl+s
     document.addEventListener('keydown', function(e) {
-        if (e.ctrlKey && e.key === 's') {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
             e.preventDefault();
+            console.log('Ctrl+S pressionado - salvamento manual');
             saveForm();
         }
     });
@@ -289,74 +204,6 @@ document.addEventListener('DOMContentLoaded', function() {
             this.previousElementSibling.querySelector('.bi-chevron-down').style.transform = 'rotate(0deg)';
         });
     });
-    
-    // Adiciona o redimensionador aos elementos markdownx
-    setupResizers();
-    
-    // Define a altura inicial dos editores e previews com um pequeno atraso
-    setTimeout(initializeEditorHeights, 100);
 });
-
-// Função para definir a altura inicial dos editores e previews
-function initializeEditorHeights() {
-    document.querySelectorAll('.markdownx').forEach(markdownArea => {
-        const editor = markdownArea.querySelector('.markdownx-editor');
-        const preview = markdownArea.querySelector('.markdownx-preview');
-        
-        if (!editor || !preview) return;
-        
-        // Adiciona uma classe CSS com !important em vez de estilo inline
-        editor.classList.add('editor-height-custom');
-        preview.classList.add('editor-height-custom');
-        
-        // Como backup, também define via JavaScript
-        const defaultHeight = 500; // altura padrão em pixels
-        editor.style.setProperty('height', `${defaultHeight}px`, 'important');
-        preview.style.setProperty('height', `${defaultHeight}px`, 'important');
-        
-        // Força um redimensionamento para assegurar que o layout seja atualizado
-        editor.setAttribute('style', editor.getAttribute('style') + '; height: 500px !important');
-    });
-}
-
-// Função para configurar os redimensionadores para todos os campos markdownx
-function setupResizers() {
-    document.querySelectorAll('.markdownx').forEach(markdownArea => {
-        const editor = markdownArea.querySelector('.markdownx-editor');
-        const preview = markdownArea.querySelector('.markdownx-preview');
-        
-        if (!editor || !preview) return;
-        
-        // Criar o elemento resizer
-        const resizer = document.createElement('div');
-        resizer.className = 'resizer';
-        markdownArea.appendChild(resizer);
-        
-        // Configurar os eventos de redimensionamento
-        resizer.addEventListener('mousedown', function(e) {
-            e.preventDefault();
-            
-            const startY = e.clientY;
-            const startHeight = parseInt(window.getComputedStyle(editor).height);
-            
-            document.addEventListener('mousemove', resize);
-            document.addEventListener('mouseup', stopResize);
-            
-            function resize(e) {
-                const newHeight = startHeight + e.clientY - startY;
-                if (newHeight >= 150) { // Respeitar a altura mínima
-                    // Usar setProperty com '!important' para garantir que sobrescreva outros estilos
-                    editor.style.setProperty('height', `${newHeight}px`, 'important');
-                    preview.style.setProperty('height', `${newHeight}px`, 'important');
-                }
-            }
-            
-            function stopResize() {
-                document.removeEventListener('mousemove', resize);
-                document.removeEventListener('mouseup', stopResize);
-            }
-        });
-    });
-}
 </script>
 {% endblock %}

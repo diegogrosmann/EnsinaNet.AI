@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <!-- Cabeçalho com estilo Bootswatch -->
+            <div class="page-header mb-4 text-center">
+                <h2><i class="bi bi-gear-fill me-2"></i>Configurações</h2>
+                <p class="lead text-secondary">Gerencie suas informações pessoais e preferências do sistema</p>
+            </div>
+
+            <!-- Card com estilo nativo do Bootswatch -->
+            <div class="card border-primary mb-3">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="card-title mb-0">Suas Preferências</h4>
+                </div>
+                <div class="card-body">
+                    <!-- Navegação em abas estilo Bootswatch -->
+                    <ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="personal-tab" data-bs-toggle="tab" data-bs-target="#personal" type="button" role="tab">
+                                <i class="bi bi-person-fill me-2"></i>Informações Pessoais
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#system" type="button" role="tab">
+                                <i class="bi bi-sliders me-2"></i>Configurações do Sistema
+                            </button>
+                        </li>
+                    </ul>
+
+                    <form method="post" id="settingsForm">
+                        {% csrf_token %}
+                        
+                        <!-- Conteúdo das abas -->
+                        <div class="tab-content" id="settingsTabsContent">
+                            <!-- Aba de Informações Pessoais -->
+                            <div class="tab-pane fade show active" id="personal" role="tabpanel">
+                                <div class="card border-light bg-light mb-3">
+                                    <div class="card-body">
+                                        <div class="row mb-3">
+                                            <div class="col-md-6">
+                                                <label for="id_first_name" class="form-label">Nome</label>
+                                                {{ form.first_name|safe }}
+                                                <div class="form-text text-muted">Seu primeiro nome</div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label for="id_last_name" class="form-label">Sobrenome</label>
+                                                {{ form.last_name|safe }}
+                                                <div class="form-text text-muted">Seu sobrenome</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="id_email" class="form-label">Email</label>
+                                            {{ form.email|safe }}
+                                            <div class="form-text text-muted">Este endereço é usado para acessar sua conta</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Aba de Configurações do Sistema -->
+                            <div class="tab-pane fade" id="system" role="tabpanel">
+                                <div class="card border-light bg-light mb-3">
+                                    <div class="card-body">
+                                        <div class="mb-3">
+                                            <label for="id_capture_inactivity_timeout" class="form-label">Tempo de Inatividade de Captura (minutos)</label>
+                                            {{ form.capture_inactivity_timeout|safe }}
+                                            <div class="form-text text-muted">
+                                                Define por quanto tempo a captura continuará mesmo sem atividade
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Botões de ação com estilo Bootswatch -->
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-save me-2"></i>Salvar Alterações
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-footer text-body-secondary">
+                    <small>
+                        <i class="bi bi-info-circle me-1"></i>
+                        Pressione <kbd>Ctrl</kbd> + <kbd>S</kbd> para salvar rapidamente suas alterações
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Inicializa todos os tooltips
+document.addEventListener('DOMContentLoaded', function() {
+    // Adiciona classes do Bootstrap aos campos do formulário
+    const inputs = document.querySelectorAll('input');
+    inputs.forEach(input => {
+        if (!input.classList.contains('form-control')) {
+            input.classList.add('form-control');
+        }
+    });
+
+    // Suporte ao ctrl+s
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            document.getElementById('settingsForm').submit();
+        }
+    });
+
+    // Preserva a aba ativa após recarregar a página
+    const activeTab = localStorage.getItem('activeSettingsTab');
+    if (activeTab) {
+        const tabElement = document.querySelector(activeTab);
+        if (tabElement) {
+            const tab = new bootstrap.Tab(tabElement);
+            tab.show();
+        }
+    }
+
+    // Salva a aba ativa quando mudar
+    const triggerTabList = [].slice.call(document.querySelectorAll('#settingsTabs button'));
+    triggerTabList.forEach(function (triggerEl) {
+        triggerEl.addEventListener('shown.bs.tab', function (e) {
+            localStorage.setItem('activeSettingsTab', '#' + e.target.id);
+        });
+    });
+
+    // Inicializa tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+        new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+});
+</script>
+{% endblock %}

@@ -1,32 +1,45 @@
 <!-- Modal -->
-<div class="modal fade" id="deleteConfirmationModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Confirmar Exclusão</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-            </div>
-            <div class="modal-body">
-                <p>Tem certeza de que deseja deletar este token?</p>
-                <form id="deleteTokenForm" method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="token_id" id="delete_token_id">
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="bi bi-x-lg me-1"></i>Cancelar
-                </button>
-                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
-                    <i class="bi bi-trash me-1"></i>Deletar
-                </button>
-            </div>
+<div class="modal fade" id="deleteConfirmationModal" tabindex="-1" aria-labelledby="deleteConfirmationModalLabel" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteConfirmationModalLabel">
+          <i class="bi bi-exclamation-triangle text-danger me-2"></i>
+          Confirmar Exclusão
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Tem certeza de que deseja deletar <strong id="tokenNameToDelete">este token</strong>?</p>
+        <div class="alert alert-warning">
+          <i class="bi bi-info-circle me-2"></i>
+          Esta ação não pode ser desfeita e removerá todas as configurações associadas.
         </div>
+        <form id="deleteTokenForm" method="post">
+          {% csrf_token %}
+          <input type="hidden" name="token_id" id="delete_token_id">
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          <i class="bi bi-x-lg me-1"></i>Cancelar
+        </button>
+        <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
+          <i class="bi bi-trash me-1"></i>Deletar
+        </button>
+      </div>
     </div>
+  </div>
 </div>
 
 <!-- Script para suporte a teclas de atalho -->
 <script>
+    // Função auxiliar para construir URLs
+    function buildTokenUrl(baseUrl, tokenId) {
+        // Certifica-se de construir a URL corretamente, evitando barras duplas
+        return baseUrl.replace('ffffffff-ffff-ffff-ffff-ffffffffffff', tokenId);
+    }
+
     // Corrigido o código para verificar se o elemento existe
     document.addEventListener('keydown', function(e) {
         const deleteConfirmationModal = document.getElementById('deleteConfirmationModal');
@@ -41,20 +54,26 @@
         }
     });
 
-    // Lógica para deleção de token via modal
-    const deleteTokenModal = document.getElementById('deleteConfirmationModal');
-    deleteTokenModal.addEventListener('show.bs.modal', function (event) {
-        const button = event.relatedTarget;
-        const tokenId = button.getAttribute('data-token-id'); 
-        document.getElementById('delete_token_id').value = tokenId;
-    });
+    // Removido o event listener do modal que estava causando o erro
+    // const deleteTokenModal = document.getElementById('deleteConfirmationModal');
+    // deleteTokenModal.addEventListener('show.bs.modal', function (event) {
+    //     const button = event.relatedTarget;
+    //     const tokenId = button.getAttribute('data-token-id'); 
+    //     document.getElementById('delete_token_id').value = tokenId;
+    // });
 
     const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
     confirmDeleteBtn.addEventListener('click', function() {
+        // Alterar o botão para mostrar carregamento
+        confirmDeleteBtn.disabled = true;
+        confirmDeleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Deletando...';
+        
         const form = document.getElementById('deleteTokenForm');
         const formData = new FormData(form);
         const tokenId = formData.get('token_id');
-        const url = `/accounts/tokens/${tokenId}/delete/`;
+        
+        // Usar a função auxiliar para construir a URL corretamente
+        const url = buildTokenUrl("{% url 'accounts:token_delete' 'ffffffff-ffff-ffff-ffff-ffffffffffff' %}", tokenId);
 
         fetch(url, {
             method: 'POST',
@@ -71,59 +90,20 @@
         })
         .then(data => {
             if (data.success === false && data.error) {
+                showMessage('danger', data.error);
                 console.error('Erro do servidor:', data.error);
             } else {
                 window.location.reload();
             }
         })
         .catch(error => {
+            showMessage('danger', 'Erro ao deletar token. Tente novamente.');
             console.error('Erro ao deletar token:', error);
+        })
+        .finally(() => {
+            // Restaurar estado do botão
+            confirmDeleteBtn.disabled = false;
+            confirmDeleteBtn.innerHTML = '<i class="bi bi-trash me-1"></i>Deletar';
         });
     });
 </script>
-
-<!-- Estilos aplicados -->
-<style>
-.modal-content {
-    border: none;
-    border-radius: 0.5rem;
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
-}
-
-.modal-header {
-    border-bottom: 1px solid rgba(0,0,0,0.1);
-    background-color: #f8f9fa;
-    border-radius: 0.5rem 0.5rem 0 0;
-}
-
-.modal-footer {
-    border-top: 1px solid rgba(0,0,0,0.1);
-    background-color: #f8f9fa;
-    border-radius: 0 0 0.5rem 0.5rem;
-}
-
-.form-check-input:checked {
-    background-color: #dc3545;
-    border-color: #dc3545;
-}
-
-.form-check-input:focus {
-    border-color: #dc3545;
-    box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25);
-}
-
-.alert {
-    margin-bottom: 0;
-    padding: 0.75rem;
-    font-size: 0.875rem;
-}
-
-.btn {
-    transition: all 0.3s ease;
-}
-
-.btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11);
-}
-</style>

@@ -20,10 +20,9 @@ from ai_config.models import (
     TrainingCapture
 )
 from ai_config.forms import (
-    TrainAIForm,
     TrainingCaptureForm,
 )
-from ai_config.utils import perform_training
+
 from api.utils.clientsIA import TrainingStatus
 
 logger = logging.getLogger(__name__)
@@ -97,17 +96,14 @@ def training_ai(request: HttpRequest) -> HttpResponse:
         return JsonResponse({'error': 'Método não permitido'}, status=405)
 
     try:
-        # Debug para verificar o que está chegando no request
         logger.debug(f"POST data: {request.POST}")
-        logger.debug(f"Selected IAs: {request.POST.getlist('selected_ais')}")  # Aqui está esperando 'selected_ias'
+        logger.debug(f"Selected IAs: {request.POST.getlist('selected_ais')}")
         
-        # Obtém as IAs selecionadas do formulário
-        selected_ias = request.POST.getlist('selected_ais', [])
-        if not selected_ias:
+        selected_ais = request.POST.getlist('selected_ais', [])
+        if not selected_ais:
             messages.warning(request, 'Nenhuma IA selecionada')
             return JsonResponse({'error': 'Nenhuma IA selecionada'}, status=400)
 
-        # Obtém o arquivo de treinamento
         file_id = request.POST.get('file_id')
         if not file_id:
             messages.warning(request, 'Arquivo de treinamento não especificado')
@@ -115,29 +111,33 @@ def training_ai(request: HttpRequest) -> HttpResponse:
 
         training_file = get_object_or_404(AITrainingFile, id=file_id, user=request.user)
 
-        # Verifica se todas as IAs pertencem ao usuário
         if not AIClientConfiguration.objects.filter(
-            id__in=selected_ias, 
+            id__in=selected_ais, 
             user=request.user
-        ).count() == len(selected_ias):
+        ).count() == len(selected_ais):
             messages.error(request, 'Algumas IAs selecionadas não pertencem ao seu usuário')
             return JsonResponse({'error': 'Permissão negada'}, status=403)
 
-        # Inicia o treinamento
-        results = perform_training(
-            selected_ias=selected_ias,
-            training_file=training_file
-        )
-
-        # Verifica os resultados do treinamento
+        # Inicia o treinamento para cada IA selecionada
+        results = []
         successful_trainings = []
         failed_trainings = []
 
-        for result in results:
-            if result.get('status') == 'initiated':
-                successful_trainings.append(result)
-            else:
-                failed_trainings.append(result)
+        for ai_id in selected_ais:
+            ai_config = AIClientConfiguration.objects.get(id=ai_id)
+            try:
+                result = ai_config.perform_training(training_file)
+                results.append(result)
+                if result['status'] == TrainingStatus.IN_PROGRESS:
+                    successful_trainings.append(result)
+                else:
+                    failed_trainings.append(result)
+            except Exception as e:
+                failed_trainings.append({
+                    'ai_name': ai_config.name,
+                    'error': str(e),
+                    'status': TrainingStatus.FAILED
+                })
 
         # Monta as mensagens detalhadas
         if successful_trainings:
@@ -162,129 +162,126 @@ def training_ai(request: HttpRequest) -> HttpResponse:
         return JsonResponse({'success': False}, status=500)
 
 @login_required
-def training_status(request):
-    """Endpoint para status do treinamento em tempo real."""
-    user = request.user
-    try:
-        trainings = []
-        queue_status = {'queued': 0, 'started': 0, 'finished': 0}
-        
-        active_trainings = AITraining.objects.filter(
-            ai_config__token__user=user,
-            ai_config__enabled=True
-        ).select_related(
-            'ai_config__ai_client',
-            'file'
-        ).order_by('-created_at')
-        
-        for training in active_trainings:
-            if training.status == 'not_started':
-                queue_status['queued'] += 1
-            elif training.status == 'in_progress':
-                queue_status['started'] += 1
-            elif training.status in ['completed', 'failed']:
-                queue_status['finished'] += 1
-            
-            trainings.append({
-                'id': training.job_id,
-                'ai_name': training.ai_config.name,
-                'file_name': training.file.name if training.file else 'N/A',
-                'status': training.status,
-                'status_color': _get_status_color(training.status),
-                'error': training.error,
-                'model_name': training.model_name,
-                'progress': training.progress,  # Adiciona o progresso
-                'completed_at': training.created_at.isoformat() if training.created_at else None 
-            })
-        
-        return JsonResponse({
-            'success': True,
-            'trainings': trainings,
-            'queue_status': queue_status
-        })
-        
-    except Exception as e:
-        logger.error("Erro ao obter status dos treinamentos", exc_info=True)
-        return JsonResponse({
-            'success': False,
-            'error': str(e),
-            'trainings': [],
-            'queue_status': {'queued': 0, 'started': 0, 'finished': 0}
-        }, status=500)
-
-@login_required
-@require_http_methods(["POST"])
-def training_progress(request):
-    """Endpoint para monitoramento de progresso de treinamento específico.
+def training_monitor(request):
+    """Endpoint unificado para monitoramento de treinamento.
     
-    Returns:
-        JsonResponse: Lista com detalhes do progresso dos treinamentos.
+    Se fornecidos job_ids[] e config_ids[], retorna o status específico desses treinamentos.
+    Caso contrário, retorna o status geral de todos os treinamentos.
     """
-    job_ids = request.GET.getlist('job_ids[]')  # Aceita múltiplos job_ids
-    config_ids = request.GET.getlist('config_ids[]')  # Aceita múltiplos config_ids
+    user = request.user
     
-    if not job_ids or not config_ids or len(job_ids) != len(config_ids):
-        return JsonResponse({'error': 'Parâmetros inválidos'}, status=400)
-        
-    results = []
-    try:
-        for job_id, config_id in zip(job_ids, config_ids):
-            config = AIClientConfiguration.objects.get(
-                id=config_id,
-                token__user=request.user
-            )
-            
-            try:
-                client = config.create_api_client_instance()
-                if not client.can_train:
+    # Verifica se há parâmetros específicos de job para um monitoramento detalhado
+    job_ids = request.GET.getlist('job_ids[]')
+    config_ids = request.GET.getlist('config_ids[]')
+    
+    if job_ids and config_ids and len(job_ids) == len(config_ids):
+        # Lógica da antiga função training_progress
+        results = []
+        try:
+            for job_id, config_id in zip(job_ids, config_ids):
+                config = AIClientConfiguration.objects.get(
+                    id=config_id,
+                    token__user=user
+                )
+                
+                try:
+                    client = config.create_api_client_instance()
+                    if not client.can_train:
+                        results.append({
+                            'job_id': job_id,
+                            'config_id': config_id,
+                            'error': 'IA não suporta treinamento'
+                        })
+                        continue
+                        
+                    status = client.get_training_status(job_id)
+                    
                     results.append({
                         'job_id': job_id,
                         'config_id': config_id,
-                        'error': 'IA não suporta treinamento'
+                        'completed': status.status in [TrainingStatus.COMPLETED, TrainingStatus.FAILED],
+                        'status': status.status.value,
+                        'progress': round(status.progress * 100, 2),
+                        'error': status.error if status.error else None,
+                        'model_name': status.model_name if status.model_name else None
+                    })
+                except Exception as e:
+                    results.append({
+                        'job_id': job_id,
+                        'config_id': config_id,
+                        'error': str(e)
                     })
                     continue
-                    
-                status = client.get_training_status(job_id)
                 
-                results.append({
-                    'job_id': job_id,
-                    'config_id': config_id,
-                    'completed': status.status in [TrainingStatus.COMPLETED, TrainingStatus.FAILED],
-                    'status': status.status.value,
-                    'progress': round(status.progress * 100, 2),
-                    'error': status.error if status.error else None,
-                    'model_name': status.model_name if status.model_name else None
-                })
-            except Exception as e:
-                results.append({
-                    'job_id': job_id,
-                    'config_id': config_id,
-                    'error': str(e)
-                })
-                continue
+            return JsonResponse({'results': results})
             
-        return JsonResponse({'results': results})
-        
-    except AIClientConfiguration.DoesNotExist:
-        return JsonResponse({'error': 'Configuração não encontrada'}, status=404)
-    except Exception as e:
-        logger.error(f"Erro ao obter progresso do treinamento: {e}")
-        return JsonResponse({'error': str(e)}, status=500)
+        except AIClientConfiguration.DoesNotExist:
+            return JsonResponse({'error': 'Configuração não encontrada'}, status=404)
+        except Exception as e:
+            logger.error(f"Erro ao obter progresso do treinamento: {e}")
+            return JsonResponse({'error': str(e)}, status=500)
+    else:
+        # Lógica da antiga função training_status
+        try:
+            trainings = []
+            queue_status = {'queued': 0, 'started': 0, 'finished': 0}
+            
+            # Consulta corrigida: filtrar diretamente pelo usuário dono da configuração
+            active_trainings = AITraining.objects.filter(
+                ai_config__user=user  # Filtro direto pelo usuário da configuração
+            ).select_related(
+                'ai_config__ai_client',
+                'file'
+            ).order_by('-created_at')
+            
+            for training in active_trainings:
+                if training.status == 'not_started':
+                    queue_status['queued'] += 1
+                elif training.status == 'in_progress':
+                    queue_status['started'] += 1
+                elif training.status in ['completed', 'failed']:
+                    queue_status['finished'] += 1
+                
+                trainings.append({
+                    'id': str(training.id), 
+                    'job_id': training.job_id, 
+                    'ai_name': training.ai_config.name,
+                    'file_name': training.file.name if training.file else 'N/A',
+                    'status': training.status,
+                    'error': training.error,
+                    'model_name': training.model_name,
+                    'progress': training.progress, 
+                    'completed_at': training.created_at.isoformat() if training.created_at else None 
+                })
+            
+            return JsonResponse({
+                'success': True,
+                'trainings': trainings,
+                'queue_status': queue_status
+            })
+            
+        except Exception as e:
+            logger.error("Erro ao obter status dos treinamentos", exc_info=True)
+            return JsonResponse({
+                'success': False,
+                'error': str(e),
+                'trainings': [],
+                'queue_status': {'queued': 0, 'started': 0, 'finished': 0}
+            }, status=500)
 
 @login_required
 @require_http_methods(["POST"])
-def training_cancel(request, job_id):
+def training_cancel(request, training_id):
     """Endpoint para cancelamento de treinamento."""
-    if not job_id:
-        messages.error(request, 'ID do job não fornecido')
+    if not training_id:
+        messages.error(request, 'ID do treinamento não fornecido')
         return JsonResponse({'success': False}, status=400)
         
     try:
-        decoded_job_id = _decode_job_id(job_id)
-        # Encontra o treinamento
+        # Encontra o treinamento pelo ID numérico
         training = AITraining.objects.get(
-            job_id=decoded_job_id,
-            ai_config__token__user=request.user
+            id=training_id,
+            ai_config__user=request.user.id
         )
         
         # Usa o método cancel_training()
@@ -305,18 +302,17 @@ def training_cancel(request, job_id):
 
 @login_required
 @require_http_methods(["POST"])
-def training_delete(request, job_id):
+def training_delete(request, training_id):
     """Endpoint para excluir um treinamento."""
-    if not job_id:
-        messages.error(request, 'ID do job não fornecido')
-        return JsonResponse({'error': 'ID do job não fornecido'}, status=400)
+    if not training_id:
+        messages.error(request, 'ID do treinamento não fornecido')
+        return JsonResponse({'error': 'ID do treinamento não fornecido'}, status=400)
         
     try:
-        decoded_job_id = _decode_job_id(job_id)
-        # Encontra o treinamento
+        # Encontra o treinamento pelo ID numérico
         training = AITraining.objects.get(
-            job_id=decoded_job_id,
-            ai_config__token__user=request.user
+            id=training_id,
+            ai_config__user=request.user.id
         )
         
         # Se estiver em andamento, tenta cancelar primeiro
@@ -337,34 +333,3 @@ def training_delete(request, job_id):
         logger.error(f"Erro ao excluir treinamento: {e}")
         messages.error(request, f'Erro ao excluir treinamento: {str(e)}')
         return JsonResponse({'error': str(e)}, status=500)
-
-def _decode_job_id(encoded_id: str) -> str:
-    """Decodifica o job_id da URL.
-    
-    Args:
-        encoded_id (str): ID codificado em base64 url-safe
-        
-    Returns:
-        str: ID decodificado
-    """
-    try:
-        # Substitui caracteres url-safe pelos originais base64
-        encoded_id = encoded_id.replace('-', '+').replace('_', '/')
-        # Adiciona padding se necessário
-        padding = 4 - (len(encoded_id) % 4)
-        if padding != 4:
-            encoded_id += '=' * padding
-        # Decodifica
-        return base64.b64decode(encoded_id).decode('utf-8')
-    except Exception as e:
-        logger.error(f"Erro ao decodificar job_id: {e}")
-        raise ValueError(f"ID inválido: {encoded_id}")
-
-def _get_status_color(status):
-    """Retorna a cor do bootstrap correspondente ao status."""
-    return {
-        'not_started': 'secondary',  # cinza
-        'in_progress': 'primary',    # azul
-        'completed': 'success',      # verde
-        'failed': 'danger'          # vermelho
-    }.get(status, 'secondary')

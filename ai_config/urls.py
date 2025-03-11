@@ -22,20 +22,20 @@ training_patterns = [
         path('upload/', views.training_file_upload, name='training_file_upload'),
         path('<int:file_id>/', include([
             path('', views.training_file_create, name='training_file_edit'),
-            path('download-training-file/', views.training_file_download, name='training_file_download'),
+            path('download/', views.training_file_download, name='training_file_download'),
             path('delete/', views.training_file_delete, name='training_file_delete'),
         ])),
     ])),
     path('capture/toggle/', views.capture_toggle, name='capture_toggle'),
-    path('tokens/<uuid:token_id>/ai/<int:ai_id>/get-examples', 
-         views.capture_get_examples, 
-         name='capture_get_examples'),
-    # Novos endpoints
-    path('train/', views.training_ai, name='training_ai'),  # URL simplificada
-    path('status/', views.training_status, name='training_status'),
-    path('progress/', views.training_progress, name='training_progress'),
-    path('cancel/<str:job_id>/', views.training_cancel, name='training_cancel'),
-    path('delete/<str:job_id>/', views.training_delete, name='training_delete'),  # Nova URL
+    path('tokens/<uuid:token_id>/ai/<int:ai_id>/get-examples', views.capture_get_examples, name='capture_get_examples'),
+    path('train/', include([
+        path('', views.training_ai, name='training_ai'),
+        path('<int:training_id>/' , include([
+            path('cancel/', views.training_cancel, name='training_cancel'),
+            path('delete/', views.training_delete, name='training_delete'),
+        ])),
+    ])),
+    path('monitor/', views.training_monitor, name='training_monitor'), 
 ]
 
 token_patterns = [

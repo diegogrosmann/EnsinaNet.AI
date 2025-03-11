@@ -3,87 +3,176 @@
 {% load ai_config_tags %}
 
 {% block content %}
-<div class="container my-4">
-    <div class="card shadow-sm">
-        <div class="container">
-            <div class="row mb-4">
-                <div class="col">
-                    <h2 class="text-center">Gerenciador de Tokens</h2>
-                </div>
+<div class="container py-4">
+    <div class="bs-component">
+        <!-- Card Principal usando estrutura padrão do Bootswatch -->
+        <div class="card border-primary mb-3">
+            <!-- Header do Card com estilo Bootswatch -->
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="card-title mb-0">
+                    <i class="bi bi-key me-2"></i>
+                    Gerenciador de Tokens
+                </h2>
             </div>
 
-            {% if not is_approved %}
-                <div class="alert alert-warning" role="alert">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    <strong>Aguardando aprovação!</strong> Você ainda não pode criar tokens porque sua conta está aguardando aprovação. Por favor, aguarde ou entre em contato com o administrador.
-                </div>
-            {% else %}
+            <!-- Corpo do Card -->
             <div class="card-body">
-                <div class="tab-content" id="manageTabsContent">
-                    <!-- Tokens Tab -->
-                    <div class="tab-pane fade show active" id="tokens" role="tabpanel" aria-labelledby="tokens-tab">
-                        <div class="d-flex justify-content-end mb-3">
-                            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTokenModal" {% if not is_approved %}disabled{% endif %}>
-                                <i class="bi bi-plus-circle"></i> Novo Token
-                            </button>
+                {% if not is_approved %}
+                    <div class="alert alert-warning" role="alert">
+                        <div class="d-flex">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <div>
+                                <strong>Aguardando aprovação!</strong> Você ainda não pode criar tokens porque sua conta está aguardando aprovação. Por favor, aguarde ou entre em contato com o administrador.
+                            </div>
+                        </div>
+                    </div>
+                {% else %}
+                    {% if tokens %}
+                        <!-- Filtros e Controles -->
+                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
+                            <!-- Controles à esquerda -->
+                            <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
+                                <button class="btn btn-sm btn-outline-primary toggle-filters" type="button" aria-expanded="true" aria-controls="filterControls">
+                                    <i class="bi bi-funnel me-1"></i>Filtros
+                                    <i class="bi bi-chevron-down ms-1"></i>
+                                </button>
+                                
+                                <!-- Informação de paginação -->
+                                <div class="text-muted d-none d-sm-block">
+                                    Mostrando <span id="paginationFrom">1</span> a <span id="paginationTo">10</span> de <span id="paginationTotal">{{ tokens|length }}</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Controles à direita -->
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="input-group input-group-sm" style="width: auto; min-width: 120px; max-width: 250px;">
+                                    <span class="input-group-text">Por página</span>
+                                    <select id="itemsPerPage" class="form-select form-select-sm" style="min-width: 70px;">
+                                        <option value="5">5</option>
+                                        <option value="10" selected>10</option>
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                    </select>
+                                </div>
+                                
+                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTokenModal" {% if not is_approved %}disabled{% endif %}>
+                                    <i class="bi bi-plus-circle"></i> Novo Token
+                                </button>
+                            </div>
                         </div>
 
-                        {% if tokens %}
-                            <div class="table-responsive">
-                                <table class="table table-striped table-hover table-management">
-                                    <thead>
-                                        <tr>
-                                            <th>Nome</th>
-                                            <th>Token</th>
-                                            <th>Criado em</th>
-                                            <th class="text-end">Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% for token in tokens %}
-                                        <tr>
-                                            <td class="align-middle">
-                                                <a href="{% url 'accounts:token_config' token.id %}" class="table-link">
-                                                    <i class="bi bi-gear text-muted small"></i>
-                                                    <span>{{ token.name }}</span>
-                                                </a>
-                                            </td>
-                                            <td class="align-middle">
-                                                <div class="input-group input-group-sm">
-                                                    <input type="text" class="form-control" value="{{ token.key }}" readonly>
-                                                    <button class="btn btn-outline-secondary copy-btn" type="button" data-clipboard-text="{{ token.key }}" data-bs-toggle="tooltip" title="Copiar">
-                                                        <i class="bi bi-clipboard"></i>
-                                                    </button>
-                                                </div>
-                                            </td>
-                                            <td>{{ token.created|date:"d/m/Y H:i" }}</td>
-                                            <td class="text-end">
+                        <!-- Filtros Expandidos -->
+                        <div class="card bg-light mb-3" id="filterControls">
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <!-- Filtro por Nome -->
+                                    <div class="col-12 col-md-6">
+                                        <label for="filterName" class="form-label">Nome do Token</label>
+                                        <input type="text" id="filterName" class="form-control form-control-sm filter" placeholder="Filtrar por nome...">
+                                    </div>
+                                    
+                                    <!-- Filtro por Data -->
+                                    <div class="col-12 col-md-6">
+                                        <label for="filterDate" class="form-label">Data de Criação</label>
+                                        <input type="date" id="filterDate" class="form-control form-control-sm filter">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tabela Responsiva no estilo Bootswatch -->
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" class="sortable" data-sort-key="name">
+                                            Nome
+                                            <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                        </th>
+                                        <th scope="col" class="d-none d-md-table-cell">Token</th>
+                                        <th scope="col" class="sortable d-none d-md-table-cell" data-sort-key="date">
+                                            Criado em
+                                            <i class="sort-icon bi bi-sort-numeric-down"></i>
+                                        </th>
+                                        <th scope="col" class="text-end">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tokenTable">
+                                    {% for token in tokens %}
+                                    <tr data-value="{{ token.name|lower }}" data-date="{{ token.created|date:'Ymd' }}">
+                                        <th scope="row" data-value="{{ token.name|lower }}">
+                                            <a href="{% url 'accounts:token_config' token.id %}" class="text-decoration-none">
+                                                {{ token.name }}
+                                            </a>
+                                            <!-- Informações extras para telas pequenas -->
+                                            <div class="d-md-none mt-1">
+                                                <small class="text-muted d-block">
+                                                    <strong>Criado em:</strong> {{ token.created|date:"d/m/Y H:i" }}
+                                                </small>
+                                            </div>
+                                        </th>
+                                        <td class="d-none d-md-table-cell">
+                                            <div class="input-group">
+                                                <input type="text" class="form-control" value="{{ token.key }}" readonly>
+                                                <button class="btn btn-outline-secondary copy-btn" type="button" data-clipboard-text="{{ token.key }}">
+                                                    <i class="bi bi-clipboard"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td class="d-none d-md-table-cell" data-value="{{ token.created|date:'Ymd' }}">{{ token.created|date:"d/m/Y H:i" }}</td>
+                                        <td class="text-end">
+                                            <div class="d-flex justify-content-end gap-2">
+                                                <button class="btn btn-sm btn-outline-secondary copy-btn d-md-none" type="button" data-clipboard-text="{{ token.key }}" title="Copiar token">
+                                                    <i class="bi bi-clipboard"></i>
+                                                </button>
                                                 <div class="btn-group">
-                                                    <!-- Botão que abre o modal de deleção -->
-                                                    <button 
-                                                        class="btn btn-sm btn-outline-danger" 
-                                                        data-bs-toggle="modal" 
-                                                        data-bs-target="#deleteConfirmationModal" 
-                                                        data-token-id="{{ token.id }}"
-                                                    >
+                                                    <button class="btn btn-sm btn-danger" 
+                                                            onclick="confirmDelete('{{ token.id }}', '{{ token.name }}')"
+                                                            title="Excluir Token">
                                                         <i class="bi bi-trash"></i>
                                                     </button>
                                                 </div>
-                                            </td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Paginação no estilo Bootswatch -->
+                        <nav aria-label="Paginação da tabela de tokens" class="mt-3">
+                            <ul class="pagination pagination-sm justify-content-center" id="pagination">
+                                <li class="page-item disabled">
+                                    <a class="page-link" href="#" id="prevPage" aria-label="Página anterior">
+                                        <span aria-hidden="true">&laquo;</span>
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="#" id="nextPage" aria-label="Próxima página">
+                                        <span aria-hidden="true">&raquo;</span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </nav>
+                    {% else %}
+                        <div class="d-flex justify-content-end mb-3">
+                            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTokenModal">
+                                <i class="bi bi-plus-circle"></i> Novo Token
+                            </button>
+                        </div>
+                        
+                        <div class="alert alert-info" role="alert">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-info-circle-fill me-2"></i>
+                                <div>
+                                    <p class="mb-0">Você ainda não possui tokens. Crie um novo token para começar.</p>
+                                </div>
                             </div>
-                        {% else %}
-                            <div class="alert alert-info">
-                                Você ainda não possui tokens. Crie um novo token para começar.
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
+                        </div>
+                    {% endif %}
+                {% endif %}
             </div>
-            {% endif %}
         </div>
     </div>
 </div>
@@ -92,41 +181,336 @@
 {% include "accounts/manage/modals/create_token_modal.html" %}
 {% include "accounts/manage/modals/delete_confirmation_modal.html" %}
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/clipboard.js/2.0.8/clipboard.min.js"></script>
 <script>
-    // Initialize clipboard.js
-    new ClipboardJS('.copy-btn');
-
-    // Show tooltip on copy
-    document.querySelectorAll('.copy-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const tooltip = new bootstrap.Tooltip(btn, {
-                title: 'Copiado!',
-                trigger: 'manual'
-            });
-            tooltip.show();
-            setTimeout(() => tooltip.dispose(), 1000);
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize clipboard.js
+        const clipboard = new ClipboardJS('.copy-btn');
+        
+        // Feedback melhorado para cópia - simplificado sem mensagem extra
+        clipboard.on('success', function(e) {
+            // Mudar cor do botão para verde
+            const originalClasses = e.trigger.className;
+            e.trigger.className = originalClasses.replace('btn-outline-secondary', 'btn-success');
+            e.trigger.innerHTML = '<i class="bi bi-check"></i>';
+            
+            // Restaurar após um tempo
+            setTimeout(() => {
+                e.trigger.className = originalClasses;
+                e.trigger.innerHTML = '<i class="bi bi-clipboard"></i>';
+            }, 1500);
+            
+            e.clearSelection();
         });
+
+        // Se não houver tokens, não precisamos continuar
+        if (document.querySelector('#tokenTable') === null) return;
+        
+        // ----- CÓDIGO PARA GERENCIAMENTO DE TABELA -----
+        
+        let currentPage = 1;
+        let itemsPerPage = parseInt(document.getElementById('itemsPerPage').value) || 10;
+        let filteredRows = [];
+        let sortKey = 'name';
+        let sortDirection = 'asc';
+        
+        // Atualiza a tabela (filtros, ordenação, paginação)
+        function updateTable() {
+            const tbody = document.getElementById('tokenTable');
+            if (!tbody) return;
+            
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            
+            // Captura filtros
+            const nameFilter = document.getElementById('filterName')?.value.toLowerCase() || '';
+            const dateFilter = document.getElementById('filterDate')?.value || '';
+            
+            // Filtra as linhas
+            filteredRows = rows.filter(row => {
+                const nameData = row.getAttribute('data-value') || '';
+                const nameMatch = nameData.includes(nameFilter);
+                
+                // Se o filtro de data estiver definido, filtre por ele
+                let dateMatch = true;
+                if (dateFilter) {
+                    const rowDate = row.getAttribute('data-date') || '';
+                    const filterDateFormatted = dateFilter.replace(/-/g, '');
+                    dateMatch = rowDate === filterDateFormatted;
+                }
+                
+                return nameMatch && dateMatch;
+            });
+            
+            // Ordena as linhas filtradas
+            sortTable();
+            
+            // Atualiza a informação de paginação
+            const totalItems = filteredRows.length;
+            const totalCounter = document.getElementById('paginationTotal');
+            if (totalCounter) totalCounter.textContent = totalItems;
+            
+            const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+            
+            // Ajusta a página atual se necessário
+            if (currentPage > totalPages) {
+                currentPage = totalPages;
+            }
+            
+            // Calcula os índices iniciais e finais para a página atual
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+            
+            const fromCounter = document.getElementById('paginationFrom');
+            const toCounter = document.getElementById('paginationTo');
+            
+            if (fromCounter) fromCounter.textContent = totalItems === 0 ? 0 : startIndex + 1;
+            if (toCounter) toCounter.textContent = endIndex;
+            
+            // Oculta todas as linhas e exibe apenas as da página atual
+            rows.forEach(row => row.style.display = 'none');
+            filteredRows.slice(startIndex, endIndex).forEach(row => row.style.display = '');
+            
+            // Atualiza os controles de paginação
+            updatePagination(totalPages);
+        }
+        
+        // Ordena a tabela pelo campo especificado
+        function sortTable() {
+            const tbody = document.getElementById('tokenTable');
+            if (!tbody) return;
+            
+            filteredRows.sort((a, b) => {
+                let aValue, bValue;
+                
+                if (sortKey === 'name') {
+                    aValue = a.getAttribute('data-value') || '';
+                    bValue = b.getAttribute('data-value') || '';
+                } else if (sortKey === 'date') {
+                    aValue = a.getAttribute('data-date') || '';
+                    bValue = b.getAttribute('data-date') || '';
+                }
+                
+                // Para data, ordene como números para manter ordem cronológica
+                if (sortKey === 'date') {
+                    return sortDirection === 'asc'
+                        ? aValue.localeCompare(bValue)
+                        : bValue.localeCompare(aValue);
+                }
+                
+                // Ordenação de texto padrão
+                return sortDirection === 'asc'
+                    ? String(aValue).localeCompare(String(bValue))
+                    : String(bValue).localeCompare(String(aValue));
+            });
+            
+            // Atualiza ícones de ordenação
+            document.querySelectorAll('th.sortable').forEach(th => {
+                const icon = th.querySelector('.sort-icon');
+                if (!icon) return;
+                
+                const key = th.getAttribute('data-sort-key');
+                
+                th.classList.remove('active-sort');
+                icon.classList.remove(
+                    'bi-sort-alpha-down', 
+                    'bi-sort-alpha-up',
+                    'bi-sort-numeric-down', 
+                    'bi-sort-numeric-up'
+                );
+                
+                if (key === sortKey) {
+                    const isNumeric = key === 'date';
+                    if (sortDirection === 'asc') {
+                        icon.classList.add(isNumeric ? 'bi-sort-numeric-down' : 'bi-sort-alpha-down');
+                    } else {
+                        icon.classList.add(isNumeric ? 'bi-sort-numeric-up' : 'bi-sort-alpha-up');
+                    }
+                    th.classList.add('active-sort');
+                } else {
+                    icon.classList.add(key === 'date' ? 'bi-sort-numeric-down' : 'bi-sort-alpha-down');
+                }
+            });
+            
+            // Reorganiza as linhas no DOM conforme a nova ordenação
+            filteredRows.forEach(row => tbody.appendChild(row));
+        }
+        
+        // Atualiza os controles de paginação
+        function updatePagination(totalPages) {
+            const pagination = document.getElementById('pagination');
+            if (!pagination) return;
+            
+            const prevPageBtn = document.getElementById('prevPage').parentElement;
+            const nextPageBtn = document.getElementById('nextPage').parentElement;
+            
+            prevPageBtn.classList.toggle('disabled', currentPage <= 1);
+            nextPageBtn.classList.toggle('disabled', currentPage >= totalPages);
+            
+            // Remove links de páginas existentes
+            Array.from(pagination.querySelectorAll('li:not(:first-child):not(:last-child)')).forEach(li => li.remove());
+            
+            // Gera os números de página para navegação
+            let pagesToShow = [];
+            if (totalPages <= 5) {
+                pagesToShow = Array.from({length: totalPages}, (_, i) => i + 1);
+            } else {
+                pagesToShow = [1];
+                
+                if (currentPage > 3) {
+                    pagesToShow.push('...');
+                }
+                
+                for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+                    pagesToShow.push(i);
+                }
+                
+                if (currentPage < totalPages - 2) {
+                    pagesToShow.push('...');
+                }
+                
+                if (totalPages > 1) {
+                    pagesToShow.push(totalPages);
+                }
+            }
+            
+            // Insere links de página no DOM
+            const nextPageElement = pagination.querySelector('li:last-child');
+            if (!nextPageElement) return;
+            
+            pagesToShow.forEach(pageNum => {
+                const li = document.createElement('li');
+                
+                if (pageNum === '...') {
+                    li.className = 'page-item disabled';
+                    li.innerHTML = '<span class="page-link">...</span>';
+                } else {
+                    li.className = `page-item ${currentPage === pageNum ? 'active' : ''}`;
+                    li.innerHTML = `<a class="page-link" href="#" data-page="${pageNum}">${pageNum}</a>`;
+                    
+                    if (currentPage !== pageNum) {
+                        li.querySelector('a').addEventListener('click', function(e) {
+                            e.preventDefault();
+                            currentPage = parseInt(this.dataset.page);
+                            updateTable();
+                        });
+                    }
+                }
+                
+                pagination.insertBefore(li, nextPageElement);
+            });
+        }
+        
+        // Event Listeners para ordenação de colunas
+        document.querySelectorAll('th.sortable').forEach(header => {
+            header.addEventListener('click', function() {
+                const key = this.dataset.sortKey;
+                if (key === sortKey) {
+                    sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortKey = key;
+                    sortDirection = 'asc';
+                }
+                
+                sessionStorage.setItem('tokenTableSortKey', sortKey);
+                sessionStorage.setItem('tokenTableSortDirection', sortDirection);
+                
+                updateTable();
+            });
+        });
+        
+        // Event Listeners para controles de paginação
+        document.getElementById('prevPage').addEventListener('click', function(e) {
+            e.preventDefault();
+            if (currentPage > 1) {
+                currentPage--;
+                updateTable();
+            }
+        });
+        
+        document.getElementById('nextPage').addEventListener('click', function(e) {
+            e.preventDefault();
+            const totalPages = Math.ceil(filteredRows.length / itemsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                updateTable();
+            }
+        });
+        
+        // Event Listener para alteração de itens por página
+        document.getElementById('itemsPerPage').addEventListener('change', function() {
+            itemsPerPage = parseInt(this.value);
+            currentPage = 1;
+            sessionStorage.setItem('tokenTableItemsPerPage', itemsPerPage);
+            updateTable();
+        });
+        
+        // Event Listeners para filtros
+        document.querySelectorAll('.filter').forEach(filter => {
+            filter.addEventListener('input', function() {
+                this.classList.toggle('is-valid', this.value !== '');
+                currentPage = 1;
+                updateTable();
+            });
+        });
+        
+        // Event Listener para o botão de filtros
+        document.querySelector('.toggle-filters').addEventListener('click', function() {
+            const filterControls = document.querySelector('#filterControls');
+            const icon = this.querySelector('i:last-child');
+            
+            if (filterControls.style.display === 'none') {
+                filterControls.style.display = 'block';
+                icon.classList.replace('bi-chevron-up', 'bi-chevron-down');
+            } else {
+                filterControls.style.display = 'none';
+                icon.classList.replace('bi-chevron-down', 'bi-chevron-up');
+            }
+            
+            sessionStorage.setItem('tokenTableFiltersVisible', filterControls.style.display !== 'none');
+        });
+        
+        // Função para confirmar exclusão de token
+        window.confirmDelete = function(tokenId, tokenName) {
+            // Definir o ID do token no input hidden
+            document.getElementById('delete_token_id').value = tokenId;
+            
+            // Configurar o nome do token no modal (se o elemento existir)
+            const nameField = document.getElementById('tokenNameToDelete');
+            if (nameField) nameField.textContent = tokenName || 'este token';
+            
+            // Abrir o modal
+            const modal = new bootstrap.Modal(document.getElementById('deleteConfirmationModal'));
+            modal.show();
+        };
+        
+        // Restaura as preferências do usuário da sessão
+        function restoreUserPreferences() {
+            const savedItemsPerPage = sessionStorage.getItem('tokenTableItemsPerPage');
+            if (savedItemsPerPage) {
+                itemsPerPage = parseInt(savedItemsPerPage);
+                document.getElementById('itemsPerPage').value = savedItemsPerPage;
+            }
+            
+            const filtersVisible = sessionStorage.getItem('tokenTableFiltersVisible');
+            if (filtersVisible === 'false') {
+                const filterControls = document.querySelector('#filterControls');
+                filterControls.style.display = 'none';
+                document.querySelector('.toggle-filters i:last-child').classList.replace('bi-chevron-down', 'bi-chevron-up');
+            }
+            
+            const savedSortKey = sessionStorage.getItem('tokenTableSortKey');
+            const savedSortDirection = sessionStorage.getItem('tokenTableSortDirection');
+            
+            if (savedSortKey && savedSortDirection) {
+                sortKey = savedSortKey;
+                sortDirection = savedSortDirection;
+            }
+            
+            // Removida a configuração duplicada do modal de exclusão
+            
+            updateTable();
+        }
+        
+        restoreUserPreferences();
     });
 </script>
-
-<style>
-.table thead th {
-    border-bottom: none;
-    font-weight: 500;
-}
-
-.badge {
-    font-size: 0.85em;
-    padding: 0.4em 0.6em;
-}
-
-.btn-group .btn {
-    padding: 0.25rem 0.5rem;
-}
-
-.table td {
-    vertical-align: middle;
-}
-</style>
 {% endblock %}

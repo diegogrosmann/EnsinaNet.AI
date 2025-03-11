@@ -50,13 +50,11 @@ AUTHENTICATION_BACKENDS = (
     'allauth.account.auth_backends.AuthenticationBackend',
 )
 
-ACCOUNT_AUTHENTICATION_METHOD = "email"
+ACCOUNT_LOGIN_METHODS = {'email'}
 ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_USERNAME_REQUIRED = False
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
-ACCOUNT_EMAIL_CONFIRMATION_HTML_TEMPLATE = "accounts/registration/email_confirmation_message.html"
-
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -105,10 +103,12 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'api.middleware.GlobalExceptionMiddleware',
-    'api.middleware.MonitoringMiddleware', 
+    'core.middleware.global_exception_middleware.GlobalExceptionMiddleware',
+    'api.middleware.monitoring_middleware.MonitoringMiddleware', 
+    
 ]
 
 ROOT_URLCONF = 'myproject.urls'
@@ -323,21 +323,4 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-# URL do broker Redis
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-
-# (Opcional) Configuração do backend para armazenar resultados das tasks
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
-
-# Outras configurações (opcionais), como serialização:
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'America/Fortaleza'  # ou o fuso horário adequado
-
-CELERY_BEAT_SCHEDULE = {
-    'update_training_status_every_minute': {
-        'task': 'ai_config.tasks.update_training_status',
-        'schedule': crontab(),
-    },
-}
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")

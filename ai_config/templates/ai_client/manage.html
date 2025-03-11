@@ -1,136 +1,256 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Gerenciamento de IAs</h2>
-        <a href="{% url 'ai_config:ai_create' %}" class="btn btn-success">
-            <i class="bi bi-plus-circle"></i> Nova IA
-        </a>
-    </div>
+<div class="container py-4">
+    <div class="bs-component">
+        <!-- Card Principal usando estrutura padrão do Bootswatch -->
+        <div class="card border-primary mb-3">
+            <!-- Header do Card com estilo Bootswatch -->
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="card-title mb-0">
+                    <i class="bi bi-cpu me-2"></i>
+                    Gerenciamento de IAs
+                </h2>
+                <a href="{% url 'ai_config:ai_create' %}" class="btn btn-success">
+                    <i class="bi bi-plus-circle"></i> Nova IA
+                </a>
+            </div>
 
-    {% if ai_clients %}
-    <div class="card shadow-sm">
-        <!-- Filtros e Busca -->
-        <div class="card-header bg-white py-3">
-            <div class="row align-items-center">
-                <div class="col-md-4">
-                    <select id="apiFilter" class="form-select">
-                        <option value="">Todas as APIs</option>
-                        {% for api in api_types %}
-                        <option value="{{ api }}">{{ api }}</option>
-                        {% endfor %}
-                    </select>
+            <!-- Corpo do Card -->
+            <div class="card-body">
+                {% if ai_clients %}
+                <div class="mb-3">
+                    <!-- Filtros e Controles com componentes Bootswatch -->
+                    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
+                        <!-- Controles à esquerda -->
+                        <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
+                            <button class="btn btn-sm btn-outline-primary toggle-filters" type="button" aria-expanded="true" aria-controls="filterControls">
+                                <i class="bi bi-funnel me-1"></i>Filtros
+                                <i class="bi bi-chevron-down ms-1"></i>
+                            </button>
+                            
+                            <!-- Informação de paginação -->
+                            <div class="text-muted d-none d-sm-block">
+                                Mostrando <span id="paginationFrom">1</span> a <span id="paginationTo">10</span> de <span id="paginationTotal">{{ ai_clients|length }}</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Controles à direita -->
+                        <div class="input-group input-group-sm" style="width: auto; min-width: 120px; max-width: 250px;">
+                            <span class="input-group-text">Por página</span>
+                            <select id="itemsPerPage" class="form-select form-select-sm" style="min-width: 70px;">
+                                <option value="5">5</option>
+                                <option value="10" selected>10</option>
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Filtros Expandidos -->
+                    <div class="card bg-light mb-3" id="filterControls">
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <!-- Filtro por Nome -->
+                                <div class="col-12 col-md-6">
+                                    <label for="searchInput" class="form-label">Nome da IA</label>
+                                    <input type="text" 
+                                           id="searchInput" 
+                                           class="form-control form-control-sm filter" 
+                                           placeholder="Filtrar por nome..."
+                                           value="{{ search_query }}">
+                                </div>
+                                
+                                <!-- Filtro por Cliente de API -->
+                                <div class="col-12 col-md-6">
+                                    <label for="apiFilter" class="form-label">Cliente API</label>
+                                    <select id="apiFilter" class="form-select form-select-sm filter">
+                                        <option value="">Todos os clientes</option>
+                                        {% for api in api_types %}
+                                            <option value="{{ api }}">{{ api }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabela Responsiva no estilo Bootswatch -->
+                    <div class="table-responsive" id="tableContainer">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="sortable" data-sort-key="name">
+                                        Nome
+                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                    </th>
+                                    <th scope="col" class="sortable d-none d-md-table-cell" data-sort-key="client">
+                                        Cliente IA
+                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                    </th>
+                                    <th scope="col" class="sortable d-none d-md-table-cell" data-sort-key="model">
+                                        Modelo
+                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                    </th>
+                                    <th scope="col" class="text-end">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ai in ai_clients %}
+                                <tr data-api-type="{{ ai.ai_client }}">
+                                    <th scope="row">
+                                        <a href="{% url 'ai_config:ai_edit' ai.id %}" class="text-decoration-none">
+                                            {{ ai.name }}
+                                        </a>
+                                        <!-- Informações extras para telas pequenas -->
+                                        <div class="d-md-none mt-1">
+                                            <small class="d-block text-muted">
+                                                <strong>Cliente:</strong> {{ ai.ai_client }}
+                                            </small>
+                                            <small class="d-block text-muted">
+                                                <strong>Modelo:</strong> <span class="badge bg-secondary">{{ ai.model_name|default:"Padrão" }}</span>
+                                            </small>
+                                        </div>
+                                    </th>
+                                    <td class="d-none d-md-table-cell">{{ ai.ai_client }}</td>
+                                    <td class="d-none d-md-table-cell">
+                                        <span class="badge bg-secondary">{{ ai.model_name|default:"Padrão" }}</span>
+                                    </td>
+                                    <td class="text-end">
+                                        <div class="btn-group">
+                                            <button class="btn btn-sm btn-primary" 
+                                                    onclick="openLinkModal('{{ ai.id }}', '{{ ai.name }}')"
+                                                    title="Gerenciar tokens">
+                                                <i class="bi bi-link"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-danger" 
+                                                    onclick="confirmDelete('{{ ai.id }}', '{{ ai.name }}')"
+                                                    title="Excluir IA">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Paginação no estilo Bootswatch -->
+                    <nav aria-label="Paginação da tabela de IAs" class="mt-3">
+                        <ul class="pagination pagination-sm justify-content-center" id="pagination">
+                            <li class="page-item disabled">
+                                <a class="page-link" href="#" id="prevPage" aria-label="Página anterior">
+                                    <span aria-hidden="true">&laquo;</span>
+                                </a>
+                            </li>
+                            <!-- Páginas serão inseridas aqui via JavaScript -->
+                            <li class="page-item">
+                                <a class="page-link" href="#" id="nextPage" aria-label="Próxima página">
+                                    <span aria-hidden="true">&raquo;</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </nav>
                 </div>
-                <div class="col-md-8">
-                    <div class="d-flex gap-2">
-                        <input type="text" 
-                               id="searchInput"
-                               class="form-control" 
-                               placeholder="Buscar por nome..."
-                               value="{{ search_query }}">
-                        {% if search_query %}
-                        <button class="btn btn-outline-secondary" onclick="clearSearch()">
-                            <i class="bi bi-x-lg"></i>
-                        </button>
-                        {% endif %}
+                {% else %}
+                <!-- Feedback quando não há IAs configuradas usando alerta do Bootswatch -->
+                <div class="alert alert-info" role="alert">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        <div>
+                            {% if search_query %}
+                            <h5 class="alert-heading mb-1">Nenhum resultado</h5>
+                            <p class="mb-0">Nenhuma IA encontrada com o termo "{{ search_query }}".
+                                <a href="{% url 'ai_config:ai_manage' %}" class="alert-link">Limpar busca</a>
+                            </p>
+                            {% else %}
+                            <h5 class="alert-heading mb-1">Sem configurações</h5>
+                            <p class="mb-0">Nenhuma IA configurada. Clique em "Nova IA" para adicionar.</p>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
+                {% endif %}
             </div>
         </div>
-
-        <div id="tableContainer">
-            <table class="table table-striped table-hover">
-                <thead>
-                    <tr>
-                        <th>Nome</th>
-                        <th>Cliente IA</th>
-                        <th>Modelo</th>
-                        <th class="text-end">Ações</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for ai in ai_clients %}
-                    <tr style="cursor: pointer;" onclick="window.location='{% url 'ai_config:ai_edit' ai.id %}'">
-                        <td>{{ ai.name }}</td>
-                        <td>{{ ai.ai_client }}</td>
-                        <td>{{ ai.model_name|default:"Padrão" }}</td>
-                        <td class="text-end">
-                            <div class="btn-group">
-                                <button onclick="event.stopPropagation(); openLinkModal('{{ ai.id }}', '{{ ai.name }}')" class="btn btn-sm btn-outline-primary me-1">
-                                    <i class="bi bi-link"></i> Tokens
-                                </button>
-                                <button onclick="event.stopPropagation(); confirmDelete('{{ ai.id }}', '{{ ai.name }}')" class="btn btn-sm btn-outline-danger">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
     </div>
-    {% else %}
-    <div class="alert alert-info">
-        {% if search_query %}
-        <i class="bi bi-info-circle me-2"></i>
-        Nenhuma IA encontrada com o termo "{{ search_query }}".
-        <a href="{% url 'ai_config:manage_ai' %}" class="alert-link">Limpar busca</a>
-        {% else %}
-        <i class="bi bi-info-circle me-2"></i>
-        Nenhuma IA configurada. Clique em "Nova IA" para adicionar.
-        {% endif %}
-    </div>
-    {% endif %}
 </div>
 
-<!-- Modal de Confirmação de Exclusão -->
-<div class="modal fade" id="deleteModal" tabindex="-1">
-    <div class="modal-dialog">
+<!-- Modal de Confirmação de Exclusão (Estilo Bootswatch) -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Confirmar Exclusão</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deleteModalLabel">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Confirmar Exclusão
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                Tem certeza que deseja excluir a IA "<span id="aiNameToDelete"></span>"?
+                <p>Tem certeza que deseja excluir a IA "<span id="aiNameToDelete" class="fw-bold"></span>"?</p>
+                <p class="text-muted small">Esta ação não pode ser desfeita.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-danger" id="confirmDelete">Excluir</button>
+                <button type="button" class="btn btn-danger" id="confirmDelete">
+                    <i class="bi bi-trash me-1"></i> Excluir
+                </button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Modal para Vincular Tokens -->
-<div class="modal fade" id="linkTokenModal" tabindex="-1">
+<!-- Modal para Vincular Tokens (Estilo Bootswatch) -->
+<div class="modal fade" id="linkTokenModal" tabindex="-1" aria-labelledby="linkTokenModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Vincular Tokens à IA: <span id="aiNameForTokens"></span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="linkTokenModalLabel">
+                    <i class="bi bi-link me-2"></i>
+                    Vincular Tokens à IA: <span id="aiNameForTokens"></span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <!-- Estado de carregamento -->
                 <div class="modal-loading text-center py-4">
                     <div class="spinner-border text-primary" role="status">
                         <span class="visually-hidden">Carregando...</span>
                     </div>
                     <p class="mt-2">Carregando tokens disponíveis...</p>
                 </div>
+                
+                <!-- Estado de erro -->
                 <div class="modal-error alert alert-danger d-none">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    Erro ao carregar tokens. Por favor, tente novamente.
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        <div>
+                            <h5 class="alert-heading mb-1">Erro</h5>
+                            <p class="mb-0">Erro ao carregar tokens. Por favor, tente novamente.</p>
+                        </div>
+                    </div>
                 </div>
+                
+                <!-- Container de tokens -->
                 <div class="tokens-container d-none">
                     <div class="alert alert-info mb-3">
-                        <i class="bi bi-info-circle-fill me-2"></i>
-                        Selecione os tokens que podem utilizar esta IA. As alterações são salvas automaticamente.
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-info-circle-fill me-2"></i>
+                            <div>
+                                <p class="mb-0">Selecione os tokens que podem utilizar esta IA. As alterações são salvas automaticamente.</p>
+                            </div>
+                        </div>
                     </div>
+                    
+                    <!-- Lista de tokens -->
                     <div class="list-group token-list">
                         <!-- Lista de tokens será carregada dinamicamente -->
                     </div>
+                    
+                    <!-- Estado vazio -->
                     <div class="no-tokens text-center py-4 d-none">
                         <i class="bi bi-exclamation-circle text-warning" style="font-size: 2rem;"></i>
                         <p class="mt-2">Você ainda não tem tokens disponíveis.</p>
@@ -149,59 +269,398 @@ let deleteModal;
 let linkTokenModal;
 let aiIdToDelete;
 let currentAiId;
+let currentPage = 1;
+let itemsPerPage = 10;
+let filteredRows = [];
+let sortKey = 'name';
+let sortDirection = 'asc';
 
-document.addEventListener('DOMContentLoaded', function() {
-    deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
-    linkTokenModal = new bootstrap.Modal(document.getElementById('linkTokenModal'));
-});
-
-function confirmDelete(id, name) {
-    aiIdToDelete = id;
-    document.getElementById('aiNameToDelete').textContent = name;
-    deleteModal.show();
+// Função para verificar se um elemento existe antes de executar uma ação
+function safelyExecute(selector, action) {
+    const element = document.querySelector(selector);
+    if (element) {
+        action(element);
+        return true;
+    }
+    return false;
 }
 
-document.getElementById('confirmDelete').addEventListener('click', function() {
-    const url = buildUrl(`{% url 'ai_config:ai_delete' 9999999999 %}`,'9999999999', aiIdToDelete)
+document.addEventListener('DOMContentLoaded', function() {
+    // Inicializar modais
+    deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    linkTokenModal = new bootstrap.Modal(document.getElementById('linkTokenModal'));
     
-    fetch(url, {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': getCookie('csrftoken'),
-            'Content-Type': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            window.location.reload();
-        } else {
-            alert(data.message || 'Erro ao excluir IA');
-        }
-    })
-    .catch(error => {
-        console.error('Erro:', error);
-        alert('Erro ao excluir IA');
-    })
-    .finally(() => {
-        deleteModal.hide();
-    });
+    // Restaurar estado dos filtros
+    restoreFiltersState();
+    
+    // Inicializar ordenamento e paginação
+    initTableSorting();
+    
+    // Inicializar contadores de paginação e gerar paginação inicial
+    updateDisplayedTable();
+    
+    // Configurar eventos para filtros e paginação
+    setupEventListeners();
+    
+    // Configurar botões de ação para excluir e vincular tokens
+    setupActionButtons();
 });
 
-// Adiciona filtro de API
-document.getElementById('apiFilter').addEventListener('change', function() {
-    const selectedApi = this.value;
-    const rows = document.querySelectorAll('tbody tr');
+function setupEventListeners() {
+    // Botão para limpar busca (se existir)
+    safelyExecute('#clearSearchBtn', (element) => {
+        element.addEventListener('click', clearSearch);
+    });
     
-    rows.forEach(row => {
-        const apiType = row.dataset.apiType;
-        if (!selectedApi || apiType === selectedApi) {
-            row.style.display = '';
+    // Evento de entrada de texto para busca
+    safelyExecute('#searchInput', (element) => {
+        element.addEventListener('input', debounce(() => {
+            currentPage = 1;
+            updateDisplayedTable();
+        }, 300));
+    });
+    
+    // Evento para filtro de API
+    safelyExecute('#apiFilter', (element) => {
+        element.addEventListener('change', function() {
+            currentPage = 1;
+            updateDisplayedTable();
+        });
+    });
+    
+    // Eventos para paginação
+    safelyExecute('#prevPage', (element) => {
+        element.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (currentPage > 1) {
+                currentPage--;
+                updateDisplayedTable();
+            }
+        });
+    });
+    
+    safelyExecute('#nextPage', (element) => {
+        element.addEventListener('click', function(e) {
+            e.preventDefault();
+            const totalPages = Math.ceil(filteredRows.length / itemsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                updateDisplayedTable();
+            }
+        });
+    });
+    
+    // Evento para itens por página
+    safelyExecute('#itemsPerPage', (element) => {
+        element.addEventListener('change', function() {
+            itemsPerPage = parseInt(this.value);
+            currentPage = 1;
+            sessionStorage.setItem('aiTableItemsPerPage', itemsPerPage);
+            updateDisplayedTable();
+        });
+    });
+    
+    // Evento para toggle de filtros
+    safelyExecute('.toggle-filters', (element) => {
+        element.addEventListener('click', toggleFilters);
+    });
+    
+    // Restaurar preferências do usuário
+    restoreUserPreferences();
+}
+
+function setupActionButtons() {
+    // Botão para confirmar exclusão
+    safelyExecute('#confirmDelete', (element) => {
+        element.addEventListener('click', handleDeleteConfirm);
+    });
+}
+
+function toggleFilters() {
+    const filterControls = document.querySelector('#filterControls');
+    const icon = document.querySelector('.toggle-filters i:last-child');
+    
+    if (filterControls && icon) {
+        if (filterControls.style.display === 'none') {
+            filterControls.style.display = 'block';
+            icon.classList.replace('bi-chevron-up', 'bi-chevron-down');
         } else {
-            row.style.display = 'none';
+            filterControls.style.display = 'none';
+            icon.classList.replace('bi-chevron-down', 'bi-chevron-up');
+        }
+        
+        sessionStorage.setItem('aiTableFiltersVisible', filterControls.style.display !== 'none');
+    }
+}
+
+// Função para inicializar o ordenamento da tabela
+function initTableSorting() {
+    document.querySelectorAll('th.sortable').forEach(header => {
+        header.addEventListener('click', function() {
+            const key = this.dataset.sortKey;
+            if (key === sortKey) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortKey = key;
+                sortDirection = 'asc';
+            }
+            
+            sessionStorage.setItem('aiTableSortKey', sortKey);
+            sessionStorage.setItem('aiTableSortDirection', sortDirection);
+            
+            updateDisplayedTable();
+        });
+    });
+}
+
+// Função para atualizar a tabela localmente (filtros, ordenação, paginação)
+// Esta função NÃO faz requisições AJAX para o servidor
+function updateDisplayedTable() {
+    const tbody = document.querySelector('tbody');
+    if (!tbody) return;
+    
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    // Captura filtros
+    const nameFilter = document.querySelector('#searchInput')?.value.toLowerCase() || '';
+    const clientFilter = document.querySelector('#apiFilter')?.value || '';
+    
+    // Aplicar filtros
+    filteredRows = rows.filter(row => {
+        const nameElement = row.querySelector('th');
+        const name = nameElement ? nameElement.textContent.toLowerCase() : '';
+        const apiType = (row.dataset.apiType || '').trim();
+        
+        const nameMatch = name.includes(nameFilter);
+        
+        // Nova lógica para correspondência de cliente API
+        let clientMatch = !clientFilter;
+        if (clientFilter) {
+            // Verificação mais flexível - verifica se o texto do filtro está contido no tipo da API
+            clientMatch = apiType.toLowerCase().includes(clientFilter.toLowerCase());
+        }
+        
+        return nameMatch && clientMatch;
+    });
+    
+    // Ordenação
+    sortTableRows();
+    
+    // Paginação
+    const totalItems = filteredRows.length;
+    
+    // Atualiza contador total
+    const totalCounter = document.getElementById('paginationTotal');
+    if (totalCounter) totalCounter.textContent = totalItems;
+    
+    const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+    
+    if (currentPage > totalPages) {
+        currentPage = totalPages;
+    }
+    
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+    
+    // Atualiza contadores de páginação
+    const fromCounter = document.getElementById('paginationFrom');
+    const toCounter = document.getElementById('paginationTo');
+    
+    if (fromCounter) fromCounter.textContent = totalItems === 0 ? 0 : startIndex + 1;
+    if (toCounter) toCounter.textContent = endIndex;
+    
+    // Ocultar/mostrar linhas com base na paginação
+    rows.forEach(row => row.style.display = 'none');
+    filteredRows.slice(startIndex, endIndex).forEach(row => row.style.display = '');
+    
+    // Atualizar controles de paginação
+    updatePagination(totalPages);
+    
+    // Atualizar status do botão de limpar busca, se existir
+    const clearSearchBtn = document.getElementById('clearSearchBtn');
+    if (clearSearchBtn) {
+        clearSearchBtn.disabled = nameFilter === '';
+    }
+}
+
+// Função para ordenar a tabela
+function sortTableRows() {
+    const tbody = document.querySelector('tbody');
+    if (!tbody) return;
+    
+    // Definir os índices de colunas para ordenação
+    const columnIndexMap = {
+        'name': 0,  // índice da coluna Nome (th)
+        'client': 1, // índice da coluna Cliente IA (td)
+        'model': 2   // índice da coluna Modelo (td)
+    };
+    
+    filteredRows.sort((a, b) => {
+        const index = columnIndexMap[sortKey] || 0;
+        let aValue = '', bValue = '';
+        
+        if (index === 0) {
+            // Primeira coluna é um th
+            const aElement = a.querySelector('th');
+            const bElement = b.querySelector('th');
+            aValue = aElement ? aElement.textContent.trim().toLowerCase() : '';
+            bValue = bElement ? bElement.textContent.trim().toLowerCase() : '';
+        } else {
+            // Outras colunas são td
+            const aElements = a.querySelectorAll('td');
+            const bElements = b.querySelectorAll('td');
+            
+            if (aElements.length > index - 1) {
+                aValue = aElements[index - 1].textContent.trim().toLowerCase();
+            }
+            
+            if (bElements.length > index - 1) {
+                bValue = bElements[index - 1].textContent.trim().toLowerCase();
+            }
+        }
+        
+        // Ordenar strings
+        if (sortDirection === 'asc') {
+            return aValue.localeCompare(bValue);
+        } else {
+            return bValue.localeCompare(aValue);
         }
     });
-});
+    
+    // Atualizar ícones de ordenação
+    document.querySelectorAll('th.sortable').forEach(th => {
+        const icon = th.querySelector('.sort-icon');
+        if (!icon) return;
+        
+        const key = th.dataset.sortKey;
+        
+        th.classList.remove('active-sort');
+        icon.classList.remove('bi-sort-alpha-down', 'bi-sort-alpha-up');
+        
+        if (key === sortKey) {
+            icon.classList.add(sortDirection === 'asc' ? 'bi-sort-alpha-down' : 'bi-sort-alpha-up');
+            th.classList.add('active-sort');
+        } else {
+            icon.classList.add('bi-sort-alpha-down');
+        }
+    });
+    
+    // Re-anexar linhas na ordem correta
+    filteredRows.forEach(row => tbody.appendChild(row));
+}
+
+// Função para atualizar a paginação
+function updatePagination(totalPages) {
+    const pagination = document.getElementById('pagination');
+    if (!pagination) return;
+    
+    const prevPageBtn = pagination.querySelector('li:first-child');
+    const nextPageBtn = pagination.querySelector('li:last-child');
+    
+    // Atualizar estados de prev/next
+    if (prevPageBtn) prevPageBtn.classList.toggle('disabled', currentPage <= 1);
+    if (nextPageBtn) nextPageBtn.classList.toggle('disabled', currentPage >= totalPages);
+    
+    // Remover páginas existentes
+    Array.from(pagination.querySelectorAll('li:not(:first-child):not(:last-child)')).forEach(li => li.remove());
+    
+    // Gerar links de página
+    let pagesToShow = [];
+    if (totalPages <= 5) {
+        pagesToShow = Array.from({length: totalPages}, (_, i) => i + 1);
+    } else {
+        pagesToShow = [1];
+        
+        if (currentPage > 3) {
+            pagesToShow.push('...');
+        }
+        
+        for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+            pagesToShow.push(i);
+        }
+        
+        if (currentPage < totalPages - 2) {
+            pagesToShow.push('...');
+        }
+        
+        if (totalPages > 1) {
+            pagesToShow.push(totalPages);
+        }
+    }
+    
+    // Inserir links de página
+    const nextPageElement = pagination.querySelector('li:last-child');
+    if (nextPageElement) {
+        pagesToShow.forEach(pageNum => {
+            const li = document.createElement('li');
+            
+            if (pageNum === '...') {
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">...</span>';
+            } else {
+                li.className = `page-item ${currentPage === pageNum ? 'active' : ''}`;
+                li.innerHTML = `<a class="page-link" href="#" data-page="${pageNum}">${pageNum}</a>`;
+                
+                if (currentPage !== pageNum) {
+                    li.querySelector('a').addEventListener('click', function(e) {
+                        e.preventDefault();
+                        currentPage = parseInt(this.dataset.page);
+                        updateDisplayedTable();
+                    });
+                }
+            }
+            
+            pagination.insertBefore(li, nextPageElement);
+        });
+    }
+}
+
+// Função para restaurar preferências do usuário
+function restoreUserPreferences() {
+    // Restaurar itens por página
+    const savedItemsPerPage = sessionStorage.getItem('aiTableItemsPerPage');
+    if (savedItemsPerPage) {
+        itemsPerPage = parseInt(savedItemsPerPage);
+        const itemsPerPageSelect = document.getElementById('itemsPerPage');
+        if (itemsPerPageSelect && itemsPerPageSelect.querySelector(`option[value="${itemsPerPage}"]`)) {
+            itemsPerPageSelect.value = savedItemsPerPage;
+        }
+    }
+    
+    // Restaurar estado dos filtros
+    restoreFiltersState();
+    
+    // Restaurar ordenação
+    const savedSortKey = sessionStorage.getItem('aiTableSortKey');
+    const savedSortDirection = sessionStorage.getItem('aiTableSortDirection');
+    
+    if (savedSortKey && savedSortDirection) {
+        sortKey = savedSortKey;
+        sortDirection = savedSortDirection;
+    }
+}
+
+// Função para restaurar o estado dos filtros
+function restoreFiltersState() {
+    const filtersVisible = sessionStorage.getItem('aiTableFiltersVisible');
+    const filterControls = document.querySelector('#filterControls');
+    const icon = document.querySelector('.toggle-filters i:last-child');
+    
+    if (filtersVisible === 'false' && filterControls && icon) {
+        filterControls.style.display = 'none';
+        icon.classList.replace('bi-chevron-down', 'bi-chevron-up');
+    }
+}
+
+// Limpar busca
+function clearSearch() {
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.value = '';
+        currentPage = 1;
+        updateDisplayedTable();
+    }
+}
 
 // Adiciona debounce para evitar muitas requisições
 function debounce(func, wait) {
@@ -216,58 +675,66 @@ function debounce(func, wait) {
     };
 }
 
-// Função para atualizar a tabela
-async function updateTable(page = 1) {
-    const searchQuery = document.getElementById('searchInput').value;
-    const selectedApi = document.getElementById('apiFilter').value;
-    const url = new URL(window.location.href);
+// Função para confirmar exclusão
+function confirmDelete(id, name) {
+    aiIdToDelete = id;
+    const nameElement = document.getElementById('aiNameToDelete');
+    if (nameElement) nameElement.textContent = name;
+    if (deleteModal) deleteModal.show();
+}
+
+// Handler para confirmar exclusão
+function handleDeleteConfirm() {
+    if (!aiIdToDelete) return;
     
-    // Adiciona todos os parâmetros
-    url.searchParams.set('search', searchQuery);
-    url.searchParams.set('page', page);
-    if (selectedApi) {
-        url.searchParams.set('api_type', selectedApi);
-    } else {
-        url.searchParams.delete('api_type');
-    }
-
-    try {
-        const response = await fetch(url, {
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
+    const url = buildUrl(`{% url 'ai_config:ai_delete' 9999999999 %}`,'9999999999', aiIdToDelete);
+    
+    // Obter referência ao botão
+    const btnDelete = document.getElementById('confirmDelete');
+    if (!btnDelete) return;
+    
+    // Mostrar indicador de carregamento no botão
+    showButtonLoading(btnDelete, 'Excluindo...');
+    
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            if (typeof showMessage === 'function') {
+                showMessage('success', `IA excluída com sucesso.`);
             }
-        });
-        const data = await response.json();
-        
-        document.getElementById('tableContainer').innerHTML = data.html;
-        
-        // Atualiza a URL sem recarregar a página
-        window.history.pushState({}, '', url);
-    } catch (error) {
-        console.error('Erro ao buscar dados:', error);
-    }
+            window.location.reload();
+        } else {
+            if (typeof showMessage === 'function') {
+                showMessage('error', data.message || 'Erro ao excluir IA');
+            }
+            hideButtonLoading(btnDelete);
+        }
+    })
+    .catch(error => {
+        console.error('Erro:', error);
+        if (typeof showMessage === 'function') {
+            showMessage('error', 'Erro ao excluir IA');
+        }
+        hideButtonLoading(btnDelete);
+    })
+    .finally(() => {
+        if (deleteModal) deleteModal.hide();
+    });
 }
-
-// Atualiza o listener do filtro de API para usar updateTable
-document.getElementById('apiFilter').addEventListener('change', function() {
-    updateTable(1); // Reset para primeira página ao filtrar
-});
-
-// Limpar busca
-function clearSearch() {
-    document.getElementById('searchInput').value = '';
-    updateTable();
-}
-
-// Configura o input de busca com debounce
-document.getElementById('searchInput').addEventListener('input', 
-    debounce(() => updateTable(), 300)
-);
 
 // Função para abrir o modal de vinculação de tokens
 function openLinkModal(aiId, aiName) {
     currentAiId = aiId;
-    document.getElementById('aiNameForTokens').textContent = aiName;
+    
+    const nameElement = document.getElementById('aiNameForTokens');
+    if (nameElement) nameElement.textContent = aiName;
     
     // Resetar o estado do modal
     const loadingEl = document.querySelector('.modal-loading');
@@ -275,13 +742,13 @@ function openLinkModal(aiId, aiName) {
     const tokensContainer = document.querySelector('.tokens-container');
     const noTokensEl = document.querySelector('.no-tokens');
     
-    loadingEl.classList.remove('d-none');
-    errorEl.classList.add('d-none');
-    tokensContainer.classList.add('d-none');
-    noTokensEl.classList.add('d-none');
+    if (loadingEl) loadingEl.classList.remove('d-none');
+    if (errorEl) errorEl.classList.add('d-none');
+    if (tokensContainer) tokensContainer.classList.add('d-none');
+    if (noTokensEl) noTokensEl.classList.add('d-none');
     
     // Mostrar o modal
-    linkTokenModal.show();
+    if (linkTokenModal) linkTokenModal.show();
     
     // Carregar os tokens disponíveis
     loadTokensForAi(aiId);
@@ -307,16 +774,17 @@ async function loadTokensForAi(aiId) {
         const data = await response.json();
         
         // Esconder o loading
-        document.querySelector('.modal-loading').classList.add('d-none');
+        const loadingEl = document.querySelector('.modal-loading');
+        if (loadingEl) loadingEl.classList.add('d-none');
         
         // Mostrar o container de tokens
         const tokensContainer = document.querySelector('.tokens-container');
-        tokensContainer.classList.remove('d-none');
+        if (tokensContainer) tokensContainer.classList.remove('d-none');
         
         // Processar a resposta
         const tokenList = document.querySelector('.token-list');
         
-        if (data.tokens && data.tokens.length > 0) {
+        if (tokenList && data.tokens && data.tokens.length > 0) {
             let tokensHtml = '';
             data.tokens.forEach(token => {
                 tokensHtml += `
@@ -348,13 +816,17 @@ async function loadTokensForAi(aiId) {
                 });
             });
         } else {
-            document.querySelector('.no-tokens').classList.remove('d-none');
-            tokenList.innerHTML = '';
+            const noTokensEl = document.querySelector('.no-tokens');
+            if (noTokensEl) noTokensEl.classList.remove('d-none');
+            if (tokenList) tokenList.innerHTML = '';
         }
     } catch (error) {
         console.error('Erro ao carregar tokens:', error);
-        document.querySelector('.modal-loading').classList.add('d-none');
-        document.querySelector('.modal-error').classList.remove('d-none');
+        const loadingEl = document.querySelector('.modal-loading');
+        const errorEl = document.querySelector('.modal-error');
+        
+        if (loadingEl) loadingEl.classList.add('d-none');
+        if (errorEl) errorEl.classList.remove('d-none');
     }
 }
 
@@ -362,10 +834,14 @@ async function loadTokensForAi(aiId) {
 async function toggleTokenForAi(tokenId, aiId, isEnabled) {
     // Encontrar elementos de UI
     const toggle = document.getElementById(`token-${tokenId}`);
+    if (!toggle) return;
+    
     const statusBadge = toggle.nextElementSibling;
+    if (!statusBadge) return;
     
     // Desabilitar o switch durante o processamento
     toggle.disabled = true;
+    const originalText = statusBadge.textContent;
     statusBadge.innerHTML = `
         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
         Salvando...
@@ -403,7 +879,9 @@ async function toggleTokenForAi(tokenId, aiId, isEnabled) {
             statusBadge.textContent = isEnabled ? 'Ativo' : 'Inativo';
             
             // Mostrar mensagem de sucesso
-            showMessage('success', `Token ${isEnabled ? 'ativado' : 'desativado'} para esta IA com sucesso!`);
+            if (typeof showMessage === 'function') {
+                showMessage('success', `Token ${isEnabled ? 'ativado' : 'desativado'} para esta IA com sucesso!`);
+            }
         } else {
             // Reverter o estado do switch em caso de erro
             toggle.checked = !isEnabled;
@@ -411,7 +889,9 @@ async function toggleTokenForAi(tokenId, aiId, isEnabled) {
             statusBadge.textContent = !isEnabled ? 'Ativo' : 'Inativo';
             
             // Mostrar mensagem de erro
-            showMessage('error', data.message || 'Ocorreu um erro ao processar sua solicitação.');
+            if (typeof showMessage === 'function') {
+                showMessage('error', data.message || 'Ocorreu um erro ao processar sua solicitação.');
+            }
         }
     } catch (error) {
         console.error('Erro:', error);
@@ -419,57 +899,14 @@ async function toggleTokenForAi(tokenId, aiId, isEnabled) {
         toggle.checked = !isEnabled;
         statusBadge.className = !isEnabled ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
         statusBadge.textContent = !isEnabled ? 'Ativo' : 'Inativo';
-        showMessage('error', 'Erro de conexão. Tente novamente.');
+        
+        if (typeof showMessage === 'function') {
+            showMessage('error', 'Erro de conexão. Tente novamente.');
+        }
     }
 }
 
-// Função para exibir mensagem de toast
-function showMessage(type, message) {
-    let toastContainer = document.querySelector('.toast-container');
-    if (!toastContainer) {
-        toastContainer = document.createElement('div');
-        toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
-        toastContainer.style.zIndex = '1500';
-        document.body.appendChild(toastContainer);
-    }
-    
-    let bgClass, iconClass;
-    switch(type) {
-        case 'success':
-            bgClass = 'text-bg-success';
-            iconClass = 'bi-check-circle';
-            break;
-        case 'error':
-            bgClass = 'text-bg-danger';
-            iconClass = 'bi-exclamation-circle';
-            break;
-        default:
-            bgClass = 'text-bg-info';
-            iconClass = 'bi-info-circle';
-    }
-    
-    const toast = document.createElement('div');
-    toast.className = `toast align-items-center border-0 ${bgClass}`;
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'assertive');
-    toast.setAttribute('aria-atomic', 'true');
-    
-    toast.innerHTML = `
-        <div class="d-flex">
-            <div class="toast-body">
-                <i class="bi ${iconClass} me-2"></i>
-                ${message}
-            </div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-    `;
-    
-    toastContainer.appendChild(toast);
-    const bsToast = new bootstrap.Toast(toast, { delay: 3000 });
-    bsToast.show();
-}
-
-// Função auxiliar para obter cookies (para CSRF)
+// Função para obter cookies (para CSRF)
 function getCookie(name) {
     let cookieValue = null;
     if (document.cookie && document.cookie !== '') {
@@ -484,164 +921,5 @@ function getCookie(name) {
     }
     return cookieValue;
 }
-
 </script>
-
-<style>
-.table thead th {
-    border-bottom: none;
-    font-weight: 500;
-}
-
-.badge {
-    font-size: 0.85em;
-    padding: 0.4em 0.6em;
-}
-
-.btn-group .btn {
-    padding: 0.25rem 0.5rem;
-}
-
-.table td {
-    vertical-align: middle;
-}
-
-/* Estilos modernizados para a tabela */
-.table {
-    --bs-table-hover-bg: rgba(13, 110, 253, 0.04);
-    margin-bottom: 0;
-}
-
-.table thead {
-    background-color: #f8f9fa;
-}
-
-.table thead th {
-    font-weight: 500;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
-    padding: 1rem;
-    border-bottom: 2px solid #dee2e6;
-}
-
-.table td {
-    padding: 1rem;
-    vertical-align: middle;
-}
-
-.badge {
-    font-weight: 500;
-    padding: 0.5em 0.9em;
-    font-size: 0.75rem;
-}
-
-.cursor-pointer {
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-}
-
-.cursor-pointer:hover {
-    background-color: var(--bs-table-hover-bg);
-}
-
-/* Estilização do filtro */
-.card-header {
-    border-bottom: 1px solid #dee2e6;
-}
-
-.form-select {
-    border-radius: 0.5rem;
-    padding: 0.5rem 2.25rem 0.5rem 0.75rem;
-    font-size: 0.875rem;
-    border-color: #dee2e6;
-    cursor: pointer;
-}
-
-.form-select:focus {
-    border-color: #86b7fe;
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-}
-
-/* Animação suave ao filtrar */
-tbody tr {
-    transition: opacity 0.3s ease;
-}
-
-/* Estilos adicionais para busca e paginação */
-.form-control:focus {
-    border-color: #86b7fe;
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-}
-
-.pagination {
-    margin-bottom: 0;
-}
-
-.page-link {
-    padding: 0.375rem 0.75rem;
-    color: #0d6efd;
-    background-color: #fff;
-    border: 1px solid #dee2e6;
-}
-
-.page-link:hover {
-    z-index: 2;
-    color: #0a58ca;
-    background-color: #e9ecef;
-    border-color: #dee2e6;
-}
-
-.page-item.active .page-link {
-    z-index: 3;
-    color: #fff;
-    background-color: #0d6efd;
-    border-color: #0d6efd;
-}
-
-.card-footer {
-    border-top: 1px solid #dee2e6;
-    padding: 1rem;
-}
-
-/* Estilos para o modal de tokens */
-.token-list .list-group-item {
-    transition: background-color 0.2s ease;
-}
-
-.token-list .list-group-item:hover {
-    background-color: rgba(13, 110, 253, 0.04);
-}
-
-.form-check-input {
-    cursor: pointer;
-    width: 3em;
-    height: 1.5em;
-}
-
-.form-check-input:checked {
-    background-color: #198754;
-    border-color: #198754;
-}
-
-.status-badge {
-    font-size: 0.85em;
-    padding: 0.4em 0.6em;
-    transition: all 0.3s ease;
-}
-
-/* Animações para estados de carregamento */
-.btn-processing {
-    position: relative;
-    pointer-events: none;
-    opacity: 0.8;
-}
-
-.btn-processing .spinner-border {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-}
-</style>
 {% endblock %}

@@ -25,7 +25,7 @@ def monitoring_dashboard(request: HttpRequest):
     Se o usuário não for staff, só vai conseguir visualizar os logs filtrados
     (essa lógica está em monitoring_data).
     """
-    return render(request, 'api/monitoring/monitoring_dashboard.html')
+    return render(request, 'monitoring/dashboard.html')
 
 
 @login_required

@@ -1,0 +1,13 @@
+.env
+.gcloudignore
+db.sqlite3
+app.yaml
+logs/
+__pycache__/
+*.pyc
+*.json
+api/tests/test_config.py
+media/
+staticfiles/
+_build/
+celerybeat-schedule

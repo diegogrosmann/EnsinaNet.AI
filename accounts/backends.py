@@ -4,9 +4,11 @@ This module provides an authentication backend that allows users to log in
 using their email address.
 """
 
+import logging
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth import get_user_model
 
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
@@ -19,22 +21,38 @@ class EmailBackend(ModelBackend):
     def authenticate(self, request, username=None, password=None, **kwargs):
         """Autentica um usuário com base no email e na senha.
         
-        Argumentos:
-            request (HttpRequest): Objeto da requisição HTTP.
-            username (str, opcional): Email do usuário.
-            password (str, opcional): Senha do usuário.
-            **kwargs: Argumentos adicionais.
+        Args:
+            request: Objeto HttpRequest da requisição atual.
+            username: String contendo o email do usuário (usado como username).
+            password: String contendo a senha do usuário.
+            **kwargs: Argumentos adicionais que podem ser utilizados.
         
-        Retorna:
-            User ou None: Usuário autenticado ou None se as credenciais forem inválidas.
+        Returns:
+            User: Objeto de usuário autenticado ou None se a autenticação falhar.
         """
         if username is None:
             username = kwargs.get(User.USERNAME_FIELD)
+            
+        if not username or not password:
+            logger.warning("Tentativa de autenticação sem credenciais completas")
+            return None
+            
         try:
             user = User.objects.get(**{User.USERNAME_FIELD: username})
-        except User.DoesNotExist:
-            # Run the default password hasher once to reduce timing differences
-            User().set_password(password)
-        else:
+            logger.debug(f"Usuário encontrado: {username}")
+            
             if user.check_password(password) and self.user_can_authenticate(user):
+                logger.info(f"Autenticação bem-sucedida para: {username}")
                 return user
+            else:
+                logger.warning(f"Falha na autenticação para: {username}")
+                
+        except User.DoesNotExist:
+            # Executa o hasher de senha padrão para reduzir diferenças de tempo
+            # e dificultar ataques de temporização
+            User().set_password(password)
+            logger.warning(f"Tentativa de autenticação com email inexistente: {username}")
+        except Exception as e:
+            logger.error(f"Erro durante autenticação do usuário {username}: {str(e)}")
+            
+        return None

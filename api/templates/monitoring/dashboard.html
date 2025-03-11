@@ -1,0 +1,619 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="bs-component">
+        <!-- Card Principal -->
+        <div class="card border-primary mb-3">
+            <!-- Header do Card -->
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="card-title mb-0">
+                    <i class="bi bi-graph-up me-2"></i>
+                    Painel de Monitoramento da API
+                </h2>
+                <div class="ms-auto">
+                    <span class="badge bg-info" id="autoUpdateBadge">
+                        <i class="bi bi-arrow-repeat me-1"></i>
+                        Atualização: <span id="countdown">30</span>s
+                    </span>
+                    <button id="refreshButton" class="btn btn-outline-secondary btn-sm ms-2">
+                        <i class="bi bi-arrow-clockwise"></i> Atualizar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Corpo do Card -->
+            <div class="card-body">
+                <p class="text-muted mb-4">
+                    {% if user.is_staff %}
+                    <span class="badge bg-success">Modo Admin: Visualizando todos os logs</span>
+                    {% else %}
+                    <span class="badge bg-info">Visualizando apenas seus logs</span>
+                    {% endif %}
+                </p>
+
+                <!-- Filtros e Controles -->
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
+                    <!-- Controles à esquerda -->
+                    <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
+                        <button class="btn btn-sm btn-outline-primary toggle-filters" type="button" aria-expanded="true" aria-controls="filterControls">
+                            <i class="bi bi-funnel me-1"></i>Filtros
+                            <i class="bi bi-chevron-down ms-1"></i>
+                        </button>
+                        
+                        <!-- Informação de paginação -->
+                        <div class="text-muted d-none d-sm-block">
+                            Mostrando <span id="paginationFrom">1</span> a <span id="paginationTo">10</span> de <span id="paginationTotal">0</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Controles à direita -->
+                    <div class="input-group input-group-sm" style="width: auto; max-width: 200px;">
+                        <span class="input-group-text">Itens por página</span>
+                        <select id="itemsPerPage" class="form-select form-select-sm">
+                            <option value="5">5</option>
+                            <option value="10" selected>10</option>
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Filtros Expandidos -->
+                <div class="card bg-light mb-3" id="filterControls">
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <!-- Filtro por Path -->
+                            <div class="col-12 col-md-4">
+                                <label for="filterPath" class="form-label">Caminho (path)</label>
+                                <input type="text" id="filterPath" class="form-control form-control-sm filter" placeholder="Filtrar por caminho...">
+                            </div>
+                            
+                            <!-- Filtro por Método -->
+                            <div class="col-12 col-md-4">
+                                <label for="filterMethod" class="form-label">Método HTTP</label>
+                                <select id="filterMethod" class="form-select form-select-sm filter">
+                                    <option value="">Todos os métodos</option>
+                                    <option value="GET">GET</option>
+                                    <option value="POST">POST</option>
+                                    <option value="PUT">PUT</option>
+                                    <option value="DELETE">DELETE</option>
+                                    <option value="PATCH">PATCH</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Filtro por Status -->
+                            <div class="col-12 col-md-4">
+                                <label for="filterStatus" class="form-label">Status HTTP</label>
+                                <input type="text" id="filterStatus" class="form-control form-control-sm filter" placeholder="Ex: 200, 404, 500...">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabela Responsiva -->
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th scope="col" class="sortable" data-sort-key="id">
+                                    ID
+                                    <i class="sort-icon bi bi-sort-numeric-down"></i>
+                                </th>
+                                <th scope="col" class="sortable" data-sort-key="token">
+                                    Token
+                                    <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                </th>
+                                <th scope="col" class="sortable" data-sort-key="path">
+                                    Path
+                                    <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                </th>
+                                <th scope="col" class="sortable" data-sort-key="method">
+                                    Método
+                                    <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                </th>
+                                <th scope="col" class="sortable" data-sort-key="status">
+                                    Status
+                                    <i class="sort-icon bi bi-sort-numeric-down"></i>
+                                </th>
+                                <th scope="col" class="sortable" data-sort-key="time">
+                                    Tempo (s)
+                                    <i class="sort-icon bi bi-sort-numeric-down"></i>
+                                </th>
+                                <th scope="col" class="sortable active-sort" data-sort-key="timestamp">
+                                    Data/Hora
+                                    <i class="sort-icon bi bi-sort-numeric-down-alt"></i>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTable">
+                            <!-- Linhas serão preenchidas dinamicamente via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Paginação -->
+                <nav aria-label="Paginação da tabela de logs" class="mt-3">
+                    <ul class="pagination pagination-sm justify-content-center" id="pagination">
+                        <li class="page-item disabled">
+                            <a class="page-link" href="#" id="prevPage" aria-label="Página anterior">
+                                <span aria-hidden="true">&laquo;</span>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="#" id="nextPage" aria-label="Próxima página">
+                                <span aria-hidden="true">&raquo;</span>
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Variáveis globais
+        let allLogs = [];
+        let filteredLogs = [];
+        let currentPage = 1;
+        let itemsPerPage = parseInt(document.getElementById('itemsPerPage').value) || 10;
+        let sortKey = 'timestamp';
+        let sortDirection = 'desc'; // Começar ordenando por data decrescente
+        let updateTimer = null;
+        let countdownInterval = null;
+        let secondsLeft = 30;
+        
+        // Função para buscar dados da API e atualizar a tabela
+        function fetchData() {
+            // Usar URL nomeada com namespace
+            fetch("{% url 'api:monitoring_data' %}")
+                .then(response => response.json())
+                .then(data => {
+                    allLogs = data.logs.map(log => {
+                        // Adicionar valores para ordenação
+                        return {
+                            ...log,
+                            _timestampSort: new Date(log.timestamp).getTime()
+                        };
+                    });
+                    document.getElementById('paginationTotal').textContent = allLogs.length;
+                    
+                    // Aplicar filtros e ordenação nos dados recém-obtidos
+                    applyFiltersAndSort();
+                })
+                .catch(err => {
+                    console.error("Erro ao carregar dados de monitoramento:", err);
+                    showMessage('danger', 'Erro ao carregar dados do servidor');
+                })
+                .finally(() => {
+                    // Reiniciar contador de atualização
+                    resetCountdown();
+                });
+        }
+        
+        // Função para aplicar filtros e ordenação
+        function applyFiltersAndSort() {
+            const pathFilter = document.getElementById('filterPath')?.value.toLowerCase() || '';
+            const methodFilter = document.getElementById('filterMethod')?.value || '';
+            const statusFilter = document.getElementById('filterStatus')?.value || '';
+            
+            filteredLogs = allLogs.filter(log => {
+                const pathMatch = log.path.toLowerCase().includes(pathFilter);
+                const methodMatch = !methodFilter || log.method === methodFilter;
+                const statusMatch = !statusFilter || log.status_code.toString().includes(statusFilter);
+                
+                return pathMatch && methodMatch && statusMatch;
+            });
+            
+            // Ordenar logs
+            sortLogs();
+            
+            // Atualizar paginação e renderizar tabela
+            updatePagination();
+            renderTable();
+        }
+        
+        // Função para ordenar logs
+        function sortLogs() {
+            filteredLogs.sort((a, b) => {
+                let aValue, bValue;
+                
+                switch (sortKey) {
+                    case 'timestamp':
+                        aValue = a._timestampSort;
+                        bValue = b._timestampSort;
+                        break;
+                    case 'id':
+                        aValue = parseInt(a.id);
+                        bValue = parseInt(b.id);
+                        break;
+                    case 'status':
+                        aValue = parseInt(a.status_code);
+                        bValue = parseInt(b.status_code);
+                        break;
+                    case 'time':
+                        aValue = parseFloat(a.execution_time);
+                        bValue = parseFloat(b.execution_time);
+                        break;
+                    case 'token':
+                        aValue = a.user_token || '';
+                        bValue = a.user_token || '';
+                        break;
+                    default:
+                        aValue = a[sortKey];
+                        bValue = b[sortKey];
+                }
+                
+                // Para ordem ascendente
+                if (sortDirection === 'asc') {
+                    if (aValue < bValue) return -1;
+                    if (aValue > bValue) return 1;
+                    return 0;
+                } 
+                // Para ordem descendente
+                else {
+                    if (aValue > bValue) return -1;
+                    if (aValue < bValue) return 1;
+                    return 0;
+                }
+            });
+            
+            // Atualizar ícones de ordenação
+            updateSortIcons();
+        }
+        
+        // Atualizar ícones das colunas de ordenação
+        function updateSortIcons() {
+            document.querySelectorAll('th.sortable').forEach(th => {
+                const icon = th.querySelector('.sort-icon');
+                if (!icon) return;
+                
+                const key = th.getAttribute('data-sort-key');
+                
+                th.classList.remove('active-sort');
+                icon.classList.remove(
+                    'bi-sort-alpha-down', 
+                    'bi-sort-alpha-up',
+                    'bi-sort-numeric-down', 
+                    'bi-sort-numeric-up',
+                    'bi-sort-alpha-down-alt',
+                    'bi-sort-alpha-up-alt',
+                    'bi-sort-numeric-down-alt',
+                    'bi-sort-numeric-up-alt'
+                );
+                
+                if (key === sortKey) {
+                    th.classList.add('active-sort');
+                    const isNumeric = ['id', 'status', 'time', 'timestamp'].includes(key);
+                    
+                    if (sortDirection === 'asc') {
+                        icon.classList.add(isNumeric ? 'bi-sort-numeric-down' : 'bi-sort-alpha-down');
+                    } else {
+                        icon.classList.add(isNumeric ? 'bi-sort-numeric-down-alt' : 'bi-sort-alpha-down-alt');
+                    }
+                } else {
+                    const isNumeric = ['id', 'status', 'time', 'timestamp'].includes(key);
+                    icon.classList.add(isNumeric ? 'bi-sort-numeric-down' : 'bi-sort-alpha-down');
+                }
+            });
+        }
+        
+        // Renderizar a tabela com os dados filtrados e ordenados
+        function renderTable() {
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, filteredLogs.length);
+            const displayedLogs = filteredLogs.slice(startIndex, endIndex);
+            
+            const tbody = document.getElementById('logsTable');
+            tbody.innerHTML = '';
+            
+            if (displayedLogs.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="7" class="text-center py-3">Nenhum registro encontrado</td>`;
+                tbody.appendChild(tr);
+            } else {
+                displayedLogs.forEach(log => {
+                    const tr = document.createElement('tr');
+                    
+                    // Determinar classe de status para colorir
+                    let statusClass = '';
+                    if (log.status_code < 300) statusClass = 'text-success';
+                    else if (log.status_code < 400) statusClass = 'text-info';
+                    else if (log.status_code < 500) statusClass = 'text-warning';
+                    else statusClass = 'text-danger';
+                    
+                    tr.innerHTML = `
+                        <td>${log.id}</td>
+                        <td>${log.user_token || '<span class="text-muted">N/A</span>'}</td>
+                        <td><code>${log.path}</code></td>
+                        <td><span class="badge bg-secondary">${log.method}</span></td>
+                        <td><span class="badge ${statusClass}">${log.status_code}</span></td>
+                        <td>${log.execution_time}</td>
+                        <td>${log.timestamp}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+            
+            // Atualizar indicadores de paginação
+            const fromCounter = document.getElementById('paginationFrom');
+            const toCounter = document.getElementById('paginationTo');
+            
+            if (fromCounter) fromCounter.textContent = filteredLogs.length === 0 ? 0 : startIndex + 1;
+            if (toCounter) toCounter.textContent = endIndex;
+        }
+        
+        // Atualizar controles de paginação
+        function updatePagination() {
+            const totalItems = filteredLogs.length;
+            const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+            
+            if (currentPage > totalPages) {
+                currentPage = totalPages;
+            }
+            
+            const pagination = document.getElementById('pagination');
+            const prevPageBtn = pagination.querySelector('#prevPage').parentElement;
+            const nextPageBtn = pagination.querySelector('#nextPage').parentElement;
+            
+            prevPageBtn.classList.toggle('disabled', currentPage <= 1);
+            nextPageBtn.classList.toggle('disabled', currentPage >= totalPages);
+            
+            // Limpar páginas existentes
+            Array.from(pagination.querySelectorAll('li:not(:first-child):not(:last-child)')).forEach(li => li.remove());
+            
+            let pagesToShow = [];
+            if (totalPages <= 5) {
+                pagesToShow = Array.from({length: totalPages}, (_, i) => i + 1);
+            } else {
+                pagesToShow = [1];
+                
+                if (currentPage > 3) {
+                    pagesToShow.push('...');
+                }
+                
+                for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+                    pagesToShow.push(i);
+                }
+                
+                if (currentPage < totalPages - 2) {
+                    pagesToShow.push('...');
+                }
+                
+                if (totalPages > 1) {
+                    pagesToShow.push(totalPages);
+                }
+            }
+            
+            const nextPageElement = pagination.querySelector('li:last-child');
+            
+            pagesToShow.forEach(pageNum => {
+                const li = document.createElement('li');
+                
+                if (pageNum === '...') {
+                    li.className = 'page-item disabled';
+                    li.innerHTML = '<span class="page-link">...</span>';
+                } else {
+                    li.className = `page-item ${currentPage === pageNum ? 'active' : ''}`;
+                    li.innerHTML = `<a class="page-link" href="#" data-page="${pageNum}">${pageNum}</a>`;
+                    
+                    if (currentPage !== pageNum) {
+                        li.querySelector('a').addEventListener('click', function(e) {
+                            e.preventDefault();
+                            currentPage = parseInt(this.dataset.page);
+                            renderTable();
+                            updatePagination();
+                        });
+                    }
+                }
+                
+                pagination.insertBefore(li, nextPageElement);
+            });
+        }
+        
+        // Reiniciar contador de atualização automática
+        function resetCountdown() {
+            clearInterval(countdownInterval);
+            secondsLeft = 30;
+            updateCountdown();
+            
+            countdownInterval = setInterval(() => {
+                secondsLeft--;
+                updateCountdown();
+                
+                if (secondsLeft <= 0) {
+                    fetchData();
+                }
+            }, 1000);
+        }
+        
+        function updateCountdown() {
+            document.getElementById('countdown').textContent = secondsLeft;
+        }
+        
+        // Exibir mensagem de alerta
+        function showMessage(type, text) {
+            // Criar elemento de alerta
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                <i class="bi bi-info-circle me-2"></i>${text}
+            `;
+            
+            // Inserir no topo do corpo do card
+            const cardBody = document.querySelector('.card-body');
+            cardBody.insertBefore(alertDiv, cardBody.firstChild);
+            
+            // Auto-remover após 5 segundos
+            setTimeout(() => {
+                if (alertDiv.parentElement) {
+                    alertDiv.classList.remove('show');
+                    setTimeout(() => alertDiv.remove(), 300);
+                }
+            }, 5000);
+        }
+        
+        // Event listeners
+        
+        // Ordenação nas colunas da tabela
+        document.querySelectorAll('th.sortable').forEach(header => {
+            header.addEventListener('click', function() {
+                const key = this.dataset.sortKey;
+                if (key === sortKey) {
+                    sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortKey = key;
+                    // Para timestamp, a ordenação padrão é desc (mais novo primeiro)
+                    sortDirection = key === 'timestamp' ? 'desc' : 'asc';
+                }
+                
+                sessionStorage.setItem('logsTableSortKey', sortKey);
+                sessionStorage.setItem('logsTableSortDirection', sortDirection);
+                
+                sortLogs();
+                renderTable();
+            });
+        });
+        
+        // Controle de itens por página
+        document.getElementById('itemsPerPage').addEventListener('change', function() {
+            itemsPerPage = parseInt(this.value);
+            currentPage = 1;
+            sessionStorage.setItem('logsTableItemsPerPage', itemsPerPage);
+            renderTable();
+            updatePagination();
+        });
+        
+        // Navegação de página anterior e próxima
+        document.getElementById('prevPage').addEventListener('click', function(e) {
+            e.preventDefault();
+            if (currentPage > 1) {
+                currentPage--;
+                renderTable();
+                updatePagination();
+            }
+        });
+        
+        document.getElementById('nextPage').addEventListener('click', function(e) {
+            e.preventDefault();
+            const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderTable();
+                updatePagination();
+            }
+        });
+        
+        // Botão de atualização manual
+        document.getElementById('refreshButton').addEventListener('click', function() {
+            fetchData();
+            showMessage('info', 'Dados atualizados manualmente');
+        });
+        
+        // Toggle de filtros
+        document.querySelector('.toggle-filters').addEventListener('click', function() {
+            const filterControls = document.querySelector('#filterControls');
+            const icon = this.querySelector('i:last-child');
+            
+            if (filterControls.style.display === 'none') {
+                filterControls.style.display = 'block';
+                icon.classList.replace('bi-chevron-up', 'bi-chevron-down');
+            } else {
+                filterControls.style.display = 'none';
+                icon.classList.replace('bi-chevron-down', 'bi-chevron-up');
+            }
+            
+            sessionStorage.setItem('logsTableFiltersVisible', filterControls.style.display !== 'none');
+        });
+        
+        // Aplicar filtros em tempo real
+        document.querySelectorAll('.filter').forEach(filter => {
+            filter.addEventListener('input', function() {
+                this.classList.toggle('is-valid', this.value !== '');
+                currentPage = 1;
+                applyFiltersAndSort();
+            });
+        });
+        
+        // Restaurar preferências do usuário
+        function restoreUserPreferences() {
+            // Restaurar itens por página
+            const savedItemsPerPage = sessionStorage.getItem('logsTableItemsPerPage');
+            if (savedItemsPerPage) {
+                itemsPerPage = parseInt(savedItemsPerPage);
+                const itemsPerPageSelect = document.getElementById('itemsPerPage');
+                if (itemsPerPageSelect.querySelector(`option[value="${itemsPerPage}"]`)) {
+                    itemsPerPageSelect.value = itemsPerPage;
+                }
+            }
+            
+            // Restaurar visibilidade dos filtros
+            const filtersVisible = sessionStorage.getItem('logsTableFiltersVisible');
+            const filterControls = document.querySelector('#filterControls');
+            const toggleFiltersIcon = document.querySelector('.toggle-filters i:last-child');
+            
+            if (filtersVisible === 'false' && filterControls && toggleFiltersIcon) {
+                filterControls.style.display = 'none';
+                toggleFiltersIcon.classList.replace('bi-chevron-down', 'bi-chevron-up');
+            }
+            
+            // Restaurar ordenação
+            const savedSortKey = sessionStorage.getItem('logsTableSortKey');
+            const savedSortDirection = sessionStorage.getItem('logsTableSortDirection');
+            
+            if (savedSortKey && savedSortDirection) {
+                sortKey = savedSortKey;
+                sortDirection = savedSortDirection;
+            }
+        }
+        
+        // Inicialização
+        restoreUserPreferences();
+        fetchData(); // Buscar dados iniciais
+    });
+</script>
+
+<style>
+    /* Estilos para ordenação de tabela */
+    th.sortable {
+        cursor: pointer;
+        position: relative;
+        user-select: none;
+    }
+    th.sortable:hover {
+        background-color: rgba(0,0,0,0.05);
+    }
+    th.sortable .sort-icon {
+        font-size: 0.8rem;
+        margin-left: 5px;
+    }
+    th.active-sort {
+        background-color: rgba(0,0,0,0.075);
+    }
+    
+    /* Estilo para o badge de atualização */
+    #autoUpdateBadge {
+        font-weight: normal;
+    }
+    
+    /* Estilo para as células da tabela */
+    .table td, .table th {
+        vertical-align: middle;
+    }
+    
+    /* Animação para o botão de atualização */
+    #refreshButton:active i {
+        animation: spin 0.5s linear;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+</style>
+{% endblock %}

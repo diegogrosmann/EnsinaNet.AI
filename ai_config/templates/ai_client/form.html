@@ -1,204 +1,274 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container">
+<div class="container py-4">
     <div class="row justify-content-center">
-        <div class="col-md-8">
-            <div class="card shadow-sm">
-                <!-- Card Header -->
-                <div class="card-header bg-white d-flex justify-content-between align-items-center p-3">
-                    <h2 class="h4 m-0">
-                        <i class="bi bi-robot me-2"></i> 
-                        {{ title }}
-                    </h2>
-                    <a href="{% url 'ai_config:ai_manage' %}" class="btn btn-outline-secondary">
-                        <i class="bi bi-arrow-left"></i> Voltar
-                    </a>
-                </div>
-
-                <!-- Card Body -->
-                <div class="card-body p-4">
-                    <form method="post" class="needs-validation" novalidate>
-                        {% csrf_token %}
-
-                        <!-- Campos Básicos -->
-                        <div class="row g-4">
-                            <!-- Nome -->
-                            <div class="col-12">
-                                <label class="form-label fw-bold">
-                                    <i class="bi bi-tag me-1"></i> Nome da IA
-                                </label>
-                                {{ form.name }}
-                                {% if form.name.errors %}
-                                    <div class="invalid-feedback d-block">{{ form.name.errors|join:", " }}</div>
-                                {% endif %}
-                            </div>
-
-                            <!-- AI Client -->
-                            <div class="col-12">
-                                <label class="form-label fw-bold">
-                                    <i class="bi bi-cpu me-1"></i> Cliente IA
-                                </label>
-                                {{ form.ai_client }}
-                                {% if form.ai_client.errors %}
-                                    <div class="invalid-feedback d-block">{{ form.ai_client.errors|join:", " }}</div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Model Name -->
-                            <div class="col-12">
-                                <label class="form-label fw-bold">
-                                    <i class="bi bi-box me-1"></i> Nome do Modelo
-                                </label>
-                                {{ form.model_name }}
-                                {% if form.model_name.errors %}
-                                    <div class="invalid-feedback d-block">{{ form.model_name.errors|join:", " }}</div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Use System Message -->
-                            <div class="col-12">
-                                <div class="form-check">
-                                    {{ form.use_system_message }}
-                                    <label class="form-check-label" for="{{ form.use_system_message.id_for_label }}">
-                                        <i class="bi bi-chat-left-text me-1"></i> {{ form.use_system_message.label }}
-                                    </label>
+        <div class="col-12 col-lg-8">
+            <div class="bs-component">
+                <!-- Card Principal usando estrutura padrão do Bootswatch -->
+                <div class="card border-primary mb-3">
+                    <!-- Header do Card com estilo Bootswatch -->
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h2 class="card-title mb-0">
+                            <i class="bi bi-robot me-2"></i> 
+                            {{ title }}
+                        </h2>
+                        <a href="{% url 'ai_config:ai_manage' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Voltar
+                        </a>
+                    </div>
+                    
+                    <!-- Corpo do Card -->
+                    <div class="card-body">
+                        <form method="post" class="needs-validation" id="aiConfigForm" novalidate>
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
+                            
+                            <fieldset>
+                                <!-- Campos básicos organizados com classes Bootstrap -->
+                                <div class="row g-3">
+                                    <!-- Nome da IA -->
+                                    <div class="col-12">
+                                        <div class="form-group">
+                                            <label class="form-label" for="{{ form.name.id_for_label }}">
+                                                <i class="bi bi-tag me-1"></i> Nome da IA
+                                            </label>
+                                            {{ form.name }}
+                                            {% if form.name.errors %}
+                                                <div class="invalid-feedback d-block">{{ form.name.errors|join:", " }}</div>
+                                            {% else %}
+                                                <small class="form-text text-muted">{{ form.name.help_text }}</small>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Cliente IA -->
+                                    <div class="col-12">
+                                        <div class="form-group">
+                                            <label class="form-label" for="{{ form.ai_client.id_for_label }}">
+                                                <i class="bi bi-cpu me-1"></i> Cliente IA
+                                            </label>
+                                            {{ form.ai_client }}
+                                            {% if form.ai_client.errors %}
+                                                <div class="invalid-feedback d-block">{{ form.ai_client.errors|join:", " }}</div>
+                                            {% else %}
+                                                <small class="form-text text-muted">{{ form.ai_client.help_text }}</small>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Nome do Modelo -->
+                                    <div class="col-12">
+                                        <div class="form-group">
+                                            <label class="form-label" for="{{ form.model_name.id_for_label }}">
+                                                <i class="bi bi-box me-1"></i> Nome do Modelo
+                                            </label>
+                                            {{ form.model_name }}
+                                            {% if form.model_name.errors %}
+                                                <div class="invalid-feedback d-block">{{ form.model_name.errors|join:", " }}</div>
+                                            {% else %}
+                                                <small class="form-text text-muted">{{ form.model_name.help_text }}</small>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Usar Mensagem do Sistema -->
+                                    <div class="col-12">
+                                        <div class="form-check">
+                                            {{ form.use_system_message }}
+                                            <label class="form-check-label" for="{{ form.use_system_message.id_for_label }}">
+                                                <i class="bi bi-chat-left-text me-1"></i> Usar Mensagem do Sistema
+                                            </label>
+                                        </div>
+                                        {% if form.use_system_message.errors %}
+                                            <div class="invalid-feedback d-block">{{ form.use_system_message.errors|join:", " }}</div>
+                                        {% else %}
+                                            <small class="form-text text-muted">{{ form.use_system_message.help_text }}</small>
+                                        {% endif %}
+                                    </div>
                                 </div>
-                                {% if form.use_system_message.help_text %}
-                                    <div class="form-text">{{ form.use_system_message.help_text }}</div>
-                                {% endif %}
-                            </div>
 
-                            <!-- Configurações Avançadas -->
-                            <div class="col-12">
-                                <div class="accordion" id="configAccordion">
-                                    <!-- Configurações da API -->
-                                    <div class="accordion-item">
-                                        <h2 class="accordion-header">
-                                            <button class="accordion-button {% if not form.configurations.errors %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#configCollapse" aria-expanded="{% if form.configurations.errors %}true{% else %}false{% endif %}">
-                                                <i class="bi bi-gear me-2"></i> Configurações da API
-                                            </button>
-                                        </h2>
-                                        <div id="configCollapse" class="accordion-collapse collapse {% if form.configurations.errors %}show{% endif %}" data-bs-parent="#configAccordion">
-                                            <div class="accordion-body">
-                                                <div class="mb-3">
-                                                    <label class="form-label">Parâmetros da API</label>
-                                                    {% with config_value=form.configurations.value %}
-                                                        <textarea name="{{ form.configurations.name }}" class="form-control {% if form.configurations.errors %}is-invalid{% endif %}" rows="5" placeholder="{{ form.configurations.field.widget.attrs.placeholder }}">{% if config_value != '{}' and config_value != None %}{{ config_value }}{% endif %}</textarea>
-                                                    {% endwith %}
-                                                    {% if form.configurations.errors %}
-                                                        <div class="invalid-feedback d-block">
-                                                            {% for error in form.configurations.errors %}
-                                                                {{ error }}
-                                                            {% endfor %}
+                                <!-- Configurações Avançadas usando Bootswatch Accordion -->
+                                <div class="mt-4">
+                                    <div class="accordion" id="configAccordion">
+                                        <!-- Configurações da API -->
+                                        <div class="accordion-item">
+                                            <h2 class="accordion-header" id="configHeading">
+                                                <button class="accordion-button {% if not form.configurations.errors %}collapsed{% endif %}" 
+                                                        type="button" 
+                                                        data-bs-toggle="collapse" 
+                                                        data-bs-target="#configCollapse" 
+                                                        aria-expanded="{% if form.configurations.errors %}true{% else %}false{% endif %}" 
+                                                        aria-controls="configCollapse">
+                                                    <i class="bi bi-gear me-2"></i> Configurações da API
+                                                </button>
+                                            </h2>
+                                            <div id="configCollapse" 
+                                                 class="accordion-collapse collapse {% if form.configurations.errors %}show{% endif %}" 
+                                                 aria-labelledby="configHeading" 
+                                                 data-bs-parent="#configAccordion">
+                                                <div class="accordion-body">
+                                                    <div class="form-group">
+                                                        <label class="form-label" for="{{ form.configurations.id_for_label }}">
+                                                            Parâmetros da API
+                                                        </label>
+                                                        {% with config_value=form.configurations.value %}
+                                                            <textarea name="{{ form.configurations.name }}" 
+                                                                      id="{{ form.configurations.id_for_label }}"
+                                                                      class="form-control {% if form.configurations.errors %}is-invalid{% endif %}" 
+                                                                      rows="5" 
+                                                                      placeholder="{{ form.configurations.field.widget.attrs.placeholder }}">{% if config_value != '{}' and config_value != None %}{{ config_value }}{% endif %}</textarea>
+                                                        {% endwith %}
+                                                        
+                                                        {% if form.configurations.errors %}
+                                                            <div class="invalid-feedback d-block">
+                                                                {% for error in form.configurations.errors %}
+                                                                    {{ error }}
+                                                                {% endfor %}
+                                                            </div>
+                                                        {% endif %}
+                                                        
+                                                        <div class="form-text">
+                                                            Configure parâmetros da API no formato chave=valor (um por linha)
+                                                            <br>Exemplo:<br>
+                                                            <code>temperature=0.7</code><br>
+                                                            <code>max_tokens=2000</code>
                                                         </div>
-                                                    {% endif %}
-                                                    <div class="form-text">
-                                                        Configure parâmetros da API no formato chave=valor (um por linha)
-                                                        <br>Exemplo:<br>
-                                                        temperature=0.7<br>
-                                                        max_tokens=2000
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Configurações de Treinamento -->
+                                        <div class="accordion-item">
+                                            <h2 class="accordion-header" id="trainingHeading">
+                                                <button class="accordion-button {% if not form.training_configurations.errors %}collapsed{% endif %}" 
+                                                        type="button" 
+                                                        data-bs-toggle="collapse" 
+                                                        data-bs-target="#trainingCollapse" 
+                                                        aria-expanded="{% if form.training_configurations.errors %}true{% else %}false{% endif %}" 
+                                                        aria-controls="trainingCollapse">
+                                                    <i class="bi bi-book me-2"></i> Configurações de Treinamento
+                                                </button>
+                                            </h2>
+                                            <div id="trainingCollapse" 
+                                                 class="accordion-collapse collapse {% if form.training_configurations.errors %}show{% endif %}" 
+                                                 aria-labelledby="trainingHeading" 
+                                                 data-bs-parent="#configAccordion">
+                                                <div class="accordion-body">
+                                                    <div class="form-group">
+                                                        <label class="form-label" for="{{ form.training_configurations.id_for_label }}">
+                                                            Parâmetros de Treinamento
+                                                        </label>
+                                                        {% with train_value=form.training_configurations.value %}
+                                                            <textarea name="{{ form.training_configurations.name }}" 
+                                                                      id="{{ form.training_configurations.id_for_label }}"
+                                                                      class="form-control {% if form.training_configurations.errors %}is-invalid{% endif %}" 
+                                                                      rows="5" 
+                                                                      placeholder="{{ form.training_configurations.field.widget.attrs.placeholder }}">{% if train_value != '{}' and train_value != None %}{{ train_value }}{% endif %}</textarea>
+                                                        {% endwith %}
+                                                        
+                                                        {% if form.training_configurations.errors %}
+                                                            <div class="invalid-feedback d-block">
+                                                                {% for error in form.training_configurations.errors %}
+                                                                    {{ error }}
+                                                                {% endfor %}
+                                                            </div>
+                                                        {% endif %}
+                                                        
+                                                        <div class="form-text">
+                                                            Configure parâmetros de treinamento no formato chave=valor (um por linha)
+                                                            <br>Exemplo:<br>
+                                                            <code>epochs=10</code><br>
+                                                            <code>batch_size=4</code><br>
+                                                            <code>learning_rate=0.001</code>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-
-                                    <!-- Configurações de Treinamento -->
-                                    <div class="accordion-item">
-                                        <h2 class="accordion-header">
-                                            <button class="accordion-button {% if not form.training_configurations.errors %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#trainingCollapse" aria-expanded="{% if form.training_configurations.errors %}true{% else %}false{% endif %}">
-                                                <i class="bi bi-book me-2"></i> Configurações de Treinamento
-                                            </button>
-                                        </h2>
-                                        <div id="trainingCollapse" class="accordion-collapse collapse {% if form.training_configurations.errors %}show{% endif %}" data-bs-parent="#configAccordion">
-                                            <div class="accordion-body">
-                                                <div class="mb-3">
-                                                    <label class="form-label">Parâmetros de Treinamento</label>
-                                                    {% with train_value=form.training_configurations.value %}
-                                                        <textarea name="{{ form.training_configurations.name }}" class="form-control {% if form.training_configurations.errors %}is-invalid{% endif %}" rows="5" placeholder="{{ form.training_configurations.field.widget.attrs.placeholder }}">{% if train_value != '{}' and train_value != None %}{{ train_value }}{% endif %}</textarea>
-                                                    {% endwith %}
-                                                    {% if form.training_configurations.errors %}
-                                                        <div class="invalid-feedback d-block">
-                                                            {% for error in form.training_configurations.errors %}
-                                                                {{ error }}
-                                                            {% endfor %}
-                                                        </div>
-                                                    {% endif %}
-                                                    <div class="form-text">
-                                                        Configure parâmetros de treinamento no formato chave=valor (um por linha)
-                                                        <br>Exemplo:<br>
-                                                        epochs=10<br>
-                                                        batch_size=4<br>
-                                                        learning_rate=0.001
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
                                 </div>
-                            </div>
 
-                            <!-- Botão Submit -->
-                            <div class="col-12">
-                                <div class="d-grid gap-2">
-                                    <button type="submit" class="btn btn-primary">
+                                <!-- Botões de Ação -->
+                                <div class="mt-4 d-grid gap-2">
+                                    <button type="submit" class="btn btn-primary btn-lg">
                                         <i class="bi bi-save me-1"></i> {{ submit_text }}
                                     </button>
+                                    
+                                    {% if is_edit %}
+                                        <div class="text-center mt-2">
+                                            <small class="text-muted">
+                                                <i class="bi bi-info-circle me-1"></i> 
+                                                Você pode usar <kbd>Ctrl</kbd>+<kbd>S</kbd> ou <kbd>⌘</kbd>+<kbd>S</kbd> para salvar rapidamente.
+                                            </small>
+                                        </div>
+                                    {% endif %}
                                 </div>
-                            </div>
+                            </fieldset>
+                        </form>
+                    </div>
+                    
+                    <!-- Rodapé do Card (opcional) -->
+                    {% if is_edit %}
+                    <div class="card-footer text-muted">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Última atualização: {{ ai_config.modified_at|date:"d/m/Y H:i" }}</span>
+                            <span>Criado em: {{ ai_config.created_at|date:"d/m/Y" }}</span>
                         </div>
-                    </form>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<style>
-.form-control, .form-select {
-    border-radius: 0.375rem;
-    border: 1px solid #dee2e6;
-    padding: 0.75rem;
-}
-
-.accordion-button:not(.collapsed) {
-    background-color: #f8f9fa;
-    color: #0d6efd;
-}
-
-.accordion-button:focus {
-    box-shadow: none;
-    border-color: rgba(13, 110, 253, 0.25);
-}
-
-textarea.form-control {
-    min-height: 120px;
-    font-family: 'Fira Code', monospace;
-    line-height: 1.5;
-}
-
-.invalid-feedback {
-    font-size: 0.875rem;
-}
-
-.form-text {
-    font-size: 0.875rem;
-    color: #6c757d;
-}
-
-.card {
-    border: none;
-    box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
-}
-</style>
-
 <script>
+// Atalho para salvar formulário com Ctrl+S ou Cmd+S
 document.addEventListener('keydown', function(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
+        // Resetar a flag antes de submeter o formulário
+        window.hasUnsavedChanges = false;
         document.querySelector('form').submit();
     }
+});
+
+// Inicialização Bootstrap e detecção de mudanças
+document.addEventListener('DOMContentLoaded', function() {
+    // Ative os tooltips do Bootstrap
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function(tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+    
+    // Detecção de mudanças não salvas
+    const form = document.getElementById('aiConfigForm');
+    
+    // Inicialmente, não há mudanças não salvas
+    window.hasUnsavedChanges = false;
+    
+    // Função para marcar que há alterações não salvas
+    function markAsChanged() {
+        window.hasUnsavedChanges = true;
+    }
+    
+    // Adicionar listeners a todos os inputs, selects e textareas
+    form.querySelectorAll('input, select, textarea').forEach(element => {
+        element.addEventListener('change', markAsChanged);
+        
+        // Para os campos de texto, também detectar digitação
+        if (element.tagName === 'INPUT' && element.type === 'text' || 
+            element.tagName === 'TEXTAREA') {
+            element.addEventListener('input', markAsChanged);
+        }
+    });
+    
+    // Quando o formulário for enviado, não considerar mais como mudanças não salvas
+    form.addEventListener('submit', function() {
+        window.hasUnsavedChanges = false;
+    });
 });
 </script>
 {% endblock %}

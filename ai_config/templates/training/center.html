@@ -1,129 +1,298 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container py-5">
-    <!-- Cabeçalho -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <h1><i class="bi bi-robot"></i> Central de Treinamento</h1>
-                {% if active_capture %}
-                    <button id="stopCapture" class="btn btn-danger">
-                        <i class="bi bi-stop-circle"></i> Parar Captura
-                    </button>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-
-    <!-- Status do Sistema -->
-    <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card bg-primary text-white">
-                <div class="card-body">
-                    <h5 class="card-title">
-                        <i class="bi bi-list-check"></i> Treinamentos em Fila
-                    </h5>
-                    <h2 id="queuedCount">-</h2>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card bg-success text-white">
-                <div class="card-body">
-                    <h5 class="card-title">
-                        <i class="bi bi-check-circle"></i> Treinamentos Concluídos
-                    </h5>
-                    <h2 id="completedCount">-</h2>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card bg-warning text-dark">
-                <div class="card-body">
-                    <h5 class="card-title">
-                        <i class="bi bi-gear-wide-connected"></i> Em Processamento
-                    </h5>
-                    <h2 id="processingCount">-</h2>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Conteúdo Principal -->
-    <div class="row mb-4">
-        <!-- Lista de Arquivos -->
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> Arquivos de Treinamento</h5>
-                    <div class="btn-group">
-                        <a href="{% url 'ai_config:training_file_create' %}" class="btn btn-success btn-sm">
-                            <i class="bi bi-file-earmark-plus"></i> Criar Arquivo
-                        </a>
-                        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#uploadModal">
-                            <i class="bi bi-upload"></i> Upload
+<div class="container py-4">
+    <div class="bs-docs-section">
+        <!-- Cabeçalho usando padrão Bootswatch -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="page-header d-flex justify-content-between align-items-center">
+                    <h1 class="mb-0">
+                        <i class="bi bi-robot"></i> Central de Treinamento
+                    </h1>
+                    {% if active_capture %}
+                        <button id="stopCapture" class="btn btn-danger">
+                            <i class="bi bi-stop-circle"></i> Parar Captura
                         </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Status cards -->
+        <div class="row mb-4 g-3">
+            <div class="col-md-4">
+                <div class="card border-primary h-100">
+                    <div class="card-header">Treinamentos em Fila</div>
+                    <div class="card-body">
+                        <h2 class="card-title" id="queuedCount">-</h2>
+                        <p class="card-text"><i class="bi bi-list-check"></i> Aguardando processamento</p>
                     </div>
                 </div>
-                <div class="card-body p-0">
-                    <div class="list-group list-group-flush" id="trainingFiles">
-                        {% if training_files %}
-                            {% for file in training_files %}
-                                <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center clickable-row" 
-                                     data-file-id="{{ file.id }}">
-                                    <div class="file-info">
-                                        <h6 class="mb-1">{{ file.name }}</h6>
-                                        <small class="text-muted">
-                                            Enviado em {{ file.uploaded_at|date:"d/m/Y H:i" }}
-                                        </small>
-                                    </div>
-                                    <div class="btn-group" onclick="event.stopPropagation();">
-                                        <button class="btn btn-sm btn-outline-primary" onclick="downloadFile({{ file.id }})">
-                                            <i class="bi bi-download"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-success" onclick="startTraining({{ file.id }})">
-                                            <i class="bi bi-play-circle"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal('{{ file.id }}', '{{ file.name }}')">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-success h-100">
+                    <div class="card-header">Treinamentos Concluídos</div>
+                    <div class="card-body">
+                        <h2 class="card-title" id="completedCount">-</h2>
+                        <p class="card-text"><i class="bi bi-check-circle"></i> Finalizados com sucesso</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-info h-100">
+                    <div class="card-header">Em Processamento</div>
+                    <div class="card-body">
+                        <h2 class="card-title" id="processingCount">-</h2>
+                        <p class="card-text"><i class="bi bi-gear-wide-connected"></i> Atualmente em execução</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Arquivos de Treinamento -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card border-primary">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0">
+                            <i class="bi bi-file-earmark-text"></i> Arquivos de Treinamento
+                        </h4>
+                        <div class="btn-group">
+                            <a href="{% url 'ai_config:training_file_create' %}" 
+                               class="btn btn-success">
+                                <i class="bi bi-file-earmark-plus"></i>
+                                <span class="d-none d-sm-inline">Criar</span>
+                            </a>
+                            <button class="btn btn-primary" 
+                                    data-bs-toggle="modal" 
+                                    data-bs-target="#uploadModal">
+                                <i class="bi bi-upload"></i>
+                                <span class="d-none d-sm-inline">Upload</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {% if training_files %}
+                    <div class="card-body bg-light">
+                        <!-- Filtros e Paginação -->
+                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
+                            <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
+                                <button class="btn btn-sm btn-outline-primary toggle-filters" type="button" aria-expanded="true" aria-controls="filterControlsFiles">
+                                    <i class="bi bi-funnel me-1"></i>Filtros
+                                    <i class="bi bi-chevron-down ms-1"></i>
+                                </button>
+                                <div class="text-muted d-none d-sm-block">
+                                    Mostrando <span id="paginationFromFiles">1</span> a <span id="paginationToFiles">10</span> de <span id="paginationTotalFiles">{{ training_files|length }}</span>
+                                </div>
+                            </div>
+                            <!-- Aumentamos a largura para evitar corte do número "100" -->
+                            <div class="input-group input-group-sm" style="width:auto;">
+                                <span class="input-group-text">Itens por página</span>
+                                <select id="itemsPerPageFiles" class="form-select form-select-sm">
+                                    <option value="5">5</option>
+                                    <option value="10" selected>10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="card mb-3" id="filterControlsFiles">
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-6 col-lg-4">
+                                        <label for="filterNameFiles" class="form-label">Nome do Arquivo</label>
+                                        <input type="text" id="filterNameFiles" class="form-control form-control-sm filter-files" placeholder="Filtrar por nome...">
                                     </div>
                                 </div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="list-group-item text-center text-muted">
-                                Nenhum arquivo de treinamento encontrado
                             </div>
-                        {% endif %}
+                        </div>
                     </div>
+                    {% endif %}
+
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0" id="trainingFiles">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort-key="name">
+                                        Nome do Arquivo
+                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                    </th>
+                                    <th class="sortable" data-sort-key="uploaded_at">
+                                        Data de Upload
+                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                    </th>
+                                    <th class="text-end">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trainingFilesBody">
+                                {% if training_files %}
+                                    {% for file in training_files %}
+                                    <tr>
+                                        <td data-value="{{ file.name|lower }}">
+                                            <a href="{% url 'ai_config:training_file_edit' file.id %}" class="text-decoration-none fw-bold">
+                                                {{ file.name }}
+                                            </a>
+                                        </td>
+                                        <td data-value="{{ file.uploaded_at|date:'Y-m-d H:i:s' }}">
+                                            <small class="text-muted">
+                                                <i class="bi bi-calendar3"></i> {{ file.uploaded_at|date:"d/m/Y H:i" }}
+                                            </small>
+                                        </td>
+                                        <td class="text-end">
+                                            <div class="btn-group">
+                                                <button class="btn btn-sm btn-primary" 
+                                                        onclick="downloadFile({{ file.id }})"
+                                                        title="Download">
+                                                    <i class="bi bi-download"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-success" 
+                                                        onclick="startTraining({{ file.id }})"
+                                                        title="Iniciar Treinamento">
+                                                    <i class="bi bi-play-circle"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-danger" 
+                                                        onclick="openDeleteFileModal('{{ file.id }}', '{{ file.name }}')"
+                                                        title="Excluir">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="3" class="text-center py-4">
+                                            <i class="bi bi-file-earmark-x fs-2 text-muted"></i>
+                                            <p class="mt-2 mb-0 text-muted">Nenhum arquivo encontrado</p>
+                                        </td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {% if training_files %}
+                    <div class="card-footer bg-light">
+                        <nav aria-label="Paginação dos Arquivos de Treinamento" class="mt-3">
+                            <ul class="pagination pagination-sm justify-content-center" id="paginationFiles">
+                                <li class="page-item disabled">
+                                    <a class="page-link" href="#" id="prevPageFiles" aria-label="Página anterior">
+                                        <span aria-hidden="true">&laquo;</span>
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="#" id="nextPageFiles" aria-label="Próxima página">
+                                        <span aria-hidden="true">&raquo;</span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </nav>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
-    </div>
 
-    <div class="row">
         <!-- Status dos Treinamentos -->
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header bg-light">
-                    <h5 class="mb-0"><i class="bi bi-activity"></i> Status dos Treinamentos</h5>
-                </div>
-                <div class="card-body p-0">
+        <div class="row">
+            <div class="col-12">
+                <div class="card border-primary">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0">
+                            <i class="bi bi-activity"></i> Status dos Treinamentos
+                        </h4>
+                    </div>
+
+                    <div class="card-body bg-light">
+                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
+                            <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
+                                <button class="btn btn-sm btn-outline-primary toggle-filters-status" type="button" aria-expanded="true" aria-controls="filterControlsStatus">
+                                    <i class="bi bi-funnel me-1"></i>Filtros
+                                    <i class="bi bi-chevron-down ms-1"></i>
+                                </button>
+                                <div class="text-muted d-none d-sm-block">
+                                    Mostrando <span id="paginationFromStatus">1</span> a <span id="paginationToStatus">10</span> de <span id="paginationTotalStatus">0</span>
+                                </div>
+                            </div>
+                            <!-- Sem max-width para não cortar "100" -->
+                            <div class="input-group input-group-sm" style="width:auto;">
+                                <span class="input-group-text">Itens por página</span>
+                                <select id="itemsPerPageStatus" class="form-select form-select-sm">
+                                    <option value="5">5</option>
+                                    <option value="10" selected>10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="card mb-3" id="filterControlsStatus">
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-6 col-lg-4">
+                                        <label for="filterNameStatus" class="form-label">Nome da IA</label>
+                                        <input type="text" id="filterNameStatus" class="form-control form-control-sm filter-status" placeholder="Filtrar por nome...">
+                                    </div>
+                                    <div class="col-12 col-md-6 col-lg-4">
+                                        <label for="filterStatusStatus" class="form-label">Status</label>
+                                        <select id="filterStatusStatus" class="form-select form-select-sm filter-status">
+                                            <option value="">Todos</option>
+                                            <option value="not_started">Não Iniciado</option>
+                                            <option value="in_progress">Em Andamento</option>
+                                            <option value="completed">Concluído</option>
+                                            <option value="failed">Falhou</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabela de Status com ID -->
                     <div class="table-responsive">
-                        <table class="table table-hover mb-0">
+                        <table class="table table-hover mb-0" id="trainingStatusTable">
                             <thead>
                                 <tr>
-                                    <th>IA</th>
-                                    <th>Status</th>
-                                    <th>Modelo</th>
-                                    <th>Ações</th>
+                                    <th class="sortable" data-sort-key="ai_name">
+                                        IA
+                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                    </th>
+                                    <th class="sortable" data-sort-key="status">
+                                        Status
+                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                    </th>
+                                    <th class="sortable" data-sort-key="model_name">
+                                        Modelo
+                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                    </th>
+                                    <th class="text-end">Ações</th>
                                 </tr>
                             </thead>
-                            <tbody id="trainingStatus">
-                                <!-- O conteúdo será preenchido via JavaScript -->
+                            <tbody id="trainingStatusBody">
+                                <!-- Preenchido dinamicamente via JavaScript -->
                             </tbody>
                         </table>
+                    </div>
+
+                    <div class="card-footer bg-light">
+                        <nav aria-label="Paginação do Status dos Treinamentos" class="mt-3">
+                            <ul class="pagination pagination-sm justify-content-center" id="paginationStatus">
+                                <li class="page-item disabled">
+                                    <a class="page-link" href="#" id="prevPageStatus" aria-label="Página anterior">
+                                        <span aria-hidden="true">&laquo;</span>
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="#" id="nextPageStatus" aria-label="Próxima página">
+                                        <span aria-hidden="true">&raquo;</span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </nav>
                     </div>
                 </div>
             </div>
@@ -170,14 +339,12 @@
             <div class="modal-body">
                 <form id="trainingForm">
                     {% csrf_token %}
-                    
-                    <!-- Filtros em Card -->
+
                     <div class="card mb-3">
                         <div class="card-header bg-light">
                             <h6 class="mb-0"><i class="bi bi-funnel"></i> Filtro por API</h6>
                         </div>
                         <div class="card-body">
-                            <!-- Filtro por Tipo de IA -->
                             <div class="mb-3">
                                 <label class="form-label">Tipo de API</label>
                                 <select class="form-select" id="apiClientFilter">
@@ -190,7 +357,6 @@
                         </div>
                     </div>
 
-                    <!-- Lista de IAs -->
                     <div class="mb-3">
                         <label class="form-label d-flex justify-content-between align-items-center">
                             <span><i class="bi bi-robot"></i> IAs Disponíveis para Treinamento</span>
@@ -238,50 +404,28 @@
     </div>
 </div>
 
-<!-- Modal de Delete -->
+<!-- Modal Unificado de Delete -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Confirmar Exclusão</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deleteModalLabel">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Confirmar Exclusão
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>Tem certeza que deseja excluir o arquivo <strong id="fileName"></strong>?</p>
-                <input type="hidden" id="fileId">
+                <p>Tem certeza que deseja excluir <span id="deleteItemType"></span> "<span id="deleteItemName" class="fw-bold"></span>"?</p>
+                <p class="text-muted small">Esta ação não pode ser desfeita.</p>
+                <input type="hidden" id="deleteItemId">
+                <input type="hidden" id="deleteItemAction">
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-danger" id="confirmDelete">
                     <span class="normal-state">
-                        <i class="bi bi-trash"></i> Excluir
-                    </span>
-                    <span class="loading-state d-none">
-                        <span class="spinner-border spinner-border-sm"></span> Excluindo...
-                    </span>
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Modal de Delete Training -->
-<div class="modal fade" id="deleteTrainingModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Confirmar Exclusão</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>Tem certeza que deseja excluir o modelo <strong id="modelName"></strong>?</p>
-                <input type="hidden" id="trainingId">
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-danger" id="confirmTrainingDelete">
-                    <span class="normal-state">
-                        <i class="bi bi-trash"></i> Excluir
+                        <i class="bi bi-trash me-1"></i> Excluir
                     </span>
                     <span class="loading-state d-none">
                         <span class="spinner-border spinner-border-sm"></span> Excluindo...
@@ -334,22 +478,411 @@
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-    // Adicionar esta função utilitária no início do bloco de script
-    function encodeJobId(jobId) {
-        return btoa(jobId).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    // ---------------------------------------------------------
+    // 1) GERENCIAMENTO DE ARQUIVOS (FILTRO/PAGINAÇÃO/ORDENAÇÃO)
+    // ---------------------------------------------------------
+    let currentPageFiles = 1;
+    let itemsPerPageFiles = 10;
+    let filteredRowsFiles = [];
+    let sortKeyFiles = 'name';
+    let sortDirectionFiles = 'asc';
+
+    function updateTableFiles() {
+        const tableBody = document.getElementById('trainingFilesBody');
+        if (!tableBody) return;
+
+        const rows = Array.from(tableBody.querySelectorAll('tr'));
+        const nameFilter = document.getElementById('filterNameFiles')?.value.toLowerCase() || '';
+
+        // Filtro local
+        filteredRowsFiles = rows.filter(row => {
+            const tdName = row.querySelector('td[data-value]');
+            const fileName = tdName ? tdName.getAttribute('data-value') : '';
+            return fileName.includes(nameFilter);
+        });
+
+        // Ordenação
+        sortTableFiles();
+
+        // Paginação
+        const totalItems = filteredRowsFiles.length;
+        const totalCounter = document.getElementById('paginationTotalFiles');
+        if (totalCounter) totalCounter.textContent = totalItems;
+
+        const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPageFiles));
+        if (currentPageFiles > totalPages) currentPageFiles = totalPages;
+
+        const startIndex = (currentPageFiles - 1) * itemsPerPageFiles;
+        const endIndex = Math.min(startIndex + itemsPerPageFiles, totalItems);
+
+        document.getElementById('paginationFromFiles').textContent = totalItems === 0 ? 0 : startIndex + 1;
+        document.getElementById('paginationToFiles').textContent = endIndex;
+
+        rows.forEach(r => (r.style.display = 'none'));
+        filteredRowsFiles.slice(startIndex, endIndex).forEach(r => {
+            r.style.display = '';
+        });
+
+        updatePaginationFiles(totalPages);
     }
 
-    function decodeJobId(encodedId) {
-        encodedId = encodedId.replace(/-/g, '+').replace(/_/g, '/');
-        while (encodedId.length % 4) encodedId += '=';
-        return atob(encodedId);
+    function sortTableFiles() {
+        const tableBody = document.getElementById('trainingFilesBody');
+        if (!tableBody) return;
+
+        filteredRowsFiles.sort((a, b) => {
+            let aValue, bValue;
+
+            if (sortKeyFiles === 'name') {
+                aValue = a.querySelector('td[data-value]')?.getAttribute('data-value') || '';
+                bValue = b.querySelector('td[data-value]')?.getAttribute('data-value') || '';
+            } else if (sortKeyFiles === 'uploaded_at') {
+                const aCell = a.querySelectorAll('td')[1];
+                const bCell = b.querySelectorAll('td')[1];
+                aValue = aCell ? aCell.getAttribute('data-value') : '';
+                bValue = bCell ? bCell.getAttribute('data-value') : '';
+            } else {
+                aValue = '';
+                bValue = '';
+            }
+
+            if (sortKeyFiles === 'uploaded_at') {
+                const dateA = new Date(aValue);
+                const dateB = new Date(bValue);
+                return sortDirectionFiles === 'asc' ? (dateA - dateB) : (dateB - dateA);
+            }
+            return sortDirectionFiles === 'asc'
+                ? String(aValue).localeCompare(String(bValue))
+                : String(bValue).localeCompare(String(aValue));
+        });
+
+        // Ajusta ícones
+        document.querySelectorAll('#trainingFiles thead th.sortable').forEach(th => {
+            const icon = th.querySelector('.sort-icon');
+            if (!icon) return;
+
+            const key = th.dataset.sortKey;
+            th.classList.remove('active-sort');
+            icon.classList.remove(
+                'bi-sort-alpha-down','bi-sort-alpha-up',
+                'bi-sort-numeric-down','bi-sort-numeric-up'
+            );
+
+            if (key === sortKeyFiles) {
+                if (sortKeyFiles === 'uploaded_at') {
+                    if (sortDirectionFiles === 'asc') icon.classList.add('bi-sort-numeric-down');
+                    else icon.classList.add('bi-sort-numeric-up');
+                } else {
+                    if (sortDirectionFiles === 'asc') icon.classList.add('bi-sort-alpha-down');
+                    else icon.classList.add('bi-sort-alpha-up');
+                }
+                th.classList.add('active-sort');
+            } else {
+                icon.classList.add(key === 'uploaded_at' ? 'bi-sort-numeric-down' : 'bi-sort-alpha-down');
+            }
+        });
+
+        filteredRowsFiles.forEach(row => tableBody.appendChild(row));
     }
 
+    function updatePaginationFiles(totalPages) {
+        const pagination = document.getElementById('paginationFiles');
+        if (!pagination) return;
+
+        const prevPageBtn = pagination.querySelector('li:first-child');
+        const nextPageBtn = pagination.querySelector('li:last-child');
+
+        prevPageBtn.classList.toggle('disabled', currentPageFiles <= 1);
+        nextPageBtn.classList.toggle('disabled', currentPageFiles >= totalPages);
+
+        Array.from(pagination.querySelectorAll('li:not(:first-child):not(:last-child)')).forEach(li => li.remove());
+
+        let pagesToShow = [];
+        if (totalPages <= 5) {
+            pagesToShow = Array.from({ length: totalPages }, (_, i) => i + 1);
+        } else {
+            pagesToShow = [1];
+            if (currentPageFiles > 3) pagesToShow.push('...');
+            for (let i = Math.max(2, currentPageFiles - 1); i <= Math.min(totalPages - 1, currentPageFiles + 1); i++) {
+                pagesToShow.push(i);
+            }
+            if (currentPageFiles < totalPages - 2) pagesToShow.push('...');
+            if (totalPages > 1) pagesToShow.push(totalPages);
+        }
+
+        const nextPageElement = pagination.querySelector('li:last-child');
+        pagesToShow.forEach(pageNum => {
+            const li = document.createElement('li');
+            if (pageNum === '...') {
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">...</span>';
+            } else {
+                li.className = `page-item ${currentPageFiles === pageNum ? 'active' : ''}`;
+                li.innerHTML = `<a class="page-link" href="#" data-page="${pageNum}">${pageNum}</a>`;
+                if (currentPageFiles !== pageNum) {
+                    li.querySelector('a').addEventListener('click', e => {
+                        e.preventDefault();
+                        currentPageFiles = parseInt(e.target.dataset.page);
+                        updateTableFiles();
+                    });
+                }
+            }
+            pagination.insertBefore(li, nextPageElement);
+        });
+    }
+
+    // ---------------------------------------------------------
+    // 2) GERENCIAMENTO DOS STATUS DE TREINAMENTO
+    // ---------------------------------------------------------
+    let trainingsData = [];   
+    let currentPageStatus = 1;
+    let itemsPerPageStatus = 10;
+    let sortKeyStatus = 'ai_name';
+    let sortDirectionStatus = 'asc';
+    let filteredTrainingsStatus = [];
+
+    function updateStatusFromServer() {
+        fetch("{% url 'ai_config:training_monitor' %}")
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('queuedCount').textContent = data.queue_status.queued;
+                document.getElementById('completedCount').textContent = data.queue_status.finished;
+                document.getElementById('processingCount').textContent = data.queue_status.started;
+                trainingsData = data.trainings || [];
+                renderTrainingsTable();
+            })
+            .catch(error => {
+                console.error('Erro ao buscar status:', error);
+            });
+    }
+
+    function renderTrainingsTable() {
+        const nameFilter = (document.getElementById('filterNameStatus')?.value || '').toLowerCase();
+        const statusFilter = document.getElementById('filterStatusStatus')?.value || '';
+
+        filteredTrainingsStatus = trainingsData.filter(t => {
+            const matchesName = t.ai_name.toLowerCase().includes(nameFilter);
+            const matchesStatus = !statusFilter || (t.status === statusFilter);
+            return matchesName && matchesStatus;
+        });
+
+        sortTrainingsTable();
+
+        const totalItems = filteredTrainingsStatus.length;
+        const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPageStatus));
+        if (currentPageStatus > totalPages) currentPageStatus = totalPages;
+
+        const startIndex = (currentPageStatus - 1) * itemsPerPageStatus;
+        const endIndex = Math.min(startIndex + itemsPerPageStatus, totalItems);
+
+        document.getElementById('paginationTotalStatus').textContent = totalItems === 0 ? 0 : totalItems;
+        document.getElementById('paginationFromStatus').textContent = totalItems === 0 ? 0 : startIndex + 1;
+        document.getElementById('paginationToStatus').textContent = endIndex;
+
+        const rowsHtml = filteredTrainingsStatus.slice(startIndex, endIndex).map(t => getTrainingRowHTML(t)).join('');
+        document.getElementById('trainingStatusBody').innerHTML = rowsHtml || '';
+        updatePaginationStatus(totalPages);
+
+        // Re-inicializa tooltips e Clipboard
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+            const existing = bootstrap.Tooltip.getInstance(el);
+            if (existing) existing.dispose();
+            new bootstrap.Tooltip(el);
+        });
+        const clipboard = new ClipboardJS('.copy-btn');
+        clipboard.on('success', function(e) {
+            const button = e.trigger;
+            const original = button.innerHTML;
+            button.innerHTML = '<i class="bi bi-check"></i>';
+            button.classList.add('btn-success');
+            button.classList.remove('btn-outline-secondary');
+            setTimeout(() => {
+                button.innerHTML = original;
+                button.classList.remove('btn-success');
+                button.classList.add('btn-outline-secondary');
+            }, 1000);
+            e.clearSelection();
+        });
+    }
+
+    function sortTrainingsTable() {
+        filteredTrainingsStatus.sort((a, b) => {
+            let aValue = '', bValue = '';
+            if (sortKeyStatus === 'ai_name') {
+                aValue = a.ai_name.toLowerCase();
+                bValue = b.ai_name.toLowerCase();
+            } else if (sortKeyStatus === 'status') {
+                aValue = a.status;
+                bValue = b.status;
+            } else if (sortKeyStatus === 'model_name') {
+                aValue = (a.model_name || '').toLowerCase();
+                bValue = (b.model_name || '').toLowerCase();
+            }
+
+            if (sortDirectionStatus === 'asc') {
+                return aValue.localeCompare(bValue);
+            } else {
+                return bValue.localeCompare(aValue);
+            }
+        });
+
+        // Ajusta ícones da tabela #trainingStatusTable
+        document.querySelectorAll('#trainingStatusTable thead th.sortable').forEach(th => {
+            const icon = th.querySelector('.sort-icon');
+            if (!icon) return;
+
+            const key = th.dataset.sortKey;
+            th.classList.remove('active-sort');
+            icon.classList.remove(
+                'bi-sort-alpha-down','bi-sort-alpha-up',
+                'bi-sort-numeric-down','bi-sort-numeric-up'
+            );
+
+            if (key === sortKeyStatus) {
+                if (sortDirectionStatus === 'asc') {
+                    icon.classList.add('bi-sort-alpha-down');
+                } else {
+                    icon.classList.add('bi-sort-alpha-up');
+                }
+                th.classList.add('active-sort');
+            } else {
+                icon.classList.add('bi-sort-alpha-down');
+            }
+        });
+    }
+
+    function getTrainingRowHTML(training) {
+        const bgColor = getStatusBackgroundColor(training.status);
+        const statusColor = getStatusColor(training.status);
+        const statusText = getStatusTranslation(training.status);
+
+        let modelCellHtml = '-';
+        if (training.status === 'in_progress') {
+            modelCellHtml = `
+                <div class="progress mb-1" style="height: 4px;">
+                    <div class="progress-bar bg-${statusColor} progress-bar-striped progress-bar-animated" 
+                         role="progressbar" 
+                         style="width: ${training.progress * 100}%"></div>
+                </div>
+                <small class="text-muted">${Math.round(training.progress * 100)}% concluído</small>
+            `;
+        } else if (training.model_name) {
+            const completedAtHtml = training.completed_at ? `
+                <small class="text-muted">
+                    <i class="bi bi-clock"></i> Criado em: ${new Date(training.completed_at).toLocaleString()}
+                </small>` : '';
+
+            modelCellHtml = `
+                <div class="d-flex align-items-center">
+                    <span class="model-id me-2">${training.model_name}</span>
+                    <div class="copy-wrapper" data-bs-toggle="tooltip" title="Copiar nome do modelo">
+                        <button class="btn btn-sm btn-outline-secondary copy-btn" data-clipboard-text="${training.model_name}">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+                ${completedAtHtml}
+            `;
+        }
+
+        const errorIconHtml = training.error ? `
+            <i class="bi bi-exclamation-triangle-fill text-warning ms-2 error-icon"
+               data-bs-toggle="tooltip"
+               title="Clique para ver detalhes do erro"
+               onclick="showError('${encodeURIComponent(training.error)}')"></i>
+        ` : '';
+
+        let actionBtnHtml = `
+            <button class="btn btn-sm btn-danger" 
+                    onclick="openDeleteTrainingModal('${training.id}', '${training.model_name || training.ai_name}')">
+                <i class="bi bi-trash"></i> Excluir
+            </button>
+        `;
+        if (training.status === 'in_progress') {
+            actionBtnHtml = `
+                <button class="btn btn-sm btn-danger" 
+                        onclick="openCancelModal('${training.id}', '${training.ai_name}')">
+                    <i class="bi bi-x-circle"></i> Cancelar
+                </button>
+            `;
+        }
+
+        return `
+            <tr class="${bgColor}">
+                <td>
+                    <div class="d-flex flex-column">
+                        <span class="model-name">${training.ai_name}</span>
+                    </div>
+                </td>
+                <td>
+                    <div class="d-flex align-items-center">
+                        <span class="badge bg-${statusColor} text-status">${statusText}</span>
+                        ${errorIconHtml}
+                    </div>
+                </td>
+                <td>${modelCellHtml}</td>
+                <td>
+                    <div class="d-flex justify-content-end gap-2">
+                        ${actionBtnHtml}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+
+    function updatePaginationStatus(totalPages) {
+        const pagination = document.getElementById('paginationStatus');
+        if (!pagination) return;
+
+        const prevPageBtn = pagination.querySelector('li:first-child');
+        const nextPageBtn = pagination.querySelector('li:last-child');
+
+        prevPageBtn.classList.toggle('disabled', currentPageStatus <= 1);
+        nextPageBtn.classList.toggle('disabled', currentPageStatus >= totalPages);
+
+        Array.from(pagination.querySelectorAll('li:not(:first-child):not(:last-child)')).forEach(li => li.remove());
+
+        let pagesToShow = [];
+        if (totalPages <= 5) {
+            pagesToShow = Array.from({ length: totalPages }, (_, i) => i + 1);
+        } else {
+            pagesToShow = [1];
+            if (currentPageStatus > 3) pagesToShow.push('...');
+            for (let i = Math.max(2, currentPageStatus - 1); i <= Math.min(totalPages - 1, currentPageStatus + 1); i++) {
+                pagesToShow.push(i);
+            }
+            if (currentPageStatus < totalPages - 2) pagesToShow.push('...');
+            if (totalPages > 1) pagesToShow.push(totalPages);
+        }
+
+        const nextPageElement = pagination.querySelector('li:last-child');
+        pagesToShow.forEach(pageNum => {
+            const li = document.createElement('li');
+            if (pageNum === '...') {
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">...</span>';
+            } else {
+                li.className = `page-item ${currentPageStatus === pageNum ? 'active' : ''}`;
+                li.innerHTML = `<a class="page-link" href="#" data-page="${pageNum}">${pageNum}</a>`;
+                if (currentPageStatus !== pageNum) {
+                    li.querySelector('a').addEventListener('click', e => {
+                        e.preventDefault();
+                        currentPageStatus = parseInt(e.target.dataset.page);
+                        renderTrainingsTable();
+                    });
+                }
+            }
+            pagination.insertBefore(li, nextPageElement);
+        });
+    }
+
+    // ---------------------------------------------------------
+    // 3) FUNÇÕES AUXILIARES E DE AÇÃO
+    // ---------------------------------------------------------
     function getStatusTranslation(status) {
         return {
             'not_started': 'Não iniciado',
@@ -368,138 +901,166 @@
         }[status] || '';
     }
 
-    // Atualização periódica do status
-    function updateStatus() {
-        fetch("{% url 'ai_config:training_status' %}")
-            .then(response => response.json())
-            .then(data => {
-                // Atualiza contadores
-                document.getElementById('queuedCount').textContent = data.queue_status.queued;
-                document.getElementById('completedCount').textContent = data.queue_status.finished;
-                document.getElementById('processingCount').textContent = data.queue_status.started;
-
-                // Atualiza tabela de status
-                const tbody = document.getElementById('trainingStatus');
-                tbody.innerHTML = data.trainings.map(training => `
-                    <tr class="${getStatusBackgroundColor(training.status)}">
-                        <td>
-                            <div class="d-flex flex-column">
-                                <span class="model-name">${training.ai_name}</span>
-                            </div>
-                        </td>
-                        <td>
-                            <div class="d-flex align-items-center">
-                                <span class="badge bg-${training.status_color} text-status">
-                                    ${getStatusTranslation(training.status)}
-                                </span>
-                                ${training.error ? `
-                                    <i class="bi bi-exclamation-triangle-fill text-warning ms-2 error-icon"
-                                       data-bs-toggle="tooltip"
-                                       title="Clique para ver detalhes do erro"
-                                       onclick="showError('${encodeURIComponent(training.error)}')"></i>
-                                ` : ''}
-                            </div>
-                        </td>
-                        <td>
-                            <div class="d-flex flex-column">
-                                ${training.status === 'in_progress' ? `
-                                    <!-- Em treinamento: mostra barra de progresso -->
-                                    <div class="progress mb-1" style="height: 4px;">
-                                        <div class="progress-bar bg-${training.status_color} progress-bar-striped progress-bar-animated" 
-                                             role="progressbar" 
-                                             style="width: ${training.progress * 100}%">
-                                        </div>
-                                    </div>
-                                    <small class="text-muted">${Math.round(training.progress * 100)}% concluído</small>
-                                ` : training.model_name ? `
-                                    <!-- Concluído: mostra nome do modelo -->
-                                    <div class="d-flex align-items-center">
-                                        <span class="model-id me-2">${training.model_name}</span>
-                                        <div class="copy-wrapper" data-bs-toggle="tooltip" title="Copiar nome do modelo">
-                                            <button class="btn btn-sm btn-outline-secondary copy-btn" 
-                                                    data-clipboard-text="${training.model_name}">
-                                                <i class="bi bi-clipboard"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    ${training.completed_at ? `
-                                        <small class="text-muted">
-                                            <i class="bi bi-clock"></i> Criado em: ${new Date(training.completed_at).toLocaleString()}
-                                        </small>
-                                    ` : ''}
-                                ` : '-'}
-                            </div>
-                        </td>
-                        <td>
-                            <div class="btn-group">
-                                ${training.status === 'in_progress' ? `
-                                    <button class="btn btn-sm btn-danger" 
-                                            onclick="openCancelModal('${training.id}', '${training.ai_name}')">
-                                        <i class="bi bi-x-circle"></i> Cancelar
-                                    </button>
-                                ` : `
-                                    <button class="btn btn-sm btn-outline-danger" 
-                                            onclick="openDeleteTrainingModal('${training.id}', '${training.model_name || training.ai_name}')">
-                                        <i class="bi bi-trash"></i> Excluir
-                                    </button>
-                                `}
-                            </div>
-                        </td>
-                    </tr>
-                `).join('');
-
-                // Primeiro destrua todos os tooltips existentes
-                document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
-                    const tooltip = bootstrap.Tooltip.getInstance(el);
-                    if (tooltip) {
-                        tooltip.dispose();
-                    }
-                });
-
-                // Então inicialize os novos tooltips
-                document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
-                    new bootstrap.Tooltip(el);
-                });
-
-                // Inicializa o Clipboard
-                const clipboard = new ClipboardJS('.copy-btn');
-                clipboard.on('success', function(e) {
-                    const button = e.trigger;
-                    const icon = button.innerHTML;
-                    
-                    // Muda o texto do botão
-                    button.innerHTML = '<i class="bi bi-check"></i>';
-                    button.classList.add('btn-success');
-                    button.classList.remove('btn-outline-secondary');
-                    
-                    // Reverte após 1 segundo
-                    setTimeout(() => {
-                        button.innerHTML = icon;
-                        button.classList.remove('btn-success');
-                        button.classList.add('btn-outline-secondary');
-                    }, 1000);
-                    
-                    e.clearSelection();
-                });
-
-                clipboard.on('error', function(e) {
-                    console.error('Erro ao copiar:', e);
-                });
-            });
+    function getStatusColor(status) {
+        return {
+            'not_started': 'secondary',
+            'in_progress': 'primary',
+            'completed': 'success',
+            'failed': 'danger'
+        }[status] || 'secondary';
     }
 
-    // Inicialização
-    document.addEventListener('DOMContentLoaded', function() {
-        // Atualização inicial e configuração do intervalo
-        updateStatus();
-        setInterval(updateStatus, 5000);
+    function startTraining(fileId) {
+        document.getElementById('selectedFileId').value = fileId;
+        new bootstrap.Modal(document.getElementById('trainingModal')).show();
+    }
 
-        // Setup do formulário de upload
+    function cancelTraining(jobId) {
+        showLoading('confirmCancel');
+        fetch(buildUrl("{% url 'ai_config:training_cancel' '999999999' %}", "999999999", jobId), {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('cancelTrainingModal'));
+            if (modal) modal.hide();
+            location.reload();
+        })
+        .catch(error => {
+            hideLoading('confirmCancel');
+            location.reload();
+        });
+    }
+
+    document.getElementById('confirmCancel').addEventListener('click', () => {
+        const trainingId = document.getElementById('cancelTrainingId').value;
+        cancelTraining(trainingId);
+    });
+
+    function downloadFile(fileId) {
+        window.location.href = buildUrl("{% url 'ai_config:training_file_download' '999999999' %}", "999999999", fileId);
+    }
+
+    function openDeleteFileModal(fileId, fileName) {
+        openDeleteModal(fileId, fileName, 'file');
+    }
+
+    function openDeleteTrainingModal(trainingId, modelName) {
+        openDeleteModal(trainingId, modelName, 'training');
+    }
+
+    function openDeleteModal(id, name, type = 'file') {
+        document.getElementById('deleteItemId').value = id;
+        document.getElementById('deleteItemName').textContent = name;
+        document.getElementById('deleteItemAction').value = type;
+        document.getElementById('deleteItemType').textContent = type === 'file' ? 'o arquivo' : 'o modelo';
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    document.getElementById('confirmDelete').addEventListener('click', () => {
+        const id = document.getElementById('deleteItemId').value;
+        const type = document.getElementById('deleteItemAction').value;
+
+        showLoading('confirmDelete');
+        
+        let url;
+        if (type === 'file') {
+            url = buildUrl("{% url 'ai_config:training_file_delete' '999999999' %}", "999999999", id);
+        } else {
+            url = buildUrl("{% url 'ai_config:training_delete' '999999999' %}", "999999999", id);
+        }
+        
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) throw new Error(data.error);
+            location.reload();
+        })
+        .catch(error => {
+            location.reload();
+        })
+        .finally(() => {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('deleteModal'));
+            if (modal) modal.hide();
+        });
+    });
+
+    function openCancelModal(id, name) {
+        document.getElementById('cancelTrainingId').value = id;
+        document.getElementById('cancelModelName').textContent = name;
+        new bootstrap.Modal(document.getElementById('cancelTrainingModal')).show();
+    }
+
+    function showError(encodedError) {
+        const error = decodeURIComponent(encodedError);
+        document.querySelector('#errorModal .error-details').textContent = error;
+        new bootstrap.Modal(document.getElementById('errorModal')).show();
+    }
+
+    function showLoading(buttonId) {
+        const button = document.getElementById(buttonId);
+        if (button) {
+            button.disabled = true;
+            button.querySelector('.normal-state')?.classList.add('d-none');
+            button.querySelector('.loading-state')?.classList.remove('d-none');
+        }
+    }
+
+    function hideLoading(buttonId) {
+        const button = document.getElementById(buttonId);
+        if (button) {
+            button.disabled = false;
+            button.querySelector('.normal-state')?.classList.remove('d-none');
+            button.querySelector('.loading-state')?.classList.add('d-none');
+        }
+    }
+
+    // ---------------------------------------------------------
+    // 4) APLICAÇÃO DE FILTROS NO MODAL DE TREINAMENTO
+    // ---------------------------------------------------------
+    function applyFilters() {
+        const selectedClientType = document.getElementById('apiClientFilter').value;
+        const aiItems = document.querySelectorAll('.ai-item');
+        aiItems.forEach(item => {
+            const apiType = item.dataset.apiType;
+            const isChecked = item.querySelector('input[type="checkbox"]').checked;
+            if (isChecked || !selectedClientType || apiType === selectedClientType) {
+                item.style.display = 'block';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+        updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+        const count = document.querySelectorAll('.ai-item:not([style*="display: none"]) input[type="checkbox"]:checked').length;
+        document.getElementById('aiCount').textContent = `${count} selecionada${count !== 1 ? 's' : ''}`;
+    }
+
+    // ---------------------------------------------------------
+    // 5) DOMContentLoaded - Inicialização
+    // ---------------------------------------------------------
+    document.addEventListener('DOMContentLoaded', function() {
+        // 5.1) Atualização do Status - fetch periódico
+        updateStatusFromServer();
+        setInterval(updateStatusFromServer, 5000);
+
+        // 5.2) Upload de Arquivo
         const uploadForm = document.getElementById('uploadForm');
         uploadForm.addEventListener('submit', function(e) {
             e.preventDefault();
             const formData = new FormData(this);
-            
             fetch("{% url 'ai_config:training_file_upload' %}", {
                 method: 'POST',
                 body: formData,
@@ -517,19 +1078,15 @@
             });
         });
 
-        // Setup do formulário de treinamento
+        // 5.3) Formulário de Iniciar Treinamento
         const trainingForm = document.getElementById('trainingForm');
         const startTrainingBtn = document.getElementById('startTrainingBtn');
-
         trainingForm.addEventListener('submit', function(e) {
             e.preventDefault();
-            
-            // Desabilita o botão e mostra loading
             startTrainingBtn.disabled = true;
             startTrainingBtn.querySelector('.normal-state').classList.add('d-none');
             startTrainingBtn.querySelector('.loading-state').classList.remove('d-none');
-            
-            // Verifica se há IAs selecionadas
+
             const selectedAIs = document.querySelectorAll('.ai-item input[type="checkbox"]:checked');
             if (selectedAIs.length === 0) {
                 location.reload();
@@ -564,10 +1121,10 @@
             });
         });
 
-        // Setup do botão de parar captura
+        // 5.4) Botão de Parar Captura
         const stopCaptureBtn = document.getElementById('stopCapture');
         if (stopCaptureBtn) {
-            stopCaptureBtn.addEventListener('click', function() {
+            stopCaptureBtn.addEventListener('click', () => {
                 fetch("{% url 'ai_config:capture_toggle' %}", {
                     method: 'POST',
                     headers: {
@@ -587,463 +1144,216 @@
             });
         }
 
-        // Tornar linhas clicáveis
-        document.querySelectorAll('.clickable-row').forEach(row => {
-            row.addEventListener('click', function() {
-                const fileId = this.dataset.fileId;
-                if (fileId) {
-                    window.location.href = buildUrl(
-                        "{% url 'ai_config:training_file_edit' 999999999 %}", 
-                        "999999999", 
-                        fileId
-                    );
+        // 5.5) Filtro por API (Modal) e contagem
+        document.getElementById('apiClientFilter').addEventListener('change', applyFilters);
+        document.querySelectorAll('.ai-item input[type="checkbox"]').forEach(chk => {
+            chk.addEventListener('change', updateSelectedCount);
+        });
+        updateSelectedCount();
+
+        // 5.6) Tabela de Arquivos - restaurar preferências e inicializar
+        const itemsPerPageSelect = document.getElementById('itemsPerPageFiles');
+        if (itemsPerPageSelect) itemsPerPageFiles = parseInt(itemsPerPageSelect.value) || 10;
+
+        const savedItemsPerPage = sessionStorage.getItem('trainingFilesItemsPerPage');
+        if (savedItemsPerPage && itemsPerPageSelect && itemsPerPageSelect.querySelector(`option[value="${savedItemsPerPage}"]`)) {
+            itemsPerPageSelect.value = savedItemsPerPage;
+            itemsPerPageFiles = parseInt(savedItemsPerPage);
+        }
+        const savedSortKey = sessionStorage.getItem('trainingFilesSortKey');
+        const savedSortDir = sessionStorage.getItem('trainingFilesSortDirection');
+        if (savedSortKey) sortKeyFiles = savedSortKey;
+        if (savedSortDir) sortDirectionFiles = savedSortDir;
+
+        const filterControlsFiles = document.getElementById('filterControlsFiles');
+        const toggleFiltersIcon = document.querySelector('.toggle-filters i:last-child');
+        if (filterControlsFiles && toggleFiltersIcon) {
+            const savedFiltersVisible = sessionStorage.getItem('trainingFilesFiltersVisible');
+            if (savedFiltersVisible === 'false') {
+                filterControlsFiles.style.display = 'none';
+                toggleFiltersIcon.classList.replace('bi-chevron-down', 'bi-chevron-up');
+            }
+        }
+
+        document.getElementById('itemsPerPageFiles')?.addEventListener('change', e => {
+            itemsPerPageFiles = parseInt(e.target.value);
+            sessionStorage.setItem('trainingFilesItemsPerPage', itemsPerPageFiles);
+            currentPageFiles = 1;
+            updateTableFiles();
+        });
+        document.getElementById('prevPageFiles')?.addEventListener('click', e => {
+            e.preventDefault();
+            if (currentPageFiles > 1) {
+                currentPageFiles--;
+                updateTableFiles();
+            }
+        });
+        document.getElementById('nextPageFiles')?.addEventListener('click', e => {
+            e.preventDefault();
+            const totalPages = Math.ceil(filteredRowsFiles.length / itemsPerPageFiles);
+            if (currentPageFiles < totalPages) {
+                currentPageFiles++;
+                updateTableFiles();
+            }
+        });
+        document.querySelectorAll('#trainingFiles thead th.sortable').forEach(th => {
+            th.addEventListener('click', () => {
+                const key = th.dataset.sortKey;
+                if (key === sortKeyFiles) {
+                    sortDirectionFiles = (sortDirectionFiles === 'asc' ? 'desc' : 'asc');
+                } else {
+                    sortKeyFiles = key;
+                    sortDirectionFiles = 'asc';
                 }
+                sessionStorage.setItem('trainingFilesSortKey', sortKeyFiles);
+                sessionStorage.setItem('trainingFilesSortDirection', sortDirectionFiles);
+                updateTableFiles();
             });
         });
-
-        // Adiciona listener apenas para o filtro de API
-        document.getElementById('apiClientFilter').addEventListener('change', applyFilters);
-
-        // Adiciona listener para checkboxes
-        document.querySelectorAll('.ai-item input[type="checkbox"]').forEach(checkbox => {
-            checkbox.addEventListener('change', updateSelectedCount);
+        document.querySelectorAll('.filter-files').forEach(el => {
+            el.addEventListener('input', () => {
+                el.classList.toggle('is-valid', el.value !== '');
+                currentPageFiles = 1;
+                updateTableFiles();
+            });
         });
-
-        // Inicializa a contagem
-        updateSelectedCount();
-    });
-
-    // Funções auxiliares
-    function startTraining(fileId) {
-        document.getElementById('selectedFileId').value = fileId;
-        new bootstrap.Modal(document.getElementById('trainingModal')).show();
-    }
-
-    function cancelTraining(jobId) {
-        showLoading('confirmCancel');
-        
-        const encodedJobId = encodeJobId(jobId);
-        fetch(`{% url 'ai_config:training_cancel' 'JOBID' %}`.replace('JOBID', encodedJobId), {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'Content-Type': 'application/json'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            const modal = bootstrap.Modal.getInstance(document.getElementById('cancelTrainingModal'));
-            if (modal) {
-                modal.hide();
-            }
-            // Sempre recarrega a página para mostrar as mensagens do Django
-            location.reload();
-        })
-        .catch(error => {
-            hideLoading('confirmCancel');
-            // Força recarga para mostrar mensagem de erro do Django
-            location.reload();
-        });
-    }
-
-    function downloadFile(fileId) {
-        window.location.href = buildUrl(
-            "{% url 'ai_config:training_file_download' 999999999 %}", 
-            "999999999", 
-            fileId
-        );
-    }
-
-    function openDeleteModal(fileId, fileName) {
-        document.getElementById('fileId').value = fileId;
-        document.getElementById('fileName').textContent = fileName;
-        new bootstrap.Modal(document.getElementById('deleteModal')).show();
-    }
-
-    document.getElementById('confirmDelete').addEventListener('click', function() {
-        showLoading('confirmDelete');
-        const fileId = document.getElementById('fileId').value;
-        const url = buildUrl(
-            "{% url 'ai_config:training_file_delete' 999999999 %}", 
-            "999999999", 
-            fileId
-        );
-        
-        fetch(url, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                throw new Error(data.error);
-            }
-            // Recarrega para mostrar mensagem do Django
-            location.reload();
-        })
-        .catch(error => {
-            handleError(error, 'confirmDelete');
-        });
-    });
-
-    function buildUrl(urlTemplate, placeholder, value) {
-        return urlTemplate.replace(placeholder, value);
-    }
-
-    // Função para atualizar a contagem de IAs selecionadas
-    function updateSelectedCount() {
-        const count = document.querySelectorAll('.ai-item:not([style*="display: none"]) input[type="checkbox"]:checked').length;
-        document.getElementById('aiCount').textContent = `${count} selecionada${count !== 1 ? 's' : ''}`;
-    }
-
-    // Função para aplicar filtro por API
-    function applyFilters() {
-        const selectedClientType = document.getElementById('apiClientFilter').value;
-        const aiItems = document.querySelectorAll('.ai-item');
-        
-        aiItems.forEach(item => {
-            const apiType = item.dataset.apiType;
-            const isChecked = item.querySelector('input[type="checkbox"]').checked;
-            
-            // Se não há filtro ou o tipo corresponde ao filtro ou está selecionado, exibe
-            if (isChecked || !selectedClientType || apiType === selectedClientType) {
-                item.style.display = 'block';
+        document.querySelector('.toggle-filters')?.addEventListener('click', function() {
+            if (!filterControlsFiles) return;
+            const icon = this.querySelector('i:last-child');
+            if (!icon) return;
+            if (filterControlsFiles.style.display === 'none') {
+                filterControlsFiles.style.display = 'block';
+                icon.classList.replace('bi-chevron-up', 'bi-chevron-down');
+                sessionStorage.setItem('trainingFilesFiltersVisible', 'true');
             } else {
-                item.style.display = 'none';
+                filterControlsFiles.style.display = 'none';
+                icon.classList.replace('bi-chevron-down', 'bi-chevron-up');
+                sessionStorage.setItem('trainingFilesFiltersVisible', 'false');
             }
         });
-        
-        updateSelectedCount();
-    }
 
-    function updateTrainingProgress(jobs) {
-        if (!jobs || jobs.length === 0) return;
-        
-        const params = new URLSearchParams();
-        jobs.forEach(job => {
-            params.append('job_ids[]', job.jobId);
-            params.append('config_ids[]', job.configId);
+        updateTableFiles();
+
+        // 5.7) Tabela de Status - restaurar preferências
+        const itemsPerPageStatusSelect = document.getElementById('itemsPerPageStatus');
+        if (itemsPerPageStatusSelect) itemsPerPageStatus = parseInt(itemsPerPageStatusSelect.value);
+
+        const savedItemsPerPageStatus = sessionStorage.getItem('trainingStatusItemsPerPage');
+        if (savedItemsPerPageStatus && itemsPerPageStatusSelect?.querySelector(`option[value="${savedItemsPerPageStatus}"]`)) {
+            itemsPerPageStatusSelect.value = savedItemsPerPageStatus;
+            itemsPerPageStatus = parseInt(savedItemsPerPageStatus);
+        }
+        const savedSortKeyStatus = sessionStorage.getItem('trainingStatusSortKey');
+        const savedSortDirStatus = sessionStorage.getItem('trainingStatusSortDirection');
+        if (savedSortKeyStatus) sortKeyStatus = savedSortKeyStatus;
+        if (savedSortDirStatus) sortDirectionStatus = savedSortDirStatus;
+
+        const filterControlsStatus = document.getElementById('filterControlsStatus');
+        const toggleFiltersStatusIcon = document.querySelector('.toggle-filters-status i:last-child');
+        if (filterControlsStatus && toggleFiltersStatusIcon) {
+            const savedFiltersVisibleStatus = sessionStorage.getItem('trainingStatusFiltersVisible');
+            if (savedFiltersVisibleStatus === 'false') {
+                filterControlsStatus.style.display = 'none';
+                toggleFiltersStatusIcon.classList.replace('bi-chevron-down', 'bi-chevron-up');
+            }
+        }
+
+        document.getElementById('itemsPerPageStatus')?.addEventListener('change', e => {
+            itemsPerPageStatus = parseInt(e.target.value);
+            sessionStorage.setItem('trainingStatusItemsPerPage', itemsPerPageStatus);
+            currentPageStatus = 1;
+            renderTrainingsTable();
         });
-        
-        fetch(`{% url 'ai_config:training_progress' %}?${params.toString()}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.results) {
-                    data.results.forEach(result => {
-                        // Atualiza a UI para cada treinamento
-                        updateTrainingUI(result);
-                    });
+        document.getElementById('prevPageStatus')?.addEventListener('click', e => {
+            e.preventDefault();
+            if (currentPageStatus > 1) {
+                currentPageStatus--;
+                renderTrainingsTable();
+            }
+        });
+        document.getElementById('nextPageStatus')?.addEventListener('click', e => {
+            e.preventDefault();
+            const totalPages = Math.ceil(filteredTrainingsStatus.length / itemsPerPageStatus);
+            if (currentPageStatus < totalPages) {
+                currentPageStatus++;
+                renderTrainingsTable();
+            }
+        });
+        // Ordenação específica da tabela #trainingStatusTable
+        document.querySelectorAll('#trainingStatusTable thead th.sortable').forEach(th => {
+            th.addEventListener('click', () => {
+                const key = th.dataset.sortKey;
+                if (key === sortKeyStatus) {
+                    sortDirectionStatus = (sortDirectionStatus === 'asc' ? 'desc' : 'asc');
+                } else {
+                    sortKeyStatus = key;
+                    sortDirectionStatus = 'asc';
                 }
-            })
-            .catch(error => console.error('Erro ao atualizar progresso:', error));
-    }
-
-    function updateTrainingUI(training) {
-        // Atualiza a interface para um treinamento específico
-        const row = document.querySelector(`tr[data-job-id="${training.job_id}"]`);
-        if (row) {
-            // Atualiza o progresso
-            const progressBar = row.querySelector('.progress-bar');
-            if (progressBar) {
-                progressBar.style.width = `${training.progress}%`;
-                progressBar.textContent = `${training.progress}%`;
-            }
-
-            // Atualiza o status
-            const statusBadge = row.querySelector('.status-badge');
-            if (statusBadge) {
-                statusBadge.textContent = training.status;
-                statusBadge.className = `badge bg-${getStatusColor(training.status)} status-badge`;
-            }
-
-            // Se completou, atualiza a página para mostrar as mensagens via Django
-            if (training.completed) {
-                location.reload();
-            }
-        }
-    }
-
-    function deleteTraining(jobId) {
-        showLoading('confirmTrainingDelete');
-        
-        const encodedJobId = encodeJobId(jobId);
-        fetch(`{% url 'ai_config:training_delete' 'JOBID' %}`.replace('JOBID', encodedJobId), {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'Content-Type': 'application/json'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                throw new Error(data.error);
-            }
-            location.reload();
-        })
-        .catch(error => {
-            handleError(error, 'confirmTrainingDelete');
+                sessionStorage.setItem('trainingStatusSortKey', sortKeyStatus);
+                sessionStorage.setItem('trainingStatusSortDirection', sortDirectionStatus);
+                renderTrainingsTable();
+            });
         });
-    }
-
-    function showError(encodedError) {
-        const error = decodeURIComponent(encodedError);
-        document.querySelector('#errorModal .error-details').textContent = error;
-        new bootstrap.Modal(document.getElementById('errorModal')).show();
-    }
-
-    function openDeleteTrainingModal(id, name) {
-        document.getElementById('trainingId').value = id;
-        document.getElementById('modelName').textContent = name;
-        new bootstrap.Modal(document.getElementById('deleteTrainingModal')).show();
-    }
-
-    function openCancelModal(id, name) {
-        document.getElementById('cancelTrainingId').value = id;
-        document.getElementById('cancelModelName').textContent = name;
-        new bootstrap.Modal(document.getElementById('cancelTrainingModal')).show();
-    }
-
-    // Evento para confirmar exclusão
-    document.getElementById('confirmTrainingDelete').addEventListener('click', function(e) {
-        const button = e.target;
-        button.disabled = true;
-        button.innerHTML = `
-            <span class="spinner-border spinner-border-sm" role="status"></span>
-            Excluindo...
-        `;
-        
-        const trainingId = document.getElementById('trainingId').value;
-        deleteTraining(trainingId);
+        document.querySelectorAll('.filter-status').forEach(el => {
+            el.addEventListener('input', () => {
+                currentPageStatus = 1;
+                renderTrainingsTable();
+            });
+        });
+        document.querySelector('.toggle-filters-status')?.addEventListener('click', function() {
+            if (!filterControlsStatus) return;
+            const icon = this.querySelector('i:last-child');
+            if (!icon) return;
+            if (filterControlsStatus.style.display === 'none') {
+                filterControlsStatus.style.display = 'block';
+                icon.classList.replace('bi-chevron-up', 'bi-chevron-down');
+                sessionStorage.setItem('trainingStatusFiltersVisible', 'true');
+            } else {
+                filterControlsStatus.style.display = 'none';
+                icon.classList.replace('bi-chevron-down', 'bi-chevron-up');
+                sessionStorage.setItem('trainingStatusFiltersVisible', 'false');
+            }
+        });
     });
-
-    // Adicione o evento de clique para o botão de confirmar cancelamento
-    document.getElementById('confirmCancel').addEventListener('click', function() {
-        const trainingId = document.getElementById('cancelTrainingId').value;
-        cancelTraining(trainingId);
-    });
-
-    function showLoading(buttonId) {
-        const button = document.getElementById(buttonId);
-        if (button) {
-            button.disabled = true;
-            button.querySelector('.normal-state')?.classList.add('d-none');
-            button.querySelector('.loading-state')?.classList.remove('d-none');
-        }
-    }
-
-    function hideLoading(buttonId) {
-        const button = document.getElementById(buttonId);
-        if (button) {
-            button.disabled = false;
-            button.querySelector('.normal-state')?.classList.remove('d-none');
-            button.querySelector('.loading-state')?.classList.add('d-none');
-        }
-    }
-
-    function handleError(error, buttonId = null) {
-        console.error('Erro:', error);
-        if (error.message) {
-            showError(encodeURIComponent(error.message));
-        }
-        if (buttonId) {
-            hideLoading(buttonId);
-        }
-    }
 </script>
 
 <style>
+    /* Ajustes de layout e estilo */
     .progress {
-        height: 20px;
+        height: 4px !important;
+        border-radius: 2px;
+        background-color: rgba(0,0,0,0.1);
     }
-    .card {
-        box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+    .text-status {
+        min-width: 100px;
+        text-align: center;
+        font-size: 0.875rem;
     }
-    .list-group-item:hover {
-        background-color: rgba(0,0,0,0.02);
-    }
-    .btn-group .btn {
-        padding: 0.25rem 0.5rem;
-    }
-    .clickable-row {
-        cursor: pointer;
-        transition: background-color 0.2s;
-    }
-    .clickable-row:hover {
-        background-color: rgba(0, 123, 255, 0.05);
-    }
-    .file-info {
-        flex-grow: 1;
-    }
-    .card-header {
-        background-color: #f8f9fa;
-        border-bottom: 1px solid rgba(0,0,0,.125);
-    }
-
-    .form-switch {
-        padding-left: 2.5em;
-    }
-
-    .form-check-input {
-        cursor: pointer;
-    }
-
-    .badge {
-        font-size: 0.75em;
-        padding: 0.4em 0.6em;
-    }
-
-    .list-group-item {
-        transition: background-color 0.2s ease;
-    }
-
-    .list-group-item:hover {
-        background-color: rgba(0,0,0,0.02);
-    }
-
-    .text-muted {
-        color: #6c757d !important;
-    }
-
-    .error-icon {
-        cursor: pointer;
-    }
-    
-    .copy-wrapper {
-        display: inline-block;
-    }
-    
-    .copy-btn {
-        padding: 0.1rem 0.3rem;
-        font-size: 0.75rem;
-        transition: all 0.2s ease;
-    }
-    
-    .error-details {
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        background: #f8f9fa;
-        padding: 1rem;
-        border-radius: 0.25rem;
-        margin: 0;
-    }
-    
-    .model-name {
-        font-weight: 500;
-    }
-
-    .bg-success-subtle {
-        background-color: rgba(25, 135, 84, 0.1);
-    }
-    
-    .bg-danger-subtle {
-        background-color: rgba(220, 53, 69, 0.1);
-    }
-    
-    .bg-info-subtle {
-        background-color: rgba(13, 202, 240, 0.1);
-    }
-    
-    tr.bg-success-subtle + tr.bg-success-subtle td,
-    tr.bg-danger-subtle + tr.bg-danger-subtle td,
-    tr.bg-info-subtle + tr.bg-info-subtle td {
-        border-top: none;
-    }
-
     .model-id {
         font-family: monospace;
         font-size: 0.875rem;
-        color: #0d6efd;
     }
-
-    .spinner-border-sm {
-        width: 1rem;
-        height: 1rem;
-        margin-right: 0.5rem;
+    .copy-wrapper {
+        display: inline-block;
     }
-
-    /* Efeito de disabled mais evidente */
-    .btn:disabled {
-        cursor: not-allowed;
-        opacity: 0.65;
+    .error-details {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        background: var(--bs-light);
+        padding: 1rem;
+        border-radius: var(--bs-border-radius);
+        margin: 0;
     }
-
-    .progress {
-        background-color: rgba(0,0,0,0.1);
-        border-radius: 2px;
-        overflow: hidden;
+    th.sortable {
+        cursor: pointer;
     }
-
-    .progress-bar {
-        background-color: #0d6efd;
+    th.sortable.active-sort {
+        text-decoration: underline;
     }
-
-    .progress-bar-striped {
-        background-image: linear-gradient(45deg,
-            rgba(255,255,255,.15) 25%,
-            transparent 25%,
-            transparent 50%,
-            rgba(255,255,255,.15) 50%,
-            rgba(255,255,255,.15) 75%,
-            transparent 75%,
-            transparent
-        );
-        background-size: 1rem 1rem;
-    }
-
-    .progress-bar-animated {
-        animation: progress-bar-stripes 1s linear infinite;
-    }
-
-    @keyframes progress-bar-stripes {
-        0% { background-position: 1rem 0; }
-        100% { background-position: 0 0; }
-    }
-
-    .text-status {
-        font-size: 0.8rem;
-        font-weight: 500;
-        min-width: 100px;
-        text-align: center;
-    }
-
-    .progress {
-        background-color: rgba(0,0,0,0.1);
-        height: 4px !important;
-        border-radius: 2px;
-    }
-
-    .progress-bar {
-        transition: width 0.3s ease;
-    }
-
-    /* Cores personalizadas para os status */
-    .bg-success {
-        background-color: #198754 !important;
-    }
-
-    .bg-danger {
-        background-color: #dc3545 !important;
-    }
-
-    .bg-primary {
-        background-color: #0d6efd !important;
-    }
-
-    .bg-secondary {
-        background-color: #6c757d !important;
-    }
-
-    .loading-state {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .loading-state .spinner-border-sm {
-        margin-right: 0.5rem;
+    /* Filtros por default abertos */
+    #filterControlsFiles,
+    #filterControlsStatus {
+        display: block;
     }
 </style>
 {% endblock %}

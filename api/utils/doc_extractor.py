@@ -1,6 +1,6 @@
 import base64
 import logging
-from api.exceptions import FileProcessingError
+from core.exceptions import FileProcessingError
 from api.utils.docling_doc_converter import convert_pdf_bytes_to_text, convert_word_bytes_to_text
 
 logger = logging.getLogger(__name__)

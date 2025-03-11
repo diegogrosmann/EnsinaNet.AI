@@ -23,10 +23,10 @@ def manage_ai(request):
         search_query = request.GET.get('search', '')
         api_type = request.GET.get('api_type', '')
         
-        # Query base
-        queryset = AIClientConfiguration.objects.annotate(
-            token_count=Count('tokens')  # Corrigido
-        ).order_by('name')  # Adiciona ordenação por nome
+        # Query base - filtrando apenas por IAs do usuário atual
+        queryset = AIClientConfiguration.objects.filter(user=request.user).annotate(
+            token_count=Count('tokens')
+        ).order_by('name')
         
         # Aplica filtros
         if search_query:
@@ -36,17 +36,14 @@ def manage_ai(request):
             queryset = queryset.filter(ai_client__api_client_class=api_type)
         
         # Obtém lista única de tipos de API
-        api_types = AIClientConfiguration.objects.values_list(
+        api_types = AIClientConfiguration.objects.filter(user=request.user).values_list(
             'ai_client__api_client_class', flat=True
         ).distinct().order_by('ai_client__api_client_class')
         
-        # Paginação
-        paginator = Paginator(queryset, 10)
-        page_number = request.GET.get('page', 1)
-        page_obj = paginator.get_page(page_number)
-        
+        # MODIFICAÇÃO: Não usamos paginação no backend, já que fazemos isso no frontend
+        # Enviamos todas as IAs para o JavaScript
         context = {
-            'ai_clients': page_obj,
+            'ai_clients': queryset,
             'api_types': api_types,
             'search_query': search_query,
             'selected_api': api_type,
@@ -60,11 +57,7 @@ def manage_ai(request):
             )
             return JsonResponse({
                 'html': html,
-                'has_next': page_obj.has_next(),
-                'has_prev': page_obj.has_previous(),
-                'page': page_obj.number,
-                'pages': paginator.num_pages,
-                'total': paginator.count,
+                'total': queryset.count(),
             })
 
         return render(request, 'ai_client/manage.html', context)

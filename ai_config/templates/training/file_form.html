@@ -11,21 +11,23 @@
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         {% endif %}
-        <!-- Adicione esta div para mensagens de erro no início do conteúdo principal -->
+
+        <!-- Alerta para mensagens de erro -->
         <div class="alert alert-danger alert-dismissible fade d-none" role="alert" id="errorAlert">
             <i class="bi bi-exclamation-triangle-fill me-2"></i>
             <span class="error-message"></span>
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
+
         <!-- Cabeçalho e Controles de Captura -->
-        <div class="card shadow-sm mb-4">
-            <div class="card-body">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
                 <div class="d-flex justify-content-between align-items-center">
-                    <h2 class="mb-0">
+                    <h2 class="h4 mb-0">
                         {% if training_file %}
-                            Editar Arquivo de Treinamento: {{ training_file.name }}
+                            <i class="bi bi-pencil-square me-2"></i>Editar Arquivo de Treinamento: {{ training_file.name }}
                         {% else %}
-                            Criar Arquivo de Treinamento
+                            <i class="bi bi-file-earmark-plus me-2"></i>Criar Arquivo de Treinamento
                         {% endif %}
                     </h2>
                     <div>
@@ -34,7 +36,7 @@
                                 <i class="bi bi-stop-circle me-2"></i> Desativar Captura
                             </button>
                         {% else %}
-                            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#captureModal">
+                            <button type="button" class="btn btn-light" data-bs-toggle="modal" data-bs-target="#captureModal">
                                 <i class="bi bi-record-circle me-2"></i> Ativar Captura
                             </button>
                         {% endif %}
@@ -44,7 +46,7 @@
         </div>
 
         <!-- Formulário Principal -->
-        <div class="card shadow-sm">
+        <div class="card">
             <div class="card-body">
                 <form method="post" enctype="multipart/form-data" id="trainingFileForm">
                     {% csrf_token %}
@@ -92,63 +94,66 @@
                     </div>
 
                     <!-- Exibição dos exemplos: usamos o filtro reverse para exibir do mais novo ao mais antigo -->
-                    <div id="formset-container" class="mb-4">
+                    <div id="formset-container" class="accordion" data-bs-parent="#formset-container">
                         {% for form in formset reversed %}
-                        <div class="card mb-3 formset-form {% if form.errors %}border border-danger{% endif %}">
-                            <div class="card-header d-flex justify-content-between align-items-center {% if form.errors %}bg-danger bg-opacity-10{% endif %}">
-                                <div class="collapse-toggle" style="cursor: pointer;"
-                                     data-bs-toggle="collapse"
-                                     data-bs-target="#collapse{{ forloop.counter0 }}"
-                                     aria-expanded="{% if forloop.first or form.errors %}true{% else %}false{% endif %}"
-                                     aria-controls="collapse{{ forloop.counter0 }}">
-                                    <h5 class="mb-0">
-                                        Exemplo {{ forloop.revcounter }}
+                        <div class="accordion-item formset-form {% if form.errors %}border-danger{% endif %}">
+                            <h2 class="accordion-header" id="heading{{ forloop.counter0 }}">
+                                <div class="d-flex justify-content-between align-items-center {% if form.errors %}bg-danger bg-opacity-10{% endif %}">
+                                    <button class="accordion-button {% if not forloop.first and not form.errors %}collapsed{% endif %}" 
+                                            type="button" 
+                                            data-bs-toggle="collapse" 
+                                            data-bs-target="#collapse{{ forloop.counter0 }}" 
+                                            aria-expanded="{% if forloop.first or form.errors %}true{% else %}false{% endif %}" 
+                                            aria-controls="collapse{{ forloop.counter0 }}">
+                                        <span class="example-number">Exemplo {{ forloop.revcounter }}</span>
                                         {% if form.errors %}
                                         <i class="bi bi-exclamation-triangle-fill text-danger ms-2" 
                                            title="Este exemplo contém erros"></i>
                                         {% endif %}
-                                        <i class="bi bi-chevron-down ms-2"></i>
-                                    </h5>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-danger remove-form me-2 mt-1 mb-1">
+                                        <i class="bi bi-x-lg"></i> Remover
+                                    </button>
                                 </div>
-                                <button type="button" class="btn btn-danger btn-sm remove-form">
-                                    <i class="bi bi-x-lg"></i> Remover
-                                </button>
-                            </div>
-                            <div id="collapse{{ forloop.counter0 }}" class="collapse {% if forloop.first or form.errors %}show{% endif %}"
-                                 aria-labelledby="heading{{ forloop.counter0 }}"
-                                 data-bs-parent="#formset-container">
-                                <div class="card-body">
+                            </h2>
+                            <div id="collapse{{ forloop.counter0 }}" 
+                                 class="accordion-collapse collapse {% if forloop.first or form.errors %}show{% endif %}" 
+                                 aria-labelledby="heading{{ forloop.counter0 }}" data-bs-parent="#formset-container">
+                                <div class="accordion-body">
                                     <div style="display: none;">
                                         {{ form.DELETE }}
                                     </div>
-                                    <div class="mb-3">
+                                    <div class="form-group mb-3">
                                         {{ form.system_message.label_tag }}
                                         {{ form.system_message }}
                                         {% for error in form.system_message.errors %}
-                                            <small class="text-danger">{{ error }}</small>
+                                            <div class="text-danger small">{{ error }}</div>
                                         {% endfor %}
                                     </div>
-                                    <div class="mb-3">
+                                    <div class="form-group mb-3">
                                         {{ form.user_message.label_tag }}
                                         {{ form.user_message }}
                                         {% for error in form.user_message.errors %}
-                                            <small class="text-danger">{{ error }}</small>
+                                            <div class="text-danger small">{{ error }}</div>
                                         {% endfor %}
                                     </div>
-                                    <div class="mb-3">
+                                    <div class="form-group mb-3">
                                         {{ form.response.label_tag }}
                                         <div class="markdownx">
                                             {{ form.response }}
                                         </div>
                                         {% for error in form.response.errors %}
-                                            <small class="text-danger">{{ error }}</small>
+                                            <div class="text-danger small">{{ error }}</div>
                                         {% endfor %}
                                     </div>
                                 </div>
                             </div>
                         </div>
                         {% empty %}
-                            <p>Nenhum exemplo adicionado.</p>
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle me-2"></i>
+                                Nenhum exemplo adicionado. Clique no botão "Adicionar Exemplo" para começar.
+                            </div>
                         {% endfor %}
                     </div>
                 </form>
@@ -161,15 +166,10 @@
 {% include 'training/modals/capture.html' %}
 
 <style>
-/* Estilos Gerais */
-.card {
-    border: none;
-    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-    transition: all 0.3s ease;
-}
-
-.card:hover {
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+/* Estilo mínimo necessário */
+.recording-icon {
+    animation: pulse 1.5s ease infinite;
+    display: inline-block;
 }
 
 /* Editor e Preview lado a lado */
@@ -188,7 +188,7 @@
     border: 1px solid #dee2e6;
     border-radius: 0.375rem;
     font-family: monospace;
-    resize: none; /* Removemos o resize padrão para usar nossa implementação */
+    resize: none;
     overflow-y: auto;
 }
 
@@ -202,17 +202,12 @@
     overflow-y: auto;
 }
 
-/* Classe auxiliar para definir a altura personalizada */
-.editor-height-custom {
-    height: 300px !important;
-}
-
 /* Manipulador de redimensionamento para editor e preview */
 .resizer {
     height: 10px;
-    background-color: #f0f0f0;
-    border-top: 1px solid #ccc;
-    border-bottom: 1px solid #ccc;
+    background-color: #e9ecef;
+    border-top: 1px solid #dee2e6;
+    border-bottom: 1px solid #dee2e6;
     cursor: ns-resize;
     position: absolute;
     bottom: -5px;
@@ -223,9 +218,15 @@
 }
 
 .resizer:hover {
-    background-color: #ddd;
+    background-color: #ced4da;
 }
 
+/* Altura personalizada para os editores */
+.editor-height-custom {
+    height: 300px !important;
+}
+
+/* Responsividade para telas menores */
 @media (max-width: 768px) {
     .markdownx {
         flex-direction: column;
@@ -234,46 +235,6 @@
     .markdownx-editor,
     .markdownx-preview {
         width: 100%;
-    }
-}
-
-.collapse-toggle .bi-chevron-down {
-    transition: transform 0.3s ease;
-}
-
-.collapse.show + .collapse-toggle .bi-chevron-down {
-    transform: rotate(180deg);
-}
-
-.form-control:focus {
-    border-color: #86b7fe;
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-}
-
-/* Estilos para o alerta de erro */
-.alert {
-    margin-bottom: 1rem;
-}
-
-.alert-danger {
-    background-color: #f8d7da;
-    border-color: #f5c2c7;
-    color: #842029;
-}
-
-.alert.show {
-    display: block;
-    animation: slideIn 0.3s ease-in-out;
-}
-
-@keyframes slideIn {
-    from {
-        transform: translateY(-100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateY(0);
-        opacity: 1;
     }
 }
 
@@ -293,11 +254,20 @@
     }
 }
 
-.recording-icon {
-    animation: pulse 1.5s ease infinite;
-    display: inline-block;
+/* Correção para o botão de remoção nos accordions */
+.accordion-button::after {
+    margin-left: 0;
 }
 
+/* Ajuste para os botões de remoção nos headers */
+.remove-form {
+    z-index: 10;
+}
+
+/* Ajuste para o botão de remoção não interferir com o accordion */
+.accordion-header .d-flex {
+    width: 100%;
+}
 </style>
 
 <!-- Adiciona a biblioteca marked -->
@@ -365,57 +335,59 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
 
-        window.hasUnsavedChanges = true;
+        if (shouldMarkAsUnsaved) {
+            window.hasUnsavedChanges = true;
+        }
         
         return newForm;
     }
 
-    // Template para novo form com cabeçalho sem rótulo fixo (será atualizado)
+    // Template para novo form usando componentes do Bootstrap 5
     function getEmptyFormHtml(index, exampleIndex) {
         return `
-          <div class="card mb-3 formset-form">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <div class="collapse-toggle" style="cursor: pointer;"
-                   data-bs-toggle="collapse"
-                   data-bs-target="#collapse${index}"
-                   aria-expanded="false"
-                   aria-controls="collapse${index}">
-                <h5 class="mb-0">
-                    <span class="example-number" data-index="${exampleIndex}">Exemplo ${exampleIndex}</span>
-                    <i class="bi bi-chevron-down ms-2"></i>
-                </h5>
-              </div>
-              <button type="button" class="btn btn-danger btn-sm remove-form">
-                  <i class="bi bi-x-lg"></i> Remover
-              </button>
-            </div>
-            <div id="collapse${index}" class="collapse" aria-labelledby="heading${index}" data-bs-parent="#formset-container">
-              <div class="card-body">
+          <div class="accordion-item formset-form">
+            <h2 class="accordion-header" id="heading${index}">
+                <div class="d-flex justify-content-between align-items-center">
+                    <button class="accordion-button" 
+                            type="button" 
+                            data-bs-toggle="collapse" 
+                            data-bs-target="#collapse${index}" 
+                            aria-expanded="true" 
+                            aria-controls="collapse${index}">
+                        <span class="example-number" data-index="${exampleIndex}">Exemplo ${exampleIndex}</span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-danger remove-form me-2 mt-1 mb-1">
+                        <i class="bi bi-x-lg"></i> Remover
+                    </button>
+                </div>
+            </h2>
+            <div id="collapse${index}" class="accordion-collapse collapse" aria-labelledby="heading${index}" data-bs-parent="#formset-container">
+              <div class="accordion-body">
                 <div style="display: none;">
                   <input type="checkbox" name="form-${index}-DELETE" id="id_form-${index}-DELETE">
                 </div>
-                <div class="mb-3">
-                  <label for="id_form-${index}-system_message">Mensagem do Sistema:</label>
+                <div class="form-group mb-3">
+                  <label class="form-label" for="id_form-${index}-system_message">Mensagem do Sistema:</label>
                   <textarea name="form-${index}-system_message"
                             cols="40" rows="4"
                             class="form-control"
                             id="id_form-${index}-system_message"></textarea>
                 </div>
-                <div class="mb-3">
-                  <label for="id_form-${index}-user_message">Mensagem do Usuário:</label>
+                <div class="form-group mb-3">
+                  <label class="form-label" for="id_form-${index}-user_message">Mensagem do Usuário:</label>
                   <textarea name="form-${index}-user_message"
-                            cols="4 rows="4"0 rows="4"" rows="4"
+                            cols="40" rows="4"
                             class="form-control"
                             id="id_form-${index}-user_message"></textarea>
                 </div>
-                <div class="mb-3">
-                  <label for="id_form-${index}-response">Resposta:</label>
+                <div class="form-group mb-3">
+                  <label class="form-label" for="id_form-${index}-response">Resposta:</label>
                   <div class="markdownx">
                     <textarea name="form-${index}-response"
                               cols="40"
                               class="form-control markdownx-editor"
                               id="id_form-${index}-response"></textarea>
-                                      </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -433,6 +405,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     deleteCheckbox.checked = true;
                 }
                 formCard.style.display = 'none';
+                updateExampleNumbers();
+                window.hasUnsavedChanges = true;
             }
         }
     });
@@ -454,50 +428,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Função para criar e mostrar um toast usando o sistema do template base
+    // Função para criar toast usando o sistema do template base
     function createAndShowToast(message, type = 'info') {
-        // Usa o contêiner de toast do template base
-        const toastContainer = document.querySelector('.toast-container');
-        if (!toastContainer) {
-            // Fallback para o sistema de alerta se não houver contêiner
+        // Usa as funções utilitárias do base.html
+        if (typeof showMessage === 'function') {
+            showMessage(type, message);
+        } else {
+            // Fallback
             showError(message);
-            return;
         }
-        
-        // Cria um novo elemento toast usando a mesma estrutura do template base
-        const toast = document.createElement('div');
-        toast.className = `toast align-items-center border-0 text-bg-${type}`;
-        toast.setAttribute('role', 'alert');
-        toast.setAttribute('aria-live', 'assertive');
-        toast.setAttribute('aria-atomic', 'true');
-        toast.setAttribute('data-bs-delay', '5000');
-        toast.setAttribute('data-bs-autohide', 'true');
-        
-        // Ícone com base no tipo
-        let iconClass = 'bi-info-circle';
-        if (type === 'success') iconClass = 'bi-check-circle';
-        else if (type === 'danger') iconClass = 'bi-exclamation-circle';
-        else if (type === 'warning') iconClass = 'bi-exclamation-triangle';
-        
-        toast.innerHTML = `
-            <div class="d-flex">
-                <div class="toast-body">
-                    <i class="bi ${iconClass} me-2"></i>
-                    ${message}
-                </div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
-        `;
-        
-        // Adiciona ao contêiner e inicializa
-        toastContainer.appendChild(toast);
-        const bsToast = new bootstrap.Toast(toast);
-        bsToast.show();
-        
-        // Remove após fechamento
-        toast.addEventListener('hidden.bs.toast', function() {
-            toast.remove();
-        });
     }
 
     // Inicia o polling se houver captura ativa
@@ -562,28 +501,32 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Atualizar handlers existentes
     addFormButton.addEventListener('click', function() {
-        const newForm = createNewExample(null, true); // Marca como alterado ao adicionar manualmente
-        newForm.querySelector('.collapse').classList.add('show');
-    });
-
-    formsetContainer.addEventListener('click', function(e) {
-        const removeBtn = e.target.closest('.remove-form');
-        if (removeBtn) {
-            const formCard = removeBtn.closest('.formset-form');
-            if (formCard) {
-                const deleteCheckbox = formCard.querySelector('input[type="checkbox"][name$="-DELETE"]');
-                if (deleteCheckbox) {
-                    deleteCheckbox.checked = true;
-                }
-                formCard.style.display = 'none';
-                updateExampleNumbers();
-                window.hasUnsavedChanges = true; // Marca como alterado ao remover exemplo
+        // Fecha todos os outros exemplos antes de adicionar o novo
+        const openCollapses = formsetContainer.querySelectorAll('.accordion-collapse.collapse.show');
+        openCollapses.forEach(collapse => {
+            bootstrap.Collapse.getInstance(collapse)?.hide();
+        });
+        
+        const newForm = createNewExample(null, true);
+        
+        // Abre o novo exemplo após um breve delay para garantir que o DOM foi atualizado
+        setTimeout(() => {
+            const collapse = newForm.querySelector('.accordion-collapse');
+            if (collapse) {
+                new bootstrap.Collapse(collapse).show();
             }
-        }
+        }, 50);
     });
 
-    // Inicializar todos os previews existentes
-    document.querySelectorAll('.markdownx').forEach(initMarkdownEditor);
+    // Garante que apenas um exemplo esteja aberto por vez
+    formsetContainer.addEventListener('show.bs.collapse', function(e) {
+        const activeForms = this.querySelectorAll('.accordion-collapse.collapse.show');
+        activeForms.forEach(form => {
+            if (form !== e.target) {
+                bootstrap.Collapse.getInstance(form)?.hide();
+            }
+        });
+    });
 
     // Atualizar função de polling
     function fetchTrainingExamples() {
@@ -593,9 +536,27 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json())
             .then(data => {
                 if (data.examples && data.examples.length > 0) {
-                    data.examples.forEach(example => {
-                        createNewExample(example, false); // Não marca como alterado para exemplos capturados
+                    // Fecha todos os exemplos existentes
+                    const openCollapses = formsetContainer.querySelectorAll('.accordion-collapse.collapse.show');
+                    openCollapses.forEach(collapse => {
+                        bootstrap.Collapse.getInstance(collapse)?.hide();
                     });
+                    
+                    // Adiciona os novos exemplos
+                    let lastForm = null;
+                    data.examples.forEach(example => {
+                        lastForm = createNewExample(example, false);
+                    });
+
+                    // Expande apenas o último exemplo adicionado
+                    if (lastForm) {
+                        const collapse = lastForm.querySelector('.accordion-collapse');
+                        if (collapse) {
+                            setTimeout(() => {
+                                new bootstrap.Collapse(collapse).show();
+                            }, 50);
+                        }
+                    }
                 }
             })
             .catch(error => showError('Erro ao buscar exemplos: ' + error));
@@ -666,7 +627,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (buttonContainer) {
                         const newButton = document.createElement('button');
                         newButton.type = 'button';
-                        newButton.className = 'btn btn-primary';
+                        newButton.className = 'btn btn-light';
                         newButton.setAttribute('data-bs-toggle', 'modal');
                         newButton.setAttribute('data-bs-target', '#captureModal');
                         newButton.innerHTML = '<i class="bi bi-record-circle me-2"></i> Ativar Captura';
@@ -703,107 +664,56 @@ document.addEventListener('DOMContentLoaded', function() {
         deactivateButton.addEventListener('click', deactivateCapture);
     }
 
-    // Adicionar esta função para sincronizar altura do preview com o editor
-    function initializeMarkdownPreview(textarea) {
-        const markdownx = textarea.closest('.markdownx');
-        const preview = markdownx.querySelector('.markdownx-preview');
-        
-        // Observa mudanças na altura do textarea
-        const resizeObserver = new ResizeObserver(entries => {
-            for (let entry of entries) {
-                // Atualiza altura do preview para corresponder ao editor
-                preview.style.height = `${entry.target.offsetHeight}px`;
-            }
-        });
-        
-        resizeObserver.observe(textarea);
-        
-        // Atualiza preview quando o texto mudar
-        textarea.addEventListener('input', function() {
-            preview.innerHTML = marked.parse(textarea.value);
-        });
-        
-        // Atualiza preview inicialmente se houver conteúdo
-        if (textarea.value) {
-            preview.innerHTML = marked.parse(textarea.value);
-        }
-    }
-    
-    // Inicializa os previews existentes
-    document.querySelectorAll('.markdownx-editor').forEach(initializeMarkdownPreview);
-
-    // Função para inicializar os resizers e a altura personalizada
-    setupMarkdownResizers();
-    // Define a altura inicial com pequeno atraso para garantir que seja aplicada
-    setTimeout(initializeEditorHeights, 100);
-});
-
-// Função para configurar resizers para todos os elementos markdownx
-function setupMarkdownResizers() {
-    document.querySelectorAll('.markdownx').forEach(setupResizer);
-}
-
-// Função para configurar um resizer individual em um elemento markdownx
-function setupResizer(markdownArea) {
-    const editor = markdownArea.querySelector('.markdownx-editor');
-    const preview = markdownArea.querySelector('.markdownx-preview');
-    
-    if (!editor || !preview) return;
-    
-    // Verifica se já existe um resizer para evitar duplicação
-    if (markdownArea.querySelector('.resizer')) return;
-    
-    // Criar o elemento resizer
-    const resizer = document.createElement('div');
-    resizer.className = 'resizer';
-    markdownArea.appendChild(resizer);
-    
-    // Configurar os eventos de redimensionamento
-    resizer.addEventListener('mousedown', function(e) {
-        e.preventDefault();
-        
-        const startY = e.clientY;
-        const startHeight = parseInt(window.getComputedStyle(editor).height);
-        
-        document.addEventListener('mousemove', resize);
-        document.addEventListener('mouseup', stopResize);
-        
-        function resize(e) {
-            const newHeight = startHeight + e.clientY - startY;
-            if (newHeight >= 150) { // Respeitar a altura mínima
-                // Usar setProperty com '!important' para garantir que sobrescreva outros estilos
-                editor.style.setProperty('height', `${newHeight}px`, 'important');
-                preview.style.setProperty('height', `${newHeight}px`, 'important');
-            }
-        }
-        
-        function stopResize() {
-            document.removeEventListener('mousemove', resize);
-            document.removeEventListener('mouseup', stopResize);
-        }
-    });
-}
-
-// Função para definir a altura inicial dos editores e previews
-function initializeEditorHeights() {
-    document.querySelectorAll('.markdownx').forEach(markdownArea => {
+    // Configuração dos resizers para markdown
+    function setupResizer(markdownArea) {
         const editor = markdownArea.querySelector('.markdownx-editor');
         const preview = markdownArea.querySelector('.markdownx-preview');
         
         if (!editor || !preview) return;
         
-        // Adiciona uma classe CSS com !important em vez de estilo inline
-        editor.classList.add('editor-height-custom');
-        preview.classList.add('editor-height-custom');
+        // Verifica se já existe um resizer para evitar duplicação
+        if (markdownArea.querySelector('.resizer')) return;
         
-        // Como backup, também define via JavaScript
-        const defaultHeight = 300; // altura padrão em pixels (um pouco menor para este formulário)
-        editor.style.setProperty('height', `${defaultHeight}px`, 'important');
-        preview.style.setProperty('height', `${defaultHeight}px`, 'important');
+        // Criar o elemento resizer
+        const resizer = document.createElement('div');
+        resizer.className = 'resizer';
+        markdownArea.appendChild(resizer);
         
-        // Força um redimensionamento para assegurar que o layout seja atualizado
-        editor.setAttribute('style', editor.getAttribute('style') + '; height: 300px !important');
-    });
-}
+        // Configurar os eventos de redimensionamento
+        resizer.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            
+            const startY = e.clientY;
+            const startHeight = parseInt(window.getComputedStyle(editor).height);
+            
+            document.addEventListener('mousemove', resize);
+            document.addEventListener('mouseup', stopResize);
+            
+            function resize(e) {
+                const newHeight = startHeight + e.clientY - startY;
+                if (newHeight >= 150) { // Respeitar a altura mínima
+                    editor.style.setProperty('height', `${newHeight}px`, 'important');
+                    preview.style.setProperty('height', `${newHeight}px`, 'important');
+                }
+            }
+            
+            function stopResize() {
+                document.removeEventListener('mousemove', resize);
+                document.removeEventListener('mouseup', stopResize);
+            }
+        });
+    }
+
+    // Aplicar resizers a todos os elementos markdownx
+    document.querySelectorAll('.markdownx').forEach(setupResizer);
+    
+    // Definir altura inicial dos editores
+    setTimeout(function() {
+        document.querySelectorAll('.markdownx-editor, .markdownx-preview').forEach(el => {
+            el.classList.add('editor-height-custom');
+            el.style.setProperty('height', '300px', 'important');
+        });
+    }, 100);
+});
 </script>
 {% endblock %}

@@ -10,7 +10,7 @@ from rest_framework import status
 from django.utils import timezone
 from datetime import timedelta
 
-from api.exceptions import APICommunicationError, MissingAPIKeyError
+from core.exceptions import APICommunicationError, MissingAPIKeyError
 from accounts.models import UserToken
 from ai_config.models import AIClientTokenConfig, TrainingCapture, AIClientConfiguration
 from api.utils.doc_extractor import extract_text

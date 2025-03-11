@@ -1,62 +1,62 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container">
-    <h2 class="mb-4">Configurações de IA para o Token "{{ token.name }}"</h2>
-
-    <div class="mb-3">
-        <a href="{% url 'ai_config:ai_config_create' token.id %}" class="btn btn-success">
-            <i class="bi bi-plus-circle"></i> Criar Nova IA
-        </a>
-    </div>
-
-    {% if ai_configs %}
-    <div class="table-responsive card">
-        <table class="table table-striped table-hover align-middle mb-0">
-            <thead>
-                <tr class="bg-primary text-white">
-                    <th class="px-3 py-3">Nome da IA</th>
-                    <th class="px-3 py-3">Cliente</th>
-                    <th class="px-3 py-3">Modelo</th>
-                    <th class="px-3 py-3">Status</th>
-                    <th class="px-3 py-3 text-center">Ações</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for config in ai_configs %}
-                <tr>
-                    <td class="px-3">{{ config.name }}</td>
-                    <td class="px-3">{{ config.ai_client.api_client_class }}</td>
-                    <td class="px-3">{{ config.model_name|default:"Padrão" }}</td>
-                    <td class="px-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" 
-                                   class="form-check-input enable-checkbox" 
-                                   data-config-id="{{ config.id }}"
-                                   {% if config.enabled %}checked{% endif %}
-                            >
-                            <label class="form-check-label">
-                                {{ config.enabled|yesno:"Ativo,Inativo" }}
-                            </label>
-                        </div>
-                    </td>
-                    <td class="px-3 text-center">
-                        <div class="btn-group">
-                            <a href="{% url 'ai_config:ai_config_edit' token.id config.id %}" 
-                               class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-pencil"></i>
-                            </a>
-                            <a href="#" 
-                               class="btn btn-sm btn-outline-danger delete-config"
-                               data-config-id="{{ config.id }}"
-                               data-config-name="{{ config.name }}">
-                                <i class="bi bi-trash"></i>
-                            </a>
-                        </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
+<div class="container py-4">
+    <!-- Card Principal com Cabeçalho -->
+    <div class="card border-primary mb-4">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h4 class="card-title mb-0">
+                <i class="bi bi-cpu me-2"></i>Configurações de IA para "{{ token.name }}"
+            </h4>
+            <div>
+                <a href="{% url 'ai_config:ai_config_create' token.id %}" class="btn btn-success">
+                    <i class="bi bi-plus-circle me-1"></i> Nova IA
+                </a>
+                <a href="{% url 'accounts:token_config' token.id %}" class="btn btn-outline-light ms-2">
+                    <i class="bi bi-arrow-left"></i> Voltar
+                </a>
+            </div>
+        </div>
+        
+        <div class="card-body p-0">
+            {% if ai_configs %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr class="table-primary">
+                                <th class="fw-semibold">Nome da IA</th>
+                                <th class="fw-semibold">Cliente</th>
+                                <th class="fw-semibold">Modelo</th>
+                                <th class="fw-semibold">Status</th>
+                                <th class="text-center fw-semibold">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for config in ai_configs %}
+                            <tr>
+                                <td>{{ config.name }}</td>
+                                <td>{{ config.ai_client.api_client_class }}</td>
+                                <td>{{ config.model_name|default:"Padrão" }}</td>
+                                <td>
+                                    <div class="form-check form-switch">
+                                        <input type="checkbox" 
+                                               class="form-check-input enable-checkbox" 
+                                               data-config-id="{{ config.id }}"
+                                               {% if config.enabled %}checked{% endif %}
+                                        >
+                                        <label class="form-check-label">
+                                            <span class="badge {% if config.enabled %}bg-success{% else %}bg-secondary{% endif %} status-badge-{{ config.id }}">
+                                                {{ config.enabled|yesno:"Ativo,Inativo" }}
+                                            </span>
+                                        </label>
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    <div class="btn-group" role="group" aria-label="Ações">
+                                        <a href="{% url 'ai_config:ai_config_edit' token.id config.id %}" 
+                                           class="btn btn-sm btn-primary"
+                                           data-bs-toggle="tooltip"
+                                           title="Editar">
         </table>
     </div>
     {% else %}
