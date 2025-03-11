@@ -8,14 +8,14 @@ import logging
 import json
 import time
 import threading
-from typing import Any, Dict, Optional, List
-from datetime import timedelta
+from typing import Optional, Dict, Any, List
 
 from django.http import JsonResponse
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework import status
 from django.http import HttpRequest, HttpResponse
+from datetime import timedelta
 
 from core.exceptions import APICommunicationError, MissingAPIKeyError
 from accounts.models import UserToken
@@ -26,17 +26,24 @@ from ai_config.models import (
 )
 from api.utils.doc_extractor import extract_text
 from api.utils.queue_manager import Task, TaskQueue, TaskManager
+from core.types import (
+    CompareRequestData, 
+    CompareResponseData, 
+    AIResponseData,
+    TrainingExampleData,
+    ResponseType
+)
 
 logger = logging.getLogger(__name__)
 
-def validate_request_data(data: Dict[str, Any]) -> Optional[JsonResponse]:
-    """Valida os dados da requisição.
+def validate_request_data(data: CompareRequestData) -> Optional[JsonResponse]:
+    """Valida os dados da requisição de comparação.
     
     Args:
-        data: Dados recebidos na requisição.
+        data: Dados estruturados da requisição a validar
         
     Returns:
-        Optional[JsonResponse]: Resposta de erro se dados inválidos, None se válidos.
+        JsonResponse opcional com erro se dados inválidos, None se válidos.
     """
     if 'instructor' not in data or 'students' not in data:
         return JsonResponse({
@@ -51,12 +58,12 @@ def validate_request_data(data: Dict[str, Any]) -> Optional[JsonResponse]:
     
     return None
 
-def process_training_capture(capture: TrainingCapture, example_data: Dict[str, Any]) -> None:
+def process_training_capture(capture: TrainingCapture, example_data: TrainingExampleData) -> None:
     """Processa e salva um exemplo para captura de treinamento.
     
     Args:
-        capture: Objeto de captura ativa.
-        example_data: Dados do exemplo a ser salvo.
+        capture: Objeto de captura ativa
+        example_data: Dados do exemplo a ser salvo (system_message, user_message, response)
     """
     try:
         with capture.temp_file.open('r') as f:
@@ -70,11 +77,13 @@ def process_training_capture(capture: TrainingCapture, example_data: Dict[str, A
         json.dump(training_data, f, ensure_ascii=False, indent=4)
     logger.debug("Exemplo capturado com sucesso")
 
-def process_client(ai_config: AIClientConfiguration = None, 
-                   student_data: Dict[str, Any] = None, 
-                   student_id: str = None,
-                   user_token: UserToken = None) -> Dict[str, Any]:
-    """Processa a requisição para uma configuração de IA específica e um aluno específico.
+def process_client(
+    ai_config: AIClientConfiguration, 
+    student_data: Dict[str, Any], 
+    student_id: str,
+    user_token: UserToken
+) -> AIResponseData:
+    """Processa a requisição para uma configuração de IA específica e um aluno.
     
     Args:
         ai_config: Configuração da IA a ser processada
@@ -83,7 +92,7 @@ def process_client(ai_config: AIClientConfiguration = None,
         user_token: Token do usuário
         
     Returns:
-        Dict[str, Any]: Resultado do processamento
+        AIResponseData: Resultado do processamento com resposta e metadados
     """
     try:
         client_name = ai_config.ai_client.api_client_class
@@ -101,27 +110,45 @@ def process_client(ai_config: AIClientConfiguration = None,
         logger.info(f"Comparação para {client_name} - Aluno: {student_id} realizada em {elapsed_time:.2f}s")
         
         # Manipula a captura de dados de treinamento
-        handle_training_capture(user_token, ai_config, system_message, user_message, comparison_result)
+        handle_training_capture(
+            user_token, 
+            ai_config, 
+            system_message, 
+            user_message, 
+            comparison_result
+        )
         
-        # Retorna informações adicionais no formato desejado
-        return {
-            "response": comparison_result,
-            "model_name": ai_config.model_name,
-            "configurations": ai_config.configurations,
-            "processing_time": round(elapsed_time, 3)
-        }
+        # Retorna informações adicionais no formato AIResponseData
+        return AIResponseData(
+            response=comparison_result,
+            model_name=ai_config.model_name,
+            configurations=ai_config.configurations,
+            processing_time=round(elapsed_time, 3)
+        )
         
     except MissingAPIKeyError as e:
         logger.error(f"Chave de API ausente para {ai_config.ai_client.api_client_class}: {e}")
-        return {"error": "Chave de API não configurada"}
+        return AIResponseData(
+            response="",
+            model_name=ai_config.model_name if ai_config.model_name else "",
+            configurations=ai_config.configurations,
+            processing_time=0.0,
+            error="Chave de API não configurada"
+        )
     except APICommunicationError as e:
         # Propaga erros de comunicação com a API para permitir retentativas
         logger.error(f"Erro de comunicação na API para {ai_config.ai_client.api_client_class}: {e}")
         raise
     except Exception as e:
         logger.exception(f"Erro ao processar {ai_config.ai_client.api_client_class} - Aluno: {student_id}:")
-        return {"error": str(e)}
-    
+        return AIResponseData(
+            response="",
+            model_name=ai_config.model_name if ai_config.model_name else "",
+            configurations=ai_config.configurations,
+            processing_time=0.0,
+            error=str(e)
+        )
+
 def handle_training_capture(user_token: UserToken, ai_config: AIClientConfiguration, system_message: str, user_message: str, comparison_result: str) -> None:
     """Gerencia a captura de dados de treinamento, adicionando exemplos ao arquivo se houver captura ativa."""
     try:
@@ -181,10 +208,10 @@ def compare(request: HttpRequest) -> HttpResponse:
     as IAs configuradas e retorna os resultados comparados.
     
     Args:
-        request: Requisição HTTP com dados a serem comparados.
+        request: Requisição HTTP com dados de comparação
         
     Returns:
-        HttpResponse: Resultados das comparações por cada IA.
+        HttpResponse: Resultados das comparações por cada IA
     """
     version = request.version
     logger.info(f"Iniciando operação compare (API v{version})")
@@ -197,13 +224,19 @@ def compare(request: HttpRequest) -> HttpResponse:
         user_token = UserToken.objects.get(key=token_key)
         processed_data = process_request_data(request.data)
         
+        # Converte para o tipo CompareRequestData para validação mais robusta
+        compare_data = CompareRequestData(
+            instructor=processed_data.get('instructor', {}),
+            students=processed_data.get('students', {})
+        )
+        
         # Valida dados da requisição
-        error_response = validate_request_data(processed_data)
+        error_response = validate_request_data(compare_data)
         if error_response:
             return error_response
             
-        instructor_data = processed_data['instructor']
-        students_data = processed_data['students']
+        instructor_data = compare_data.instructor
+        students_data = compare_data.students
         
         # Obtém configurações de IA ativas
         user_ai_configs = AIClientTokenConfig.objects.filter(
@@ -216,6 +249,19 @@ def compare(request: HttpRequest) -> HttpResponse:
                 "error": "Não há configurações de IA ativas para este token"
             }, status=status.HTTP_400_BAD_REQUEST)
             
+        # Prepara a resposta estruturada
+        response_data = CompareResponseData(students={})
+        results = {student_id: {} for student_id in students_data.keys()}
+        results_lock = threading.Lock()
+        
+        def store_result(config_data: AIClientConfiguration, 
+                         value: AIResponseData, 
+                         student_id: str) -> None:
+            """Armazena resultado de forma thread-safe."""
+            with results_lock:
+                ai_name = config_data.ai_client.api_client_class
+                results[student_id][ai_name] = value
+        
         # Configuração para processamento paralelo
         results = {student_id: {} for student_id in students_data.keys()}
         results_lock = threading.Lock()

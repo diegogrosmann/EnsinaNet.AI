@@ -1,49 +1,19 @@
-"""Circuit breaker para controle de falhas em chamadas de API.
-
-Implementa um circuit breaker que monitora falhas em chamadas de serviços externos
-e previne chamadas quando o serviço está instável.
-"""
+"""Circuit breaker para controle de falhas em chamadas de API."""
 
 import logging
 import threading
 from datetime import datetime, timedelta
-from enum import Enum
 from typing import Dict, Any, Optional
-from dataclasses import dataclass
+
+from core.types import CircuitState, CircuitConfig, CircuitOpenError
 
 logger = logging.getLogger(__name__)
 
-class CircuitState(Enum):
-    """Estados possíveis do circuit breaker."""
-    CLOSED = "closed"
-    OPEN = "open"
-    HALF_OPEN = "half-open"
-
-@dataclass
-class CircuitConfig:
-    """Configuração do circuit breaker.
-    
-    Attributes:
-        error_threshold: Número máximo de falhas antes de abrir.
-        timeout_seconds: Tempo em segundos antes de tentar fechar.
-        success_threshold: Sucessos necessários para fechar.
-    """
-    error_threshold: int = 100
-    timeout_seconds: int = 30
-    success_threshold: int = 1
-
-class CircuitOpenError(Exception):
-    """Erro lançado quando o circuito está aberto."""
-    pass
+# Instância global do circuit breaker
+_circuit_breaker = None  # Será inicializado posteriormente
 
 class CircuitBreaker:
-    """Implementação do padrão Circuit Breaker.
-    
-    Attributes:
-        _states: Dicionário com estado de cada API.
-        _locks: Locks para acesso thread-safe.
-        _config: Configurações do circuit breaker.
-    """
+    """Implementação do padrão Circuit Breaker."""
     
     def __init__(self, config: Optional[CircuitConfig] = None):
         self._states: Dict[str, Dict[str, Any]] = {}
@@ -107,7 +77,7 @@ class CircuitBreaker:
                 logger.warning(f"Circuito para {api_name} aberto após {state['failures']} falhas")
                 state['state'] = CircuitState.OPEN
 
-# Instância global do circuit breaker
+# Inicialização da instância global
 _circuit_breaker = CircuitBreaker()
 
 # APIs públicas

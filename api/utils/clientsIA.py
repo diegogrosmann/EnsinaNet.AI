@@ -1,40 +1,41 @@
-"""Clientes para diferentes APIs de IA.
+"""Clientes para diferentes APIs de IA."""
+from datetime import datetime, time
+from typing import Any, Dict, List, Optional, TypeVar, Union
+from dataclasses import dataclass
 
-Define classes base e implementações específicas para interagir com
-diversas APIs de IA como OpenAI, Google Gemini, Anthropic, etc.
-
-Classes principais:
-    APIClient: Classe base abstrata para todos os clientes
-    OpenAiClient: Cliente para OpenAI GPT
-    GeminiClient: Cliente para Google Gemini
-    AnthropicClient: Cliente para Anthropic Claude
-    PerplexityClient: Cliente para Perplexity
-    LlamaClient: Cliente para Llama
-    AzureOpenAIClient: Cliente para Azure OpenAI
-    AzureClient: Cliente para Azure padrão
-"""
-
-import html
-import json
-import logging
-import os
-import tempfile
 from datetime import datetime
 from enum import Enum, auto
 from typing import Any, Dict, List, Optional, TypeVar, Union
 from dataclasses import dataclass
+import uuid
 
 import anthropic
 from google import genai
 from google.genai import types
 import requests
-from dotenv import load_dotenv
+
 from azure.ai.inference import ChatCompletionsClient
 from azure.core.credentials import AzureKeyCredential
 from llamaapi import LlamaAPI
 from openai import AzureOpenAI, OpenAI
 
-from api.constants import AIClientConfig 
+
+# Imports necessários adicionados
+import html
+import json
+import logging
+import os
+import tempfile
+from dotenv import load_dotenv
+from openai import OpenAI
+from openai.types import FileObject
+from openai.types.fine_tuning import FineTuningJob
+
+from core.types import (
+    AIClientConfig,
+    TrainingStatus,
+    AITrainingData as TrainingResult
+)
 from core.exceptions import APICommunicationError, MissingAPIKeyError
 from django.template import engines
 from api.utils.circuit_breaker import (
@@ -52,34 +53,7 @@ load_dotenv()
 T = TypeVar('T')
 AI_CLIENT_MAPPING: Dict[str, type] = {}
 
-class TrainingStatus(Enum):
-    """Status possíveis para um treinamento de IA."""
-    NOT_STARTED = auto()
-    IN_PROGRESS = auto() 
-    COMPLETED = auto()
-    FAILED = auto()
-    CANCELLED = auto()
-
-@dataclass 
-class TrainingResult:
-    """Resultado de uma operação de treinamento.
-    
-    Attributes:
-        job_id: ID único do job de treinamento
-        status: Status atual do treinamento
-        model_name: Nome do modelo gerado (se completo)
-        error: Mensagem de erro (se falhou)
-        progress: Progresso atual (0.0 a 1.0)
-        completed_at: Data/hora de conclusão
-        details: Detalhes adicionais específicos da API
-    """
-    job_id: str
-    status: TrainingStatus
-    model_name: Optional[str] = None
-    error: Optional[str] = None
-    progress: float = 0.0
-    completed_at: Optional[datetime] = None
-    details: Optional[Dict] = None
+# Remover as definições duplicadas de TrainingStatus e TrainingResult aqui
 
 def register_ai_client(cls: type) -> type:
     """Registra uma classe de cliente de IA no mapeamento global.

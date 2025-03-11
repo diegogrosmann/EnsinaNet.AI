@@ -1,8 +1,4 @@
-"""Gerenciador de filas de tarefas assíncronas.
-
-Implementa um sistema de filas para processamento assíncrono de tarefas,
-com suporte a retentativas, backoff exponencial e limitação de concorrência.
-"""
+"""Gerenciador de filas de tarefas assíncronas."""
 
 import logging
 import time
@@ -11,58 +7,13 @@ import threading
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Any, Dict, List, Optional
-from dataclasses import dataclass
+
+from core.types import Task, QueueConfig
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class Task:
-    """Representa uma tarefa a ser executada.
-    
-    Attributes:
-        identifier: Identificador único da tarefa.
-        func: Função a ser executada.
-        args: Argumentos posicionais.
-        kwargs: Argumentos nomeados.
-        result_callback: Callback para processar resultado.
-        attempt: Número da tentativa atual.
-    """
-    identifier: str
-    func: Callable
-    args: tuple = ()
-    kwargs: Dict = None
-    result_callback: Optional[Callable[[str, Any], None]] = None
-    attempt: int = 1
-
-@dataclass
-class QueueConfig:
-    """Configuração de uma fila de tarefas.
-    
-    Attributes:
-        max_attempts: Máximo de tentativas por tarefa.
-        initial_wait: Tempo inicial entre tentativas.
-        backoff_factor: Fator de multiplicação do tempo de espera.
-        randomness_factor: Fator de aleatoriedade no tempo de espera.
-        max_parallel_first: Máximo de execuções paralelas na primeira tentativa.
-        max_parallel_retry: Máximo de execuções paralelas nas retentativas.
-    """
-    max_attempts: int
-    initial_wait: float
-    backoff_factor: float
-    randomness_factor: float
-    max_parallel_first: int
-    max_parallel_retry: int
-
 class TaskQueue:
-    """Fila de tarefas com parâmetros configuráveis.
-    
-    Attributes:
-        name: Nome identificador da fila.
-        config: Configurações da fila.
-        tasks: Lista de tarefas pendentes.
-        first_semaphore: Controle de concorrência para primeira tentativa.
-        retry_semaphore: Controle de concorrência para retentativas.
-    """
+    """Fila de tarefas com parâmetros configuráveis."""
     
     def __init__(self, name: str, config: QueueConfig):
         self.name = name

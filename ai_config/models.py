@@ -15,8 +15,14 @@ from django.conf import settings
 from django.dispatch import receiver
 
 from accounts.models import UserToken
-from api.constants import AIClientConfig, TrainingStatus
+
 from api.utils.clientsIA import AI_CLIENT_MAPPING, APIClient
+from core.types import (
+    JSONDict, AIConfigData, TrainingFileData, 
+    TrainingStatus, TrainingJobID, ModelName,
+    AITrainingData
+)
+from core.types import AIClientConfig as APIClientConfig
 
 from .storage import OverwriteStorage
 from django.db.models.signals import post_delete
@@ -55,7 +61,7 @@ class AIClientGlobalConfiguration(models.Model):
             return f"({self.api_client_class}) {self.name}"
         return f"Cliente de IA para {self.api_client_class}"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JSONDict:
         """Converte a configuração global em um dicionário.
 
         Returns:
@@ -146,7 +152,7 @@ class AIClientGlobalConfiguration(models.Model):
             logger.error(f"Erro ao listar arquivos: {e}")
             raise
 
-    def list_trained_models(self) -> List[str]:
+    def list_trained_models(self) -> List[Dict[str, Any]]:
         """Lista todos os modelos treinados disponíveis.
 
         Returns:
@@ -291,18 +297,21 @@ class AIClientConfiguration(models.Model):
         """
         return f"{self.name} -> {self.ai_client.api_client_class}"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> AIConfigData:
         """Converte a configuração do cliente em um dicionário.
 
         Returns:
             dict: Dicionário com os atributos da configuração do cliente.
         """
-        return {
-            'model_name': self.model_name,
-            'configurations': self.configurations or {},
-            'training_configurations': self.training_configurations or {},
-            'use_system_message': self.use_system_message,
-        }
+        return AIConfigData(
+            id=self.id,
+            name=self.name,
+            model_name=self.model_name or "",
+            use_system_message=self.use_system_message,
+            configurations=self.configurations or {},
+            training_configurations=self.training_configurations or {},
+            enabled=True
+        )
 
     def create_api_client_instance(self, token: Optional[UserToken] = None) -> APIClient:
         """Retorna uma instância configurada do cliente de IA.
@@ -335,7 +344,7 @@ class AIClientConfiguration(models.Model):
             except TokenAIConfiguration.DoesNotExist:
                 logger.warning(f"Nenhuma configuração de prompt encontrada para o token {token.name}")
         
-        client_config = AIClientConfig(
+        client_config = APIClientConfig(
             ai_global_config=self.ai_client.to_dict(),
             ai_client_config=self.to_dict(),
             prompt_config=prompt_config
@@ -363,7 +372,7 @@ class AIClientConfiguration(models.Model):
             logger.error(f"Erro ao comparar dados: {e}")
             raise
 
-    def perform_training(self, training_file: 'AITrainingFile') -> Dict[str, Any]:
+    def perform_training(self, training_file: 'AITrainingFile') -> AITrainingData:
         """Realiza o treinamento para esta configuração de IA.
 
         Args:
@@ -391,19 +400,33 @@ class AIClientConfiguration(models.Model):
                 status=result.status.value
             )
             
-            return {
-                'ai_name': self.name,
-                'job_id': training.job_id,
-                'status': TrainingStatus.IN_PROGRESS
-            }
+            return AITrainingData(
+                id=training.id,
+                ai_config_id=self.id,
+                job_id=training.job_id,
+                status=TrainingStatus.IN_PROGRESS,
+                file_id=training_file.id,
+                model_name=None,
+                error=None,
+                created_at=training.created_at,
+                updated_at=training.updated_at,
+                progress=0
+            )
             
         except Exception as e:
             logger.error(f"Erro ao iniciar treinamento para IA {self.id}: {e}", exc_info=True)
-            return {
-                'ai_name': self.name,
-                'error': str(e),
-                'status': TrainingStatus.FAILED
-            }
+            return AITrainingData(
+                id=None,
+                ai_config_id=self.id,
+                job_id=None,
+                status=TrainingStatus.FAILED,
+                file_id=training_file.id,
+                model_name=None,
+                error=str(e),
+                created_at=None,
+                updated_at=None,
+                progress=0
+            )
 
 class AIClientTokenConfig(models.Model):
     """Configuração de associação entre Token e IA.
@@ -482,6 +505,21 @@ class AITrainingFile(models.Model):
         unique_together = ('user', 'name')  # Garante nomes únicos para cada usuário
         verbose_name = "Arquivo de Treinamento"
         verbose_name_plural = "Arquivos de Treinamento"
+
+    def get_file_data(self) -> TrainingFileData:
+        """Retorna os dados do arquivo no formato estruturado.
+        
+        Returns:
+            TrainingFileData: Dados estruturados do arquivo
+        """
+        return TrainingFileData(
+            id=self.id,
+            user_id=self.user_id,
+            name=self.name,
+            file_path=self.file.path if self.file else "",
+            uploaded_at=self.uploaded_at,
+            file_size=self.get_file_size()
+        )
 
 @receiver(post_delete, sender=AITrainingFile)
 def delete_file_on_model_delete(sender: Any, instance: 'AITrainingFile', **kwargs: Any) -> None:
@@ -727,6 +765,25 @@ class AITraining(models.Model):
         except Exception as e:
             logger.error(f"Erro ao cancelar treinamento {self.job_id}: {e}")
             return False
+
+    def get_training_data(self) -> AITrainingData:
+        """Retorna os dados do treinamento no formato estruturado.
+        
+        Returns:
+            AITrainingData: Dados estruturados do treinamento
+        """
+        return AITrainingData(
+            id=self.id,
+            ai_config_id=self.ai_config_id,
+            job_id=self.job_id,
+            status=self.status,
+            file_id=self.file_id,
+            model_name=self.model_name,
+            error=self.error,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+            progress=self.progress
+        )
 
 @receiver(post_delete, sender=AITraining)
 def delete_model_on_training_delete(sender: Any, instance: 'AITraining', **kwargs: Any) -> None:

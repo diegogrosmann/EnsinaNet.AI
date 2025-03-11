@@ -9,6 +9,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator
 from accounts.models import UserToken
+from core.types import APILogData, HTTP_METHODS
 
 logger = logging.getLogger(__name__)
 
@@ -16,13 +17,13 @@ class APILog(models.Model):
     """Registro de requisições à API.
     
     Attributes:
-        user: Usuário que fez a requisição.
-        user_token: Token usado na autenticação.
-        path: Caminho da URL acessada.
-        method: Método HTTP utilizado.
-        status_code: Código de status HTTP retornado.
-        execution_time: Tempo de execução em segundos.
-        timestamp: Data/hora do registro.
+        user (User): Usuário que fez a requisição
+        user_token (UserToken): Token usado na autenticação
+        path (str): Caminho da URL acessada
+        method (str): Método HTTP utilizado
+        status_code (int): Código de status HTTP retornado
+        execution_time (float): Tempo de execução em segundos
+        timestamp (datetime): Data/hora do registro
     """
     
     HTTP_METHODS = [
@@ -102,3 +103,19 @@ class APILog(models.Model):
         except Exception as e:
             logger.error(f"Erro ao salvar log: {e}")
             raise
+
+    def to_log_data(self) -> APILogData:
+        """Converte o log para o formato estruturado APILogData.
+        
+        Returns:
+            APILogData: Dados estruturados do log
+        """
+        return APILogData(
+            id=self.id,
+            user_token=self.user_token.key if self.user_token else None,
+            path=self.path,
+            method=self.method,
+            status_code=self.status_code,
+            execution_time=self.execution_time,
+            timestamp=self.timestamp
+        )

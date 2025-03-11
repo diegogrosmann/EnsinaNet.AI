@@ -11,6 +11,7 @@ from django.http import HttpRequest, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
 from accounts.models import UserToken
 from api.models import APILog
+from core.types import APILogData
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +46,25 @@ class MonitoringMiddleware(MiddlewareMixin):
                 user_token = self._get_token_from_request(request)
                 user = user_token.user if user_token else None
 
-                APILog.objects.create(
-                    user=user,
-                    user_token=user_token,
+                # Cria o objeto de log usando os tipos definidos
+                log_data = APILogData(
+                    id=0,  # será definido ao salvar no banco
+                    user_token=user_token.key if user_token else None,
                     path=request.path,
                     method=request.method,
                     status_code=response.status_code,
-                    execution_time=execution_time
+                    execution_time=execution_time,
+                    timestamp=datetime.now()
+                )
+                
+                # Salva no banco usando os dados estruturados
+                APILog.objects.create(
+                    user=user,
+                    user_token=user_token,
+                    path=log_data.path,
+                    method=log_data.method,
+                    status_code=log_data.status_code,
+                    execution_time=log_data.execution_time
                 )
                 
                 logger.info(
@@ -83,7 +96,7 @@ class MonitoringMiddleware(MiddlewareMixin):
                 
             return UserToken.objects.get(key=token_key)
         except UserToken.DoesNotExist:
-            logger.warning(f"Token inválido detectado: {token_key}")
+            logger.warning(f"Token inválido detectado")
             return None
         except Exception as e:
             logger.error(f"Erro ao processar token: {e}")
