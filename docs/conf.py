@@ -1,5 +1,6 @@
 import os
 import sys
+import django
 # Configuration file for the Sphinx documentation builder.
 #
 # For the full list of built-in configuration values, see the documentation:
@@ -8,6 +9,9 @@ import sys
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 sys.path.insert(0, os.path.abspath('..'))
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "myproject.settings")  # Substitua "myproject.settings" pelo caminho correto para o seu settings
+django.setup()
 
 project = 'ComparadorIA'
 copyright = '2025, Diego Grosmann'
