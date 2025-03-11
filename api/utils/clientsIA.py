@@ -1,18 +1,17 @@
-"""
-Este módulo fornece utilitários e clientes para interagir com diferentes APIs de IA.
+"""Clientes para diferentes APIs de IA.
 
-Classes:
-    APIClient: Classe base para todos os clientes de IA
+Define classes base e implementações específicas para interagir com
+diversas APIs de IA como OpenAI, Google Gemini, Anthropic, etc.
+
+Classes principais:
+    APIClient: Classe base abstrata para todos os clientes
     OpenAiClient: Cliente para OpenAI GPT
     GeminiClient: Cliente para Google Gemini
     AnthropicClient: Cliente para Anthropic Claude
     PerplexityClient: Cliente para Perplexity
     LlamaClient: Cliente para Llama
     AzureOpenAIClient: Cliente para Azure OpenAI
-    AzureClient: Cliente para Azure
-
-Funções:
-    register_ai_client: Decorador para registro de clientes
+    AzureClient: Cliente para Azure padrão
 """
 
 import html
@@ -20,12 +19,12 @@ import json
 import logging
 import os
 import tempfile
-import time
 from datetime import datetime
-from typing import Any, TypeVar
+from enum import Enum, auto
+from typing import Any, Dict, List, Optional, TypeVar, Union
+from dataclasses import dataclass
 
 import anthropic
-
 from google import genai
 from google.genai import types
 import requests
@@ -34,77 +33,99 @@ from azure.ai.inference import ChatCompletionsClient
 from azure.core.credentials import AzureKeyCredential
 from llamaapi import LlamaAPI
 from openai import AzureOpenAI, OpenAI
-from openai.types.file_object import FileObject
-from openai.types.fine_tuning import FineTuningJob
 
-from api.constants import AIClientConfig, TrainingResult, TrainingStatus
+from api.constants import AIClientConfig 
 from core.exceptions import APICommunicationError, MissingAPIKeyError
 from django.template import engines
-
 from api.utils.circuit_breaker import (
     attempt_call,
-    record_failure,
+    record_failure, 
     record_success,
     CircuitOpenError
 )
 
-import uuid
-
-T = TypeVar('T')
-
-# Configuração do logger
+# Configuração
 logger = logging.getLogger(__name__)
-
-# Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
 
-# Decorador para registrar automaticamente classes de clientes de IA
-AI_CLIENT_MAPPING = {}
+# Tipos
+T = TypeVar('T')
+AI_CLIENT_MAPPING: Dict[str, type] = {}
 
-def register_ai_client(cls):
-    """Decorador para registrar automaticamente classes de clientes de IA.
+class TrainingStatus(Enum):
+    """Status possíveis para um treinamento de IA."""
+    NOT_STARTED = auto()
+    IN_PROGRESS = auto() 
+    COMPLETED = auto()
+    FAILED = auto()
+    CANCELLED = auto()
 
+@dataclass 
+class TrainingResult:
+    """Resultado de uma operação de treinamento.
+    
+    Attributes:
+        job_id: ID único do job de treinamento
+        status: Status atual do treinamento
+        model_name: Nome do modelo gerado (se completo)
+        error: Mensagem de erro (se falhou)
+        progress: Progresso atual (0.0 a 1.0)
+        completed_at: Data/hora de conclusão
+        details: Detalhes adicionais específicos da API
+    """
+    job_id: str
+    status: TrainingStatus
+    model_name: Optional[str] = None
+    error: Optional[str] = None
+    progress: float = 0.0
+    completed_at: Optional[datetime] = None
+    details: Optional[Dict] = None
+
+def register_ai_client(cls: type) -> type:
+    """Registra uma classe de cliente de IA no mapeamento global.
+    
     Args:
-        cls (class): Classe do cliente de IA.
+        cls: Classe do cliente a ser registrada
 
     Returns:
-        class: A mesma classe registrada.
+        A mesma classe, permitindo uso como decorador
     """
     AI_CLIENT_MAPPING[cls.name] = cls
+    logger.debug(f"Cliente de IA registrado: {cls.name}")
     return cls
 
 class APIClient:
     """Classe base abstrata para implementação de clientes de IA.
-
+    
+    Define a interface comum e funcionalidades básicas que todos os
+    clientes de IA devem implementar.
+    
     Attributes:
-        name (str): Nome identificador do cliente.
-        can_train (bool): Indica se o cliente suporta treinamento.
-        supports_system_message (bool): Indica se a API suporta envio de System Message.
-        api_key (str): Chave de API para autenticação.
-        model_name (str): Nome do modelo de IA a ser usado.
-        configurations (dict): Configurações específicas do cliente.
-        base_instruction (str): Instrução base (opcional).
-        prompt (str): Prompt personalizado (opcional).
-        responses (str): Respostas personalizadas (opcional).
-        api_url (str): URL da API (opcional).
-        use_system_message (bool): Se deve usar "system message" (caso suportado).
-        config (AIClientConfig): Referência à configuração original.
-
-    NOTA:
-        Esta classe é virtual e não está persistida no banco de dados. Ela serve
-        para documentar a relação um para muitos com AIClientGlobalConfiguration.
-        A relação indica que uma API pode estar associada a múltiplas configurações 
-        globais de cliente, mas cada configuração global pertence a apenas uma API.
+        name: Nome identificador do cliente
+        can_train: Se suporta treinamento
+        supports_system_message: Se aceita mensagem do sistema
+        api_key: Chave de API para autenticação
+        api_url: URL base da API (opcional)
+        model_name: Nome/ID do modelo a ser usado
+        configurations: Configurações específicas do cliente
+        base_instruction: Instrução base para prompts
+        prompt: Template de prompt personalizado
+        responses: Template de respostas
+        use_system_message: Se deve usar mensagem do sistema
     """
+    
     name = ''
     can_train = False
     supports_system_message = True
-    
-    def __init__(self, config: AIClientConfig):
-        """Construtor para a classe base de clientes de IA.
 
+    def __init__(self, config: AIClientConfig):
+        """Inicializa um novo cliente de IA.
+        
         Args:
-            config (AIClientConfig): Configurações de IA.
+            config: Configurações necessárias para o cliente
+            
+        Raises:
+            MissingAPIKeyError: Se api_key não fornecida
         """
         # Armazena a referência à configuração original
         self.config = config
@@ -130,31 +151,38 @@ class APIClient:
         logger.debug(f"[{self.name}] {self.__class__.__name__}.__init__: Inicializado com configurações: "
                     f"{self.configurations}")
 
-    def _render_template(self, template: str, context: dict):
-        """Renderiza um template usando a engine do Django.
-
+    def _render_template(self, template: str, context: Dict[str, Any]) -> str:
+        """Renderiza um template usando a engine Django.
+        
         Args:
-            template (str): Template em formato de string.
-            context (dict): Dicionário de contexto.
-
+            template: Template em formato string
+            context: Variáveis para renderização
+            
         Returns:
-            str: Template renderizado.
-        """
-        django_engine = engines['django']
-        template_engine = django_engine.from_string(template)
-        return template_engine.render(context)
-
-    def _prepare_prompts(self, **kwargs) -> dict:
-        """Prepara os prompts para a API de IA.
-
-        Args:
-            **kwargs: Parâmetros para a preparação do prompt.
-
-        Returns:
-            dict: Dicionário com 'base_instruction' e 'user_prompt'.
-
+            Template renderizado
+            
         Raises:
-            APICommunicationError: Se houver erro na preparação.
+            APICommunicationError: Se falhar ao renderizar
+        """
+        try:
+            django_engine = engines['django']
+            template_engine = django_engine.from_string(template)
+            return template_engine.render(context)
+        except Exception as e:
+            logger.error(f"[{self.name}] Erro ao renderizar template: {e}")
+            raise APICommunicationError(f"Erro ao processar template: {e}")
+
+    def _prepare_prompts(self, **kwargs) -> Dict[str, str]:
+        """Prepara os prompts para envio à API.
+        
+        Args:
+            **kwargs: Variáveis para renderização dos templates
+            
+        Returns:
+            Dict com 'base_instruction' e 'user_prompt'
+            
+        Raises:
+            APICommunicationError: Se falhar ao preparar
         """
         try:
             kwargs['ai_name'] = self.name
@@ -176,19 +204,22 @@ class APIClient:
                     'user_prompt': combined_prompt
                 }
         except Exception as e:
-            logger.error(f"[{self.name}] {self.__class__.__name__}._prepare_prompts: "
-                         f"Erro na preparação do prompt: {e}")
-            raise APICommunicationError(f"Erro na preparação do prompt: {e}")
+            logger.error(f"[{self.name}] Erro ao preparar prompts: {e}")
+            raise APICommunicationError(f"Erro ao preparar prompts: {e}")
 
-    def compare(self, data: dict) -> tuple:
-        """
-        Compara dados usando a API de IA, com mecanismo de retry neste método.
-
+    def compare(self, data: Dict[str, Any]) -> tuple:
+        """Compara dados usando a API de IA.
+        
+        Esta é a interface principal usada pelos clientes.
+        
         Args:
-            data (dict): Dados para comparação.
-
+            data: Dados para comparação
+            
         Returns:
-            tuple: (resposta da IA, system_message, user_message).
+            Tupla (resposta_ia, system_message, user_message)
+            
+        Raises:
+            APICommunicationError: Se falhar ao comparar
         """
         try:
             logger.debug(f"[{self.name}] Iniciando comparação de dados")
@@ -199,26 +230,26 @@ class APIClient:
             # Implementando o retry aqui
             response = self._call_api(prompts=prompts)
         except Exception as e:
-            logger.error(f"[{self.name}] Erro durante compare: {e}")
-            raise e
+            logger.error(f"[{self.name}] Erro ao comparar dados: {e}")
+            raise APICommunicationError(f"Erro na comparação: {e}")
 
         return (response, system_message, user_message)
 
-    def _call_api(self, prompts: dict) -> str:
-        """
-        Método abstrato para chamar a API. 
-        As subclasses devem implementar.
-
+    def _call_api(self, prompts: Dict[str, str]) -> str:
+        """Método abstrato para chamar a API específica.
+        
         Args:
-            prompts (dict): Com 'base_instruction' e 'user_prompt'.
-
+            prompts: Dicionário com prompts preparados
+            
         Returns:
-            str: Resposta da IA.
-
+            Resposta da API
+            
         Raises:
-            NotImplementedError: Se não for sobrescrito pela subclasse.
+            NotImplementedError: Se não implementado pela subclasse
         """
-        raise NotImplementedError(f"[{self.name}] Subclasses devem implementar o método _call_api.")
+        raise NotImplementedError(
+            f"[{self.name}] Subclasses devem implementar _call_api"
+        )
 
     def _prepare_train(self, file_path: str) -> Any:
         """

@@ -1,46 +1,39 @@
-"""Módulo de modelos da aplicação de configuração de IA.
+"""Modelos para configuração e gerenciamento de IAs.
 
-Contém definições de modelos para armazenar configurações, treinamento e arquivos relacionados à IA.
+Define os modelos de dados para configurações de IA, arquivos de treinamento,
+e gerenciamento de modelos treinados.
 """
 
 import logging
-import uuid
 import os
-
-from django.db import models
-from django.dispatch import receiver
-from django.db.models.signals import post_delete
+from typing import Any, Dict, List, Optional, Tuple
+import uuid
+from django.db import models, transaction
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.conf import settings
-from jsonschema import ValidationError
+from django.dispatch import receiver
 
 from accounts.models import UserToken
 from api.constants import AIClientConfig, TrainingStatus
 from api.utils.clientsIA import AI_CLIENT_MAPPING, APIClient
 
 from .storage import OverwriteStorage
+from django.db.models.signals import post_delete
 
-# Configuração do logger
 logger = logging.getLogger(__name__)
-
 User = get_user_model()
 
 class AIClientGlobalConfiguration(models.Model):
-    """Configuração global do cliente de IA.
-
+    """Configuração global de cliente de IA.
+    
+    Define parâmetros globais para interação com APIs de IA.
+    
     Attributes:
-        name (str): Nome do cliente.
-        api_client_class (str): Classe da API cliente.
-        api_url (str): URL da API (opcional).
-        api_key (str): Chave de acesso à API.
-
-    NOTA:
-        A api_client_class relaciona-se com a classe APIClient do módulo api_client.
-        Como a APIClient é uma classe abstrata, e não é persistida no BD, a api_client_class é uma string.
-        A relação entre a api_client_class e a classe APIClient um para muitos.
-        A relação indica que uma API pode estar associada a múltiplas configurações 
-        globais de cliente, mas cada configuração global pertence a apenas uma API.
-        Essa relação deve ser exibida no Diagrama de Classes.
+        name: Nome amigável da configuração.
+        api_client_class: Classe do cliente de API a ser usada.
+        api_url: URL base da API (opcional).
+        api_key: Chave de autenticação da API.
     """
     name = models.CharField(max_length=255)
     api_client_class = models.CharField(max_length=255)  
@@ -62,7 +55,7 @@ class AIClientGlobalConfiguration(models.Model):
             return f"({self.api_client_class}) {self.name}"
         return f"Cliente de IA para {self.api_client_class}"
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         """Converte a configuração global em um dicionário.
 
         Returns:
@@ -76,41 +69,66 @@ class AIClientGlobalConfiguration(models.Model):
             'api_url': self.api_url,
         }
 
-    def __create_api_client_instance(self) -> APIClient:
-        """
-        Retorna uma instância do cliente de API de IA.
-        Este método cria e configura uma instância de cliente de API baseado na
-        classe de cliente especificada em `api_client_class`.
-        Returns:
-            APIClient: Uma instância configurada do cliente de API de IA.
-        Raises:
-            ValueError: Se a classe de cliente especificada não for encontrada no mapeamento.
-        """
-        client_class = AI_CLIENT_MAPPING.get(self.api_client_class)
-        if not client_class:
-            raise ValueError(f"Cliente não encontrado: {self.api_client_class}")
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Salva a configuração com validação e log.
         
-        # Nova estrutura de configuração usando to_dict()
-        client_config = AIClientConfig(
-            ai_global_config=self.to_dict(),
-            ai_client_config={},
-            prompt_config={}  # Dicionário vazio em vez de AIPromptConfig()
-        )
-        return client_class(client_config)
+        Args:
+            *args: Argumentos posicionais.
+            **kwargs: Argumentos nomeados.
+            
+        Raises:
+            ValidationError: Se a validação falhar.
+        """
+        try:
+            self.full_clean()
+            with transaction.atomic():
+                is_new = not self.pk
+                super().save(*args, **kwargs)
+                action = "criada" if is_new else "atualizada"
+                logger.info(f"Configuração global '{self.name}' {action}")
+        except Exception as e:
+            logger.error(f"Erro ao salvar configuração global '{self.name}': {e}")
+            raise
 
-    def get_client_name(self):
+    def create_api_client_instance(self, **kwargs: Any) -> APIClient:
+        """Cria uma instância do cliente de API.
+        
+        Args:
+            **kwargs: Argumentos adicionais para o cliente.
+            
+        Returns:
+            APIClient: Instância do cliente de API.
+            
+        Raises:
+            ValueError: Se a classe do cliente não existir.
+        """
+        try:
+            client_class = AI_CLIENT_MAPPING[self.api_client_class]
+            return client_class(
+                api_key=self.api_key,
+                api_url=self.api_url,
+                **kwargs
+            )
+        except KeyError:
+            logger.error(f"Classe de cliente inválida: {self.api_client_class}")
+            raise ValueError(f"Cliente de API '{self.api_client_class}' não encontrado")
+        except Exception as e:
+            logger.error(f"Erro ao criar cliente API '{self.api_client_class}': {e}")
+            raise
+
+    def get_client_name(self) -> str:
         client_class = AI_CLIENT_MAPPING.get(self.api_client_class)
         return client_class.name
     
-    def get_client_can_train(self):
+    def get_client_can_train(self) -> bool:
         client_class = AI_CLIENT_MAPPING.get(self.api_client_class)
         return client_class.can_train
     
-    def get_client_supports_system_message(self):
+    def get_client_supports_system_message(self) -> bool:
         client_class = AI_CLIENT_MAPPING.get(self.api_client_class)
         return client_class.supports_system_message
 
-    def list_files(self) -> list:
+    def list_files(self) -> List[str]:
         """Lista todos os arquivos disponíveis.
 
         Returns:
@@ -120,7 +138,7 @@ class AIClientGlobalConfiguration(models.Model):
             Exception: Se ocorrer erro ao listar os arquivos.
         """
         try:
-            client = self.__create_api_client_instance()
+            client = self.create_api_client_instance()
             if not client.can_train:
                 return []
             return client.list_files()
@@ -128,7 +146,7 @@ class AIClientGlobalConfiguration(models.Model):
             logger.error(f"Erro ao listar arquivos: {e}")
             raise
 
-    def list_trained_models(self) -> list:
+    def list_trained_models(self) -> List[str]:
         """Lista todos os modelos treinados disponíveis.
 
         Returns:
@@ -138,7 +156,7 @@ class AIClientGlobalConfiguration(models.Model):
             Exception: Se ocorrer erro ao listar os modelos.
         """
         try:
-            client = self.__create_api_client_instance()
+            client = self.create_api_client_instance()
             if not client.can_train:
                 return []
             return client.list_trained_models()
@@ -180,7 +198,7 @@ class AIClientGlobalConfiguration(models.Model):
             Exception: Se ocorrer erro ao remover o modelo.
         """
         try:
-            client = self.__create_api_client_instance()
+            client = self.create_api_client_instance()
             if not client.can_train:
                 return False
             return client.delete_trained_model(model_name)
@@ -273,7 +291,7 @@ class AIClientConfiguration(models.Model):
         """
         return f"{self.name} -> {self.ai_client.api_client_class}"
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         """Converte a configuração do cliente em um dicionário.
 
         Returns:
@@ -286,7 +304,7 @@ class AIClientConfiguration(models.Model):
             'use_system_message': self.use_system_message,
         }
 
-    def create_api_client_instance(self, token = None) -> APIClient:
+    def create_api_client_instance(self, token: Optional[UserToken] = None) -> APIClient:
         """Retorna uma instância configurada do cliente de IA.
 
         Busca automaticamente as configurações de prompt do token associado.
@@ -325,7 +343,7 @@ class AIClientConfiguration(models.Model):
             
         return client_class(client_config)
     
-    def compare(self, data: dict, token: UserToken) -> dict:
+    def compare(self, data: Dict[str, Any], token: UserToken) -> Dict[str, Any]:
         """Realiza uma comparação de dados usando a IA.
 
         Args:
@@ -345,7 +363,7 @@ class AIClientConfiguration(models.Model):
             logger.error(f"Erro ao comparar dados: {e}")
             raise
 
-    def perform_training(self, training_file) -> dict:
+    def perform_training(self, training_file: 'AITrainingFile') -> Dict[str, Any]:
         """Realiza o treinamento para esta configuração de IA.
 
         Args:
@@ -410,7 +428,7 @@ class AIClientTokenConfig(models.Model):
         status = "habilitada" if self.enabled else "desabilitada"
         return f"{self.ai_config.name} {status} para {self.token.name}"
 
-    def clean(self):
+    def clean(self) -> None:
         super().clean()
         if self.token.user != self.ai_config.user:
             raise ValidationError(
@@ -433,7 +451,7 @@ class AITrainingFile(models.Model):
     file = models.FileField(upload_to='training_files/', storage=OverwriteStorage())
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
-    def file_exists(self):
+    def file_exists(self) -> bool:
         """Verifica se o arquivo físico existe.
         
         Returns:
@@ -441,7 +459,7 @@ class AITrainingFile(models.Model):
         """
         return self.file and self.file.storage.exists(self.file.name)
 
-    def get_file_size(self):
+    def get_file_size(self) -> int:
         """Retorna o tamanho do arquivo se ele existir.
         
         Returns:
@@ -452,7 +470,7 @@ class AITrainingFile(models.Model):
         except Exception:
             return 0
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Retorna a representação em string do arquivo de treinamento.
 
         Returns:
@@ -466,7 +484,7 @@ class AITrainingFile(models.Model):
         verbose_name_plural = "Arquivos de Treinamento"
 
 @receiver(post_delete, sender=AITrainingFile)
-def delete_file_on_model_delete(sender, instance, **kwargs):
+def delete_file_on_model_delete(sender: Any, instance: 'AITrainingFile', **kwargs: Any) -> None:
     """Remove o arquivo físico quando o objeto é deletado.
 
     Args:
@@ -509,7 +527,7 @@ class TokenAIConfiguration(models.Model):
         verbose_name = "Token - Configuração de Prompt"
         verbose_name_plural = "Token - Configurações de Prompt"
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Retorna a representação textual da configuração de prompt.
 
         Returns:
@@ -517,7 +535,7 @@ class TokenAIConfiguration(models.Model):
         """
         return f"Configuração de IA para Token: {self.token.name}"
 
-    def clean(self):
+    def clean(self) -> None:
         if not self.prompt or not self.prompt.strip():
             raise ValidationError({'prompt': 'O campo Prompt é obrigatório.'})
         
@@ -525,7 +543,7 @@ class TokenAIConfiguration(models.Model):
             raise ValidationError({'responses': 'O campo Respostas é obrigatório.'})
         super().clean()
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, str]:
         """Converte as configurações de prompt em um dicionário.
 
         Returns:
@@ -548,7 +566,7 @@ class TrainingCapture(models.Model):
         create_at: Data de criação.
         last_activity: Última atividade registrada.
     """
-    def _generate_temp_filename(instance, filename):
+    def _generate_temp_filename(instance: 'TrainingCapture', filename: str) -> str:
         """Gera um nome único para o arquivo temporário."""
         ext = filename.split('.')[-1] if '.' in filename else 'tmp'
         filename = f"{uuid.uuid4()}.{ext}"
@@ -571,7 +589,7 @@ class TrainingCapture(models.Model):
         verbose_name = "Captura de Treinamento"
         verbose_name_plural = "Capturas de Treinamento"
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Retorna a representação em string da captura.
 
         Returns:
@@ -580,7 +598,7 @@ class TrainingCapture(models.Model):
         status = "Ativa" if self.is_active else "Inativa"
         return f"Captura {status} para {self.ai_client_config} do Token {self.token.name}"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Garante que um arquivo temporário seja criado se não existir."""
         if not self.temp_file:
             temp_filename = self._generate_temp_filename("capture.tmp")
@@ -591,7 +609,7 @@ class TrainingCapture(models.Model):
         super().save(*args, **kwargs)
 
 @receiver(post_delete, sender=TrainingCapture)
-def delete_temp_file_on_delete(sender, instance, **kwargs):
+def delete_temp_file_on_delete(sender: Any, instance: 'TrainingCapture', **kwargs: Any) -> None:
     """Remove o arquivo temporário quando a captura for deletada."""
     if instance.temp_file:
         if instance.temp_file.storage.exists(instance.temp_file.name):
@@ -636,7 +654,7 @@ class DoclingConfiguration(models.Model):
         verbose_name = "Configuração Docling"
         verbose_name_plural = "Configurações Docling"
     
-    def __str__(self):
+    def __str__(self) -> str:
         """Retorna a representação textual da configuração Docling.
 
         Returns:
@@ -682,10 +700,10 @@ class AITraining(models.Model):
         verbose_name = "Treinamento de IA"
         verbose_name_plural = "Treinamentos de IA"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Treinamento {self.job_id} para {self.ai_config.name}"
 
-    def get_global_client(self):
+    def get_global_client(self) -> AIClientGlobalConfiguration:
         """Obtém o cliente global da IA associada."""
         return self.ai_config.ai_client
 
@@ -711,7 +729,7 @@ class AITraining(models.Model):
             return False
 
 @receiver(post_delete, sender=AITraining)
-def delete_model_on_training_delete(sender, instance, **kwargs):
+def delete_model_on_training_delete(sender: Any, instance: 'AITraining', **kwargs: Any) -> None:
     """Remove o modelo treinado quando um registro de treinamento é excluído."""
     if instance.model_name:
         try:

@@ -1,35 +1,104 @@
-"""
-Módulo de modelos da aplicação API.
+"""Modelos de dados da API.
 
-(NOVO) Adicionamos campo 'user' em APILog, para salvar o usuário no log.
+Define os modelos para logging e monitoramento da API.
 """
 
+import logging
+from typing import Any
 from django.db import models
-from django.contrib.auth.models import User  # (NOVO) Para armazenar user
+from django.contrib.auth.models import User
+from django.core.validators import MinValueValidator
 from accounts.models import UserToken
 
+logger = logging.getLogger(__name__)
 
 class APILog(models.Model):
+    """Registro de requisições à API.
+    
+    Attributes:
+        user: Usuário que fez a requisição.
+        user_token: Token usado na autenticação.
+        path: Caminho da URL acessada.
+        method: Método HTTP utilizado.
+        status_code: Código de status HTTP retornado.
+        execution_time: Tempo de execução em segundos.
+        timestamp: Data/hora do registro.
     """
-    Registra cada requisição de API para fins de monitoramento em tempo real.
+    
+    HTTP_METHODS = [
+        ('GET', 'GET'),
+        ('POST', 'POST'),
+        ('PUT', 'PUT'),
+        ('PATCH', 'PATCH'),
+        ('DELETE', 'DELETE'),
+    ]
 
-    Atributos:
-        user (User): Usuário autenticado, se houver.
-        user_token (UserToken): Token do usuário, se encontrado.
-        path (str): Caminho da URL requisitada.
-        method (str): Método HTTP (GET, POST etc.).
-        status_code (int): Código de status da resposta.
-        execution_time (float): Tempo total de processamento.
-        timestamp (datetime): Momento em que foi criado o log.
-    """
-    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)  # (NOVO)
-    user_token = models.ForeignKey(UserToken, on_delete=models.SET_NULL, null=True, blank=True)
-    path = models.CharField(max_length=255)
-    method = models.CharField(max_length=10)
-    status_code = models.IntegerField()
-    execution_time = models.FloatField(help_text="Tempo em segundos para processar a requisição.")
-    timestamp = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Usuário",
+        help_text="Usuário que fez a requisição"
+    )
+    user_token = models.ForeignKey(
+        UserToken,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Token",
+        help_text="Token usado na requisição"
+    )
+    path = models.CharField(
+        max_length=255,
+        verbose_name="Caminho",
+        help_text="URL da requisição"
+    )
+    method = models.CharField(
+        max_length=10,
+        choices=HTTP_METHODS,
+        verbose_name="Método",
+        help_text="Método HTTP"
+    )
+    status_code = models.IntegerField(
+        validators=[MinValueValidator(100)],
+        verbose_name="Status",
+        help_text="Código de status HTTP"
+    )
+    execution_time = models.FloatField(
+        validators=[MinValueValidator(0.0)],
+        verbose_name="Tempo",
+        help_text="Tempo de execução em segundos"
+    )
+    timestamp = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Data/Hora",
+        help_text="Momento do registro"
+    )
 
-    def __str__(self):
-        """Retorna uma string representando o log."""
+    class Meta:
+        verbose_name = "Log de API"
+        verbose_name_plural = "Logs de API"
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['-timestamp']),
+            models.Index(fields=['user']),
+            models.Index(fields=['method']),
+            models.Index(fields=['status_code']),
+        ]
+
+    def __str__(self) -> str:
+        """Representação em string do log."""
         return f"[{self.timestamp}] {self.method} {self.path} ({self.status_code})"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Salva o log com registro apropriado."""
+        try:
+            super().save(*args, **kwargs)
+            logger.debug(
+                f"Log salvo: {self.method} {self.path} "
+                f"[status={self.status_code}, tempo={self.execution_time:.3f}s]"
+            )
+        except Exception as e:
+            logger.error(f"Erro ao salvar log: {e}")
+            raise

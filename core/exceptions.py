@@ -1,71 +1,66 @@
-# core/exceptions.py
+"""Exceções customizadas para o projeto.
+
+Define a hierarquia de exceções específicas para cada aplicação,
+permitindo um tratamento de erros mais granular e informativo.
+"""
 
 class ApplicationError(Exception):
-    """
-    Exceção base para toda a aplicação.
-    """
+    """Exceção base para toda a aplicação."""
     pass
 
-# Exceções para a app Accounts
 class AccountsError(ApplicationError):
-    """
-    Exceção base para a app Accounts.
-    """
+    """Exceções relacionadas à gestão de contas de usuário."""
     pass
 
 class AccountsAuthenticationError(AccountsError):
-    """
-    Exceção para erros de autenticação na app Accounts.
-    """
+    """Exceções específicas de autenticação."""
     pass
 
-# Exceções para a app API
 class APIError(ApplicationError):
-    """
-    Exceção base para a app API.
-    """
-    pass
+    """Exceções base para operações da API."""
+    def __init__(self, message: str = None, status_code: int = 500):
+        self.status_code = status_code
+        super().__init__(message or "Erro interno da API")
 
 class APIClientError(APIError):
-    """
-    Exceção genérica para erros em clientes de API.
-    """
-    pass
-
-class FileProcessingError(APIClientError):
-    """
-    Exceção para erros no processamento de arquivos.
-    """
+    """Exceções relacionadas aos clientes de API."""
     pass
 
 class APICommunicationError(APIClientError):
-    """
-    Exceção para erros de comunicação com APIs externas.
-    """
-    pass
+    """Exceções de comunicação com APIs externas."""
+    def __init__(self, message: str = None):
+        super().__init__(
+            message or "Erro de comunicação com serviço externo",
+            status_code=503
+        )
+
+class FileProcessingError(APIClientError):
+    """Exceções no processamento de arquivos."""
+    def __init__(self, message: str = None):
+        super().__init__(
+            message or "Erro no processamento do arquivo",
+            status_code=400
+        )
 
 class MissingAPIKeyError(APIClientError):
-    """
-    Exceção para erro quando a chave de API não está configurada.
-    """
-    pass
+    """Exceções para chaves de API ausentes."""
+    def __init__(self):
+        super().__init__(
+            "Chave de API não configurada",
+            status_code=401
+        )
 
-# Exceções para a app AI Config (configuração de IA)
 class AIConfigError(ApplicationError):
-    """
-    Exceção base para a app de Configuração de IA.
-    """
+    """Exceções base para configuração de IA."""
     pass
 
 class TrainingError(AIConfigError):
-    """
-    Exceção para erros durante processos de treinamento.
-    """
-    pass
+    """Exceções específicas de treinamento."""
+    def __init__(self, message: str = None):
+        super().__init__(
+            message or "Erro durante o processo de treinamento"
+        )
 
-# Exceções para a app Public
 class PublicError(ApplicationError):
-    """
-    Exceção base para a app Public.
-    """
+    """Exceções para a interface pública."""
     pass

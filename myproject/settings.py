@@ -1,17 +1,25 @@
+"""Configurações do Django para o projeto myproject.
+
+Carrega variáveis de ambiente e define todas as configurações necessárias.
+"""
+
 import os
+import logging
 from pathlib import Path
+from typing import List, Dict, Any
 from dotenv import load_dotenv
 from celery.schedules import crontab
 
-load_dotenv()  # Carrega as variáveis de ambiente do arquivo .env
+logger = logging.getLogger(__name__)
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# Carrega variáveis de ambiente
+load_dotenv()
+logger.info("Variáveis de ambiente carregadas")
+
+# Configurações básicas
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 SECRET_KEY = os.getenv('SECRET_KEY', 'fallback-secret-key')
-
 DEBUG = True
-
 ALLOWED_HOSTS = ['*']
 
 # Application definition
@@ -193,6 +201,7 @@ LOG_DIR = os.path.join(BASE_DIR, 'logs')
 # Criar diretório de Log
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
+    logger.info(f"Diretório de logs criado: {LOG_DIR}")
 
 # Ajusta o nível do Log
 if DEBUG:
@@ -275,6 +284,14 @@ LOGGING = {
             'maxBytes': 1024*1024*5,  # 5 MB
             'backupCount': 5,
         },
+        'tasks_file': {
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'formatter': 'standard',
+            'filename': os.path.join(LOG_DIR, 'tasks.log'),
+            'maxBytes': 1024*1024*5,  # 5 MB
+            'backupCount': 5,
+        },
     },
     'loggers': {
         '': {  # Root logger
@@ -312,6 +329,11 @@ LOGGING = {
             'level': 'DEBUG' if DEBUG else 'INFO',
             'propagate': False,
         },
+        'ai_config.tasks': {
+            'handlers': ['tasks_file'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
     }
 }
 
@@ -324,3 +346,6 @@ STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+
+# Log final da inicialização
+logger.info("Configurações do projeto carregadas com sucesso")

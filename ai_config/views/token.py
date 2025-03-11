@@ -1,8 +1,16 @@
+"""
+Views para configuração de tokens e prompts.
+
+Este módulo contém funções para gerenciar configurações de prompt
+e vinculação de tokens com clientes de IA.
+"""
+
 import logging
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.db import transaction
 
 from accounts.models import UserToken
 from ai_config.models import TokenAIConfiguration, AIClientConfiguration, AIClientTokenConfig
@@ -14,153 +22,205 @@ logger = logging.getLogger(__name__)
 def prompt_config(request: HttpRequest, token_id: str) -> HttpResponse:
     """Gerencia as configurações de prompt para o token.
 
+    Permite definir instruções base, prompts e respostas personalizadas
+    para um token específico.
+
     Args:
-        request (HttpRequest): Requisição HTTP.
-        token_id (str): Identificador do token.
+        request: Requisição HTTP.
+        token_id: Identificador do token.
 
     Returns:
         HttpResponse: Página com o formulário das configurações do token.
     """
     user = request.user
-    token = get_object_or_404(UserToken, id=token_id, user=user)
-    token_ai_config, _ = TokenAIConfiguration.objects.get_or_create(token=token)
-    if request.method == 'POST':
-        form = TokenAIConfigurationForm(request.POST, request.FILES, instance=token_ai_config, user=user)
-        if form.is_valid():
-            # Validação adicional do prompt
-            prompt = form.cleaned_data.get('prompt', '').strip()
-            if not prompt:
-                form.add_error('prompt', 'Este campo é obrigatório.')
-                messages.error(request, 'O campo Prompt é obrigatório.')
+    try:
+        token = get_object_or_404(UserToken, id=token_id, user=user)
+        token_ai_config, created = TokenAIConfiguration.objects.get_or_create(token=token)
+        
+        if created:
+            logger.info(f"Nova configuração TokenAI criada para token '{token.name}' (ID: {token_id})")
+        
+        if request.method == 'POST':
+            form = TokenAIConfigurationForm(request.POST, request.FILES, instance=token_ai_config, user=user)
+            if form.is_valid():
+                # Validação adicional do prompt
+                prompt = form.cleaned_data.get('prompt', '').strip()
+                if not prompt:
+                    logger.warning(f"Tentativa de salvar configuração TokenAI sem prompt para token {token_id}")
+                    form.add_error('prompt', 'Este campo é obrigatório.')
+                    messages.error(request, 'O campo Prompt é obrigatório.')
+                else:
+                    try:
+                        with transaction.atomic():
+                            form.save()
+                            
+                        logger.info(f"Configurações TokenAI atualizadas para token '{token.name}' (ID: {token_id})")
+                        
+                        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                            return JsonResponse({'status': 'success', 'message': 'Configurações salvas com sucesso!'})
+                        
+                        messages.success(request, 'Configurações TokenAI atualizadas com sucesso!')
+                        return redirect('accounts:token_config', token_id=token.id)
+                    except Exception as e:
+                        logger.exception(f"Erro ao salvar TokenAIConfiguration para token {token_id}: {e}")
+                        messages.error(request, f'Erro ao salvar as configurações TokenAI: {str(e)}')
             else:
-                try:
-                    form.save()
-                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                        return JsonResponse({'status': 'success', 'message': 'Configurações salvas com sucesso!'})
-                    messages.success(request, 'Configurações TokenAI atualizadas com sucesso!')
-                    return redirect('accounts:token_config', token_id=token.id)
-                except Exception as e:
-                    logger.exception(f"Erro ao salvar TokenAIConfiguration: {e}")
-                    messages.error(request, 'Erro ao salvar as configurações TokenAI. Tente novamente.')
+                logger.warning(f"Formulário TokenAI inválido para token {token_id}: {form.errors}")
+                if 'prompt' in form.errors:
+                    messages.error(request, 'O campo Prompt é obrigatório.')
+                else:
+                    messages.error(request, 'Corrija os erros no formulário TokenAI.')
         else:
-            if 'prompt' in form.errors:
-                messages.error(request, 'O campo Prompt é obrigatório.')
-            else:
-                messages.error(request, 'Corrija os erros no formulário TokenAI.')
-    else:
-        form = TokenAIConfigurationForm(instance=token_ai_config, user=user)
-    context = {'token': token, 'form': form}
-    return render(request, 'token/prompt_config.html', context)
+            form = TokenAIConfigurationForm(instance=token_ai_config, user=user)
+            logger.debug(f"Exibindo configuração TokenAI para token '{token.name}' (ID: {token_id})")
+        
+        context = {'token': token, 'form': form}
+        return render(request, 'token/prompt_config.html', context)
+    except UserToken.DoesNotExist:
+        logger.warning(f"Tentativa de acessar configuração TokenAI para token inexistente: {token_id}")
+        messages.error(request, 'Token não encontrado.')
+        return redirect('accounts:tokens_manage')
+    except Exception as e:
+        logger.exception(f"Erro ao acessar configuração TokenAI para token {token_id}: {e}")
+        messages.error(request, 'Ocorreu um erro ao carregar a configuração. Tente novamente mais tarde.')
+        return redirect('accounts:tokens_manage')
 
 @login_required
 def token_ai_link(request: HttpRequest, token_id: str) -> HttpResponse:
     """Gerencia a vinculação e ativação de IAs ao token.
 
+    Permite vincular várias IAs a um token e ativá-las/desativá-las.
+    Suporta operações em massa e toggles individuais via AJAX.
+
     Args:
-        request (HttpRequest): Requisição HTTP.
-        token_id (str): Identificador do token.
+        request: Requisição HTTP.
+        token_id: Identificador do token.
 
     Returns:
         HttpResponse: Página com lista de IAs disponíveis para o token.
     """
     user = request.user
-    token = get_object_or_404(UserToken, id=token_id, user=user)
-    
-    # Obter todas as configurações de IA do usuário
-    user_ai_configs = AIClientConfiguration.objects.filter(user=user)
-    
-    # Obter as configurações já vinculadas a este token
-    linked_config_ids = {config.ai_config_id for config in AIClientTokenConfig.objects.filter(token=token)}
-    enabled_config_ids = {
-        config.ai_config_id 
-        for config in AIClientTokenConfig.objects.filter(token=token, enabled=True)
-    }
-    
-    # Extrair lista de clientes de API únicos para o filtro
-    unique_clients = {}
-    for config in user_ai_configs:
-        client_name = config.ai_client
-        client_id = str(config.ai_client.id)
-        if client_id not in unique_clients:
-            unique_clients[client_id] = client_name
-    
-    if request.method == 'POST':
-        # Processar as alterações nas vinculações - com suporte para AJAX single toggle
-        ai_config_ids = request.POST.getlist('ai_configs')
-        enabled_ids = request.POST.getlist('enabled_configs')
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    try:
+        token = get_object_or_404(UserToken, id=token_id, user=user)
+        logger.debug(f"Acessando configurações de vínculo para token '{token.name}' (ID: {token_id})")
         
-        try:
-            # Converter os IDs para inteiros
-            ai_config_ids = [int(id) for id in ai_config_ids] if ai_config_ids else []
-            enabled_ids = [int(id) for id in enabled_ids] if enabled_ids else []
+        # Obter todas as configurações de IA do usuário
+        user_ai_configs = AIClientConfiguration.objects.filter(user=user)
+        
+        # Obter as configurações já vinculadas a este token
+        linked_config_ids = {config.ai_config_id for config in AIClientTokenConfig.objects.filter(token=token)}
+        enabled_config_ids = {
+            config.ai_config_id 
+            for config in AIClientTokenConfig.objects.filter(token=token, enabled=True)
+        }
+        
+        # Extrair lista de clientes de API únicos para o filtro
+        unique_clients = {}
+        for config in user_ai_configs:
+            client_name = config.ai_client
+            client_id = str(config.ai_client.id)
+            if client_id not in unique_clients:
+                unique_clients[client_id] = client_name
+        
+        if request.method == 'POST':
+            # Processar as alterações nas vinculações - com suporte para AJAX single toggle
+            ai_config_ids = request.POST.getlist('ai_configs')
+            enabled_ids = request.POST.getlist('enabled_configs')
+            is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
             
-            # Para requisições AJAX de um único toggle
-            if is_ajax:
-                # Identificar a IA que está sendo manipulada
-                # Se estamos desativando uma IA, precisamos encontrá-la indiretamente
-                toggled_ai_id = None
+            try:
+                # Converter os IDs para inteiros
+                ai_config_ids = [int(id) for id in ai_config_ids] if ai_config_ids else []
+                enabled_ids = [int(id) for id in enabled_ids] if enabled_ids else []
                 
-                # Verificar se temos uma IA no ai_configs (caso de ativação)
-                if ai_config_ids:
-                    toggled_ai_id = ai_config_ids[0]
-                    # Atualizar ou criar a configuração
-                    is_enabled = toggled_ai_id in enabled_ids
-                    AIClientTokenConfig.objects.update_or_create(
-                        token=token,
-                        ai_config_id=toggled_ai_id,
-                        defaults={'enabled': is_enabled}
-                    )
-                # Se não temos IA em ai_configs, estamos desativando
-                else:
-                    # Determinar qual IA está sendo desativada (usando parâmetros da requisição)
-                    # Podemos identificar indiretamente pegando o ID da requisição direta
-                    ai_id_param = request.POST.get('ai_id')
-                    if ai_id_param:
-                        toggled_ai_id = int(ai_id_param)
-                        # Desativar a configuração
-                        config = AIClientTokenConfig.objects.filter(
-                            token=token, 
-                            ai_config_id=toggled_ai_id
-                        ).first()
+                with transaction.atomic():
+                    # Para requisições AJAX de um único toggle
+                    if is_ajax:
+                        # Identificar a IA que está sendo manipulada
+                        toggled_ai_id = None
                         
-                        if config:
-                            config.enabled = False
-                            config.save()
-            else:
-                # Comportamento padrão para envios de formulário completo
-                # Remover vinculações que não estão mais selecionadas
-                AIClientTokenConfig.objects.filter(token=token).exclude(ai_config_id__in=ai_config_ids).delete()
+                        # Verificar se temos uma IA no ai_configs (caso de ativação)
+                        if ai_config_ids:
+                            toggled_ai_id = ai_config_ids[0]
+                            # Atualizar ou criar a configuração
+                            is_enabled = toggled_ai_id in enabled_ids
+                            AIClientTokenConfig.objects.update_or_create(
+                                token=token,
+                                ai_config_id=toggled_ai_id,
+                                defaults={'enabled': is_enabled}
+                            )
+                            logger.info(f"IA {toggled_ai_id} {'ativada' if is_enabled else 'desativada'} para token '{token.name}'")
+                        # Se não temos IA em ai_configs, estamos desativando
+                        else:
+                            # Determinar qual IA está sendo desativada (usando parâmetros da requisição)
+                            ai_id_param = request.POST.get('ai_id')
+                            if ai_id_param:
+                                toggled_ai_id = int(ai_id_param)
+                                # Desativar a configuração
+                                config = AIClientTokenConfig.objects.filter(
+                                    token=token, 
+                                    ai_config_id=toggled_ai_id
+                                ).first()
+                                
+                                if config:
+                                    config.enabled = False
+                                    config.save()
+                                    logger.info(f"IA {toggled_ai_id} desativada para token '{token.name}'")
+                    else:
+                        # Comportamento padrão para envios de formulário completo
+                        # Remover vinculações que não estão mais selecionadas
+                        removed_count = AIClientTokenConfig.objects.filter(token=token).exclude(ai_config_id__in=ai_config_ids).delete()[0]
+                        if removed_count > 0:
+                            logger.info(f"Removidas {removed_count} vinculações de IA para token '{token.name}'")
+                        
+                        # Adicionar ou atualizar vinculações
+                        for ai_config_id in ai_config_ids:
+                            is_enabled = ai_config_id in enabled_ids
+                            obj, created = AIClientTokenConfig.objects.update_or_create(
+                                token=token,
+                                ai_config_id=ai_config_id,
+                                defaults={'enabled': is_enabled}
+                            )
+                            if created:
+                                logger.info(f"Nova vinculação criada: IA {ai_config_id} -> token '{token.name}' (enabled={is_enabled})")
+                            elif obj.enabled != is_enabled:
+                                logger.info(f"Vinculação atualizada: IA {ai_config_id} -> token '{token.name}' (enabled={is_enabled})")
                 
-                # Adicionar ou atualizar vinculações
-                for ai_config_id in ai_config_ids:
-                    is_enabled = ai_config_id in enabled_ids
-                    AIClientTokenConfig.objects.update_or_create(
-                        token=token,
-                        ai_config_id=ai_config_id,
-                        defaults={'enabled': is_enabled}
-                    )
+                if not is_ajax:
+                    messages.success(request, 'Configurações de IA atualizadas com sucesso!')
+                    return redirect('ai_config:token_ai_link', token_id=token.id)
+                else:
+                    return JsonResponse({'status': 'success'})
             
-            if not is_ajax:
-                messages.success(request, 'Configurações de IA atualizadas com sucesso!')
-                return redirect('ai_config:token_ai_link', token_id=token.id)
-            else:
-                return JsonResponse({'status': 'success'})
+            except ValueError as e:
+                logger.error(f"Erro de validação ao atualizar vinculações para token {token_id}: {e}")
+                if not is_ajax:
+                    messages.error(request, 'Formato de dados inválido.')
+                    return redirect('ai_config:token_ai_link', token_id=token.id)
+                else:
+                    return JsonResponse({'status': 'error', 'message': 'Formato de dados inválido'}, status=400)
+            except Exception as e:
+                logger.exception(f"Erro ao atualizar vinculações de IA para token {token_id}: {e}")
+                if not is_ajax:
+                    messages.error(request, 'Ocorreu um erro ao salvar as vinculações de IA.')
+                    return redirect('ai_config:token_ai_link', token_id=token.id)
+                else:
+                    return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
         
-        except Exception as e:
-            logger.exception(f"Erro ao atualizar vinculações de IA: {e}")
-            if not is_ajax:
-                messages.error(request, 'Ocorreu um erro ao salvar as vinculações de IA.')
-                return redirect('ai_config:token_ai_link', token_id=token.id)
-            else:
-                return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
-    
-    context = {
-        'token': token,
-        'ai_configs': user_ai_configs,
-        'linked_config_ids': linked_config_ids,
-        'enabled_config_ids': enabled_config_ids,
-        'unique_clients': unique_clients  # Adicionar os clientes únicos ao contexto
-    }
-    
-    return render(request, 'token/ai_link.html', context)
+        context = {
+            'token': token,
+            'ai_configs': user_ai_configs,
+            'linked_config_ids': linked_config_ids,
+            'enabled_config_ids': enabled_config_ids,
+            'unique_clients': unique_clients
+        }
+        
+        return render(request, 'token/ai_link.html', context)
+    except UserToken.DoesNotExist:
+        logger.warning(f"Tentativa de acessar vinculação de IA para token inexistente: {token_id}")
+        messages.error(request, 'Token não encontrado.')
+        return redirect('accounts:tokens_manage')
+    except Exception as e:
+        logger.exception(f"Erro ao acessar vinculação de IA para token {token_id}: {e}")
+        messages.error(request, 'Ocorreu um erro ao carregar as configurações de vinculação.')
+        return redirect('accounts:tokens_manage')

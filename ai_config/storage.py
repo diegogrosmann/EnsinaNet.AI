@@ -1,27 +1,37 @@
-# ai_config/storage.py
+"""Storage customizado para gerenciar arquivos de treinamento.
 
+Este módulo fornece uma implementação personalizada do FileSystemStorage
+que permite sobrescrever arquivos existentes automaticamente.
+"""
+
+import logging
 from django.core.files.storage import FileSystemStorage
 import os
 
+logger = logging.getLogger(__name__)
+
 class OverwriteStorage(FileSystemStorage):
-    """Subclasse de FileSystemStorage que sobrescreve arquivos existentes.
-
-    Este armazenamento remove o arquivo existente se o nome já estiver em uso.
-
-    Methods:
-        get_available_name: Retorna o mesmo nome removendo o arquivo pré-existente.
+    """Storage que sobrescreve arquivos existentes automaticamente.
+    
+    Esta classe estende FileSystemStorage para remover arquivos existentes
+    quando um novo arquivo com o mesmo nome é enviado, evitando duplicatas.
     """
 
-    def get_available_name(self, name, max_length=None):
-        """Retorna o nome disponível para o arquivo, removendo o arquivo existente se necessário.
-
+    def get_available_name(self, name: str, max_length: int = None) -> str:
+        """Retorna o nome do arquivo, removendo qualquer arquivo existente.
+        
         Args:
-            name (str): Nome original do arquivo.
-            max_length (int, optional): Comprimento máximo permitido para o nome.
-
+            name: Nome original do arquivo.
+            max_length: Comprimento máximo permitido para o nome (opcional).
+            
         Returns:
-            str: Nome disponível para armazenamento.
+            str: Nome do arquivo para armazenamento.
         """
-        if self.exists(name):
-            self.delete(name)
-        return name
+        try:
+            if self.exists(name):
+                logger.debug(f"Removendo arquivo existente: {name}")
+                self.delete(name)
+            return name
+        except Exception as e:
+            logger.error(f"Erro ao processar nome de arquivo '{name}': {e}")
+            raise

@@ -1,8 +1,18 @@
-"""URLs do aplicativo accounts."""
+"""URLs do aplicativo accounts.
+
+Define padrões de URL para autenticação, gerenciamento de tokens, 
+redefinição de senha e configuração de usuários.
+"""
+import logging
 from django.urls import path, include
 from . import views
 
+logger = logging.getLogger(__name__)
+
 app_name = 'accounts'
+
+# Inicializa as URLs e registra no log
+logger.debug("Inicializando URLs da aplicação accounts")
 
 auth_patterns = [
     path('register/', views.auth_register, name='register'),
@@ -35,3 +45,9 @@ urlpatterns = [
     path('tokens/', include(token_patterns)),
     path('settings/', views.user_settings, name='user_settings'),
 ]
+
+# Log das URLs registradas
+logger.debug(f"auth_patterns: {len(auth_patterns)} rotas")
+logger.debug(f"password_patterns: {len(password_patterns)} rotas")
+logger.debug(f"token_patterns: {len(token_patterns)} rotas + subrotas")
+logger.info("URLs da aplicação accounts inicializadas com sucesso")

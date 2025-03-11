@@ -1,3 +1,19 @@
+"""
+Módulo de visualizações (views) para a aplicação ai_config.
+
+Este pacote contém as views organizadas por funcionalidade:
+- ai_client: Gerenciamento de configurações de IA
+- token: Configuração de tokens e vinculação com IAs
+- training: Gerenciamento de treinamento de modelos
+- training_files: Operações de arquivos de treinamento
+- training_capture: Captura de exemplos de treinamento
+"""
+
+import logging
+
+logger = logging.getLogger(__name__)
+logger.debug("Inicializando módulo de views da aplicação ai_config")
+
 from .ai_client import (
     manage_ai,
     create_ai,
@@ -53,3 +69,5 @@ __all__ = [
     'capture_toggle',
     'capture_get_examples'
 ]
+
+logger.info("Módulo de views da aplicação ai_config carregado com sucesso")

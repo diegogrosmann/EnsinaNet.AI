@@ -1,12 +1,15 @@
-"""Formulários para a aplicação de configuração de IA.
+"""Formulários para configuração e gerenciamento de IAs.
 
-Contém classes de formulários para criação e edição de configurações, treinamento, arquivos
-e processamento dos dados relativos à IA.
+Este módulo contém formulários para configurar IAs, gerenciar tokens,
+e processar arquivos de treinamento.
 """
 
+import logging
 import json
 import bleach
+from typing import Any, Dict, Optional
 from django import forms
+from django.core.exceptions import ValidationError
 from django.forms import formset_factory, BaseFormSet, ModelChoiceField
 from django.contrib.auth import get_user_model
 from markdownx.widgets import MarkdownxWidget
@@ -21,6 +24,8 @@ from .models import (
 )
 
 from api.utils.clientsIA import AI_CLIENT_MAPPING
+
+logger = logging.getLogger(__name__)
 
 API_CLIENT_CHOICES = [(ai_client, ai_client) for ai_client in AI_CLIENT_MAPPING.keys()]
 
@@ -39,10 +44,17 @@ User = get_user_model()
 
 class BaseTrainingExampleFormSet(BaseFormSet):
     """Formset base para exemplos de treinamento.
-
-    Responsável por agregar os media dos formulários.
+    
+    Agrega os recursos de mídia dos formulários individuais.
     """
-    def __init__(self, *args, **kwargs):
+    
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Inicializa o formset agregando mídia.
+        
+        Args:
+            *args: Argumentos posicionais.
+            **kwargs: Argumentos nomeados.
+        """
         super().__init__(*args, **kwargs)
         self.media = forms.Media()
         for form in self.forms:
@@ -78,7 +90,7 @@ class AIClientGlobalConfigForm(forms.ModelForm):
             self.initial['api_key'] = masked_key
             self.initial['original_api_key'] = self.instance.api_key
 
-    def mask_api_key(self, api_key):
+    def mask_api_key(self, api_key: str) -> str:
         """Mascara a chave de acesso à API para exibição.
 
         Args:
@@ -92,7 +104,7 @@ class AIClientGlobalConfigForm(forms.ModelForm):
         else:
             return '*' * len(api_key)
 
-    def clean_api_key(self):
+    def clean_api_key(self) -> str:
         """Processa o campo 'api_key' para retornar o valor correto.
 
         Retorna a chave original se o valor não tiver sido alterado.
@@ -201,7 +213,7 @@ class AIClientConfigurationForm(forms.ModelForm):
                 self.fields['use_system_message'].initial = False
                 self.fields['use_system_message'].disabled = True
 
-    def clean(self):
+    def clean(self) -> Dict[str, Any]:
         """Valida o formulário garantindo consistência com a classe da API."""
         cleaned_data = super().clean()
         ai_client = cleaned_data.get('ai_client')
@@ -214,7 +226,7 @@ class AIClientConfigurationForm(forms.ModelForm):
                 
         return cleaned_data
 
-    def clean_name(self):
+    def clean_name(self) -> str:
         """Valida que o campo 'name' não esteja vazio nem contenha espaços em excesso.
 
         Returns:
@@ -228,7 +240,7 @@ class AIClientConfigurationForm(forms.ModelForm):
             raise forms.ValidationError("Nome não pode ser vazio.")
         return name
 
-    def _convert_dictionary(self, field_name):
+    def _convert_dictionary(self, field_name: str) -> Dict[str, Any]:
         """Converte um campo de texto para dicionário.
 
         Args:
@@ -278,7 +290,7 @@ class AIClientConfigurationForm(forms.ModelForm):
             return config_dict
         return ''
 
-    def clean_configurations(self):
+    def clean_configurations(self) -> Dict[str, Any]:
         """Converte o campo 'configurations' de texto para dicionário.
 
         Returns:
@@ -300,7 +312,7 @@ class AIClientConfigurationForm(forms.ModelForm):
                 "Formato inválido. Por favor, use o formato chave=valor, um por linha."
             )
 
-    def clean_training_configurations(self):
+    def clean_training_configurations(self) -> Dict[str, Any]:
         """Converte o campo 'training_configurations' de texto para dicionário.
 
         Returns:
@@ -353,7 +365,7 @@ class TokenAIConfigurationForm(forms.ModelForm):
         super(TokenAIConfigurationForm, self).__init__(*args, **kwargs)
         self.user = user
 
-    def clean_base_instruction(self):
+    def clean_base_instruction(self) -> str:
         """Limpa e sanitiza o campo 'base_instruction'.
 
         Returns:
@@ -362,7 +374,7 @@ class TokenAIConfigurationForm(forms.ModelForm):
         base_instruction_html = self.cleaned_data.get('base_instruction', '').strip()
         return bleach.clean(base_instruction_html, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES)
 
-    def clean_prompt(self):
+    def clean_prompt(self) -> str:
         """Limpa e sanitiza o campo 'prompt'.
 
         Returns:
@@ -371,7 +383,7 @@ class TokenAIConfigurationForm(forms.ModelForm):
         prompt_html = self.cleaned_data.get('prompt', '').strip()
         return bleach.clean(prompt_html, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES)
 
-    def clean_responses(self):
+    def clean_responses(self) -> str:
         """Limpa e sanitiza o campo 'responses'.
 
         Returns:
@@ -424,7 +436,7 @@ class AITrainingFileForm(forms.ModelForm):
             'file': forms.ClearableFileInput(attrs={'class': 'form-control'}),
         }
     
-    def clean_file(self):
+    def clean_file(self) -> Any:
         """Realiza a limpeza e validação do arquivo enviado.
 
         Returns:
@@ -489,7 +501,7 @@ class TrainingExampleForm(forms.Form):
         required=True
     )
 
-    def clean_user_message(self):
+    def clean_user_message(self) -> str:
         """Substitui '\\n' por quebras de linha reais no campo 'user_message'.
 
         Returns:
@@ -498,7 +510,7 @@ class TrainingExampleForm(forms.Form):
         user_message = self.cleaned_data.get('user_message', '')
         return user_message.replace('\\n', '\n')
 
-    def clean_system_message(self):
+    def clean_system_message(self) -> str:
         """Substitui '\\n' por quebras de linha reais no campo 'system_message'.
 
         Returns:
@@ -507,7 +519,7 @@ class TrainingExampleForm(forms.Form):
         system_message = self.cleaned_data.get('system_message', '')
         return system_message.replace('\\n', '\n')
 
-    def clean_response(self):
+    def clean_response(self) -> str:
         """Substitui '\\n' por quebras de linha reais no campo 'response'.
 
         Returns:

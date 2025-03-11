@@ -1,11 +1,20 @@
+"""Classes de administração para ai_config.
+
+Define interfaces administrativas para gerenciar configurações globais de IA, 
+configurações de clientes, arquivos de treinamento e modelos treinados.
+"""
+
 import logging
+from typing import Any, Optional, Dict, List
 
 from django.http import JsonResponse
 from django.urls import path, reverse
 from django.template.response import TemplateResponse
 from django.shortcuts import redirect, get_object_or_404
 from django.contrib import admin, messages
-from django.utils.html import format_html   
+from django.utils.html import format_html
+from django.db import transaction
+from django.http import HttpRequest, HttpResponse
 
 from .models import ( 
     AIClientGlobalConfiguration, 
@@ -31,47 +40,68 @@ logger = logging.getLogger(__name__)
 class AIClientGlobalConfigAdmin(admin.ModelAdmin):
     """Administração das configurações globais dos clientes de IA.
 
-    Permite visualizar e configurar os detalhes globais de cada cliente.
+    Permite gerenciar configurações globais que definem o comportamento base
+    dos clientes de IA, incluindo chaves de API e URLs.
     """
     form = AIClientGlobalConfigForm
     list_display = ('name', 'api_client_class', 'api_url', 'masked_api_key')
     search_fields = ('name', 'api_client_class')
     list_filter = ('name',)
 
-    def masked_api_key(self, obj):
-        """Retorna a chave da API mascarada.
-
+    def masked_api_key(self, obj: Any) -> str:
+        """Retorna uma versão mascarada da chave de API.
+        
         Args:
-            obj: Instância do modelo.
-
+            obj: Objeto de configuração global.
+            
         Returns:
-            str: Chave mascarada.
+            str: Chave mascarada ou string vazia.
         """
-        if obj.api_key:
-            if len(obj.api_key) > 8:
-                return f"{obj.api_key[:4]}****{obj.api_key[-4:]}"
-            else:
+        try:
+            if obj.api_key:
+                if len(obj.api_key) > 8:
+                    return f"{obj.api_key[:4]}****{obj.api_key[-4:]}"
                 return '*' * len(obj.api_key)
-        return ""
+            return ""
+        except Exception as e:
+            logger.error(f"Erro ao mascarar API key para {obj.name}: {e}")
+            return "Erro ao mascarar chave"
     masked_api_key.short_description = 'API Key'
 
-    # Removido o método "has_add_permission" que checava se ainda faltava algum AIClientType.
-    # Agora é permitido adicionar vários registros para a mesma classe de IA.
-
-    def get_readonly_fields(self, request, obj=None):
-        """Retorna os campos somente leitura no momento da edição.
-
+    def get_readonly_fields(self, request: HttpRequest, obj: Optional[Any] = None) -> tuple:
+        """Define campos somente leitura durante a edição.
+        
         Args:
             request: Requisição HTTP.
-            obj: Objeto atual (opcional).
-
+            obj: Objeto sendo editado ou None para criação.
+            
         Returns:
-            tuple: Campos que devem ser somente leitura.
+            tuple: Lista de campos somente leitura.
         """
-        # Você pode manter este comportamento ou remover, dependendo da sua necessidade:
-        if obj:  # Se 'obj' não for None, é edição
+        # Em edição, api_client_class não pode ser alterada
+        if obj:
             return self.readonly_fields + ('api_client_class',)
         return self.readonly_fields
+
+    def save_model(self, request: HttpRequest, obj: Any, form: Any, change: bool) -> None:
+        """Salva o modelo com registro apropriado de logs.
+        
+        Args:
+            request: Requisição HTTP.
+            obj: Objeto sendo salvo.
+            form: Formulário usado na operação.
+            change: True se é edição, False se é criação.
+        """
+        try:
+            with transaction.atomic():
+                super().save_model(request, obj, form, change)
+                action = "atualizada" if change else "criada"
+                logger.info(
+                    f"Configuração global '{obj.name}' {action} por {request.user.username}"
+                )
+        except Exception as e:
+            logger.exception(f"Erro ao salvar configuração global '{obj.name}': {e}")
+            raise
 
 class AIClientConfigurationAdmin(admin.ModelAdmin):
     """Administração das configurações dos clientes de IA."""
@@ -143,38 +173,60 @@ class DoclingConfigurationAdmin(admin.ModelAdmin):
 
 class AITrainingAdmin(admin.ModelAdmin):
     """Administração dos treinamentos de IA."""
-    list_display = ('ai_config', 'job_id', 'status', 'model_name', 'created_at', 'view_files_button', 'view_models_button')
+    list_display = ('ai_config', 'job_id', 'status', 'model_name', 'created_at', 
+                   'view_files_button', 'view_models_button')
     list_filter = ('status', 'ai_config__ai_client__api_client_class')
     search_fields = ('job_id', 'model_name', 'ai_config__name')
     readonly_fields = ('created_at', 'updated_at')
-    
-    def get_queryset(self, request):
-        """Retorna o queryset com todos os treinamentos."""
+
+    def get_queryset(self, request: HttpRequest) -> Any:
+        """Retorna queryset otimizado com relacionamentos pré-carregados."""
         return AITraining.objects.all().select_related(
             'ai_config',
             'ai_config__ai_client',
             'file'
         ).order_by('-created_at')
-        
-    def view_files_button(self, obj):
-        """Botão para ver arquivos da IA."""
 
-        if not obj.get_can_train():
+    def view_files_button(self, obj: Any) -> str:
+        """Gera HTML para botão de visualização de arquivos.
+        
+        Args:
+            obj: Objeto de treinamento.
+            
+        Returns:
+            str: HTML formatado do botão ou '-'.
+        """
+        try:
+            if not obj.ai_config.ai_client.get_client_can_train():
+                return "-"
+            return format_html(
+                '<a class="button" href="{}">Ver Arquivos</a>',
+                reverse('admin:ai_files_list', args=[obj.ai_config.id])
+            )
+        except Exception as e:
+            logger.error(f"Erro ao gerar botão de arquivos: {e}")
             return "-"
-        return format_html(
-            '<a class="button" href="{}">Ver Arquivos</a>',
-            reverse('admin:ai_files_list', args=[obj.ai_config.id])
-        )
     view_files_button.short_description = 'Arquivos'
-    
-    def view_models_button(self, obj):
-        """Botão para ver modelos da IA."""
-        if not obj.get_can_train():
+
+    def view_models_button(self, obj: Any) -> str:
+        """Gera HTML para botão de visualização de modelos.
+        
+        Args:
+            obj: Objeto de treinamento.
+            
+        Returns:
+            str: HTML formatado do botão ou '-'.
+        """
+        try:
+            if not obj.ai_config.ai_client.get_client_can_train():
+                return "-"
+            return format_html(
+                '<a class="button" href="{}">Ver Modelos</a>',
+                reverse('admin:ai_models_list', args=[obj.ai_config.id])
+            )
+        except Exception as e:
+            logger.error(f"Erro ao gerar botão de modelos: {e}")
             return "-"
-        return format_html(
-            '<a class="button" href="{}">Ver Modelos</a>',
-            reverse('admin:ai_models_list', args=[obj.ai_config.id])
-        )
     view_models_button.short_description = 'Modelos'
     
     def get_urls(self):

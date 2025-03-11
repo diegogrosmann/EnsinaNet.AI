@@ -1,20 +1,24 @@
-"""
-Módulo que contém as views para o painel de monitoramento da API.
+"""Views para monitoramento e métricas da API.
 
-Classes/Views:
-    monitoring_dashboard(request): Retorna a página HTML de monitoramento.
-    monitoring_data(request): Retorna JSON com dados de logs.
+Este módulo fornece endpoints para monitorar o uso da API,
+métricas de desempenho e estatísticas de utilização.
 """
 
 import json
+import logging
+from typing import Dict, Any
+from django.http import JsonResponse, HttpRequest
+from django.contrib.auth.decorators import login_required
+from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import render
+from django.db.models import Count, Avg
+from django.utils import timezone
 from datetime import datetime, timedelta
 
-from django.shortcuts import render
-from django.http import JsonResponse, HttpRequest
-from django.contrib.admin.views.decorators import staff_member_required
-from django.contrib.auth.decorators import login_required
+from ..models import APILog
+from accounts.models import UserToken
 
-from api.models import APILog
+logger = logging.getLogger(__name__)
 
 @login_required
 def monitoring_dashboard(request: HttpRequest):
@@ -54,3 +58,49 @@ def monitoring_data(request: HttpRequest):
             'timestamp': log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         })
     return JsonResponse({'logs': data}, safe=False)
+
+
+@login_required
+def api_usage_metrics(request) -> JsonResponse:
+    """Retorna métricas de uso da API para o usuário atual.
+    
+    Calcula estatísticas como total de chamadas, tempo médio de resposta
+    e distribuição de status code por token.
+    
+    Args:
+        request: Objeto de requisição HTTP.
+        
+    Returns:
+        JsonResponse: Métricas de uso da API.
+    """
+    try:
+        # Período de análise (últimos 30 dias)
+        start_date = timezone.now() - timedelta(days=30)
+        
+        # Obter logs do usuário
+        user_logs = APILog.objects.filter(
+            user=request.user,
+            timestamp__gte=start_date
+        ).select_related('user_token')
+        
+        # Calcular métricas por token
+        token_metrics = {}
+        for token in UserToken.objects.filter(user=request.user):
+            token_logs = user_logs.filter(user_token=token)
+            
+            token_metrics[str(token.id)] = {
+                'name': token.name,
+                'total_calls': token_logs.count(),
+                'avg_time': token_logs.aggregate(Avg('execution_time'))['execution_time__avg'] or 0,
+                'status_codes': dict(token_logs.values_list('status_code').annotate(count=Count('id')))
+            }
+        
+        logger.info(f"Métricas de uso geradas para usuário {request.user.email}")
+        return JsonResponse({'metrics': token_metrics})
+        
+    except Exception as e:
+        logger.error(f"Erro ao gerar métricas de uso: {str(e)}")
+        return JsonResponse(
+            {'error': 'Erro ao gerar métricas'}, 
+            status=500
+        )

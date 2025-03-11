@@ -1,9 +1,20 @@
-"""URLs do aplicativo ai_config."""
+"""Configuração de URLs do aplicativo ai_config.
+
+Define os padrões de URL para:
+- Gerenciamento de IAs
+- Treinamentos e captura
+- Configuração de tokens
+"""
+
+import logging
 from django.urls import path, include
 from ai_config import views
 
+logger = logging.getLogger(__name__)
+
 app_name = 'ai_config'
 
+# Padrões para gerenciamento de IAs
 ai_patterns = [
     path('', views.manage_ai, name='ai_manage'),
     path('create/', views.create_ai, name='ai_create'),
@@ -15,6 +26,7 @@ ai_patterns = [
     ])),
 ]
 
+# Padrões para treinamento e captura
 training_patterns = [
     path('', views.training_center, name='training_center'),
     path('files/', include([
@@ -27,7 +39,8 @@ training_patterns = [
         ])),
     ])),
     path('capture/toggle/', views.capture_toggle, name='capture_toggle'),
-    path('tokens/<uuid:token_id>/ai/<int:ai_id>/get-examples', views.capture_get_examples, name='capture_get_examples'),
+    path('tokens/<uuid:token_id>/ai/<int:ai_id>/get-examples', 
+         views.capture_get_examples, name='capture_get_examples'),
     path('train/', include([
         path('', views.training_ai, name='training_ai'),
         path('<int:training_id>/' , include([
@@ -38,13 +51,17 @@ training_patterns = [
     path('monitor/', views.training_monitor, name='training_monitor'), 
 ]
 
+# Padrões para configuração de tokens
 token_patterns = [
     path('prompt', views.prompt_config, name='token_prompt_config'),
     path('ai_link', views.token_ai_link, name='token_ai_link'),
 ]
 
+# URLs principais do aplicativo
 urlpatterns = [ 
     path('ai/', include(ai_patterns)),
     path('training/', include(training_patterns)),
     path('token/<uuid:token_id>/', include(token_patterns)),
 ]
+
+logger.debug("URLs do aplicativo ai_config carregadas")

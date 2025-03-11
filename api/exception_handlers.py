@@ -1,53 +1,75 @@
+"""Handler de exceções customizado para a API.
+
+Processa exceções de forma consistente, com suporte a logging
+e formatação apropriada das mensagens de erro.
+"""
+
+import logging
+import uuid
+from typing import Optional, Any, Dict
+
 from rest_framework.views import exception_handler
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import AuthenticationFailed, APIException
 from rest_framework.response import Response
 from rest_framework import status
 from django.conf import settings
-import uuid
+
 from core.exceptions import ApplicationError
 
-def custom_exception_handler(exc, context):
-    """
-    Manipulador customizado de exceções para a API.
+logger = logging.getLogger(__name__)
 
+def custom_exception_handler(exc: Exception, context: Dict[str, Any]) -> Optional[Response]:
+    """Processa exceções da API de forma padronizada.
+    
     Args:
-        exc (Exception): A exceção ocorrida.
-        context (dict): Contexto adicional da exceção.
-
+        exc: Exceção capturada.
+        context: Contexto da requisição.
+        
     Returns:
-        Response: Resposta HTTP formatada com a mensagem de erro em português.
+        Response formatada ou None se não puder ser processada.
     """
-    # Chama o manipulador padrão do DRF para gerar uma resposta inicial
-    response = exception_handler(exc, context)
-
-    # Define uma mensagem genérica para erros internos (produção)
-    generic_error_message = "Erro interno do servidor. Por favor, tente novamente mais tarde."
-    # Gera um ID único para o erro, útil para debug
     error_id = str(uuid.uuid4())
+    logger.error(f"Error ID {error_id}: {str(exc)}", exc_info=True)
 
-    # Determina a mensagem de erro com base no tipo da exceção
-    if isinstance(exc, ApplicationError):
-        error_detail = str(exc)
-    elif isinstance(exc, AuthenticationFailed):
-        error_detail = "As credenciais de autenticação não foram fornecidas."
-    else:
-        error_detail = str(exc)
-
-    # Em ambiente DEBUG, adiciona o error_id para rastreamento; caso contrário, não expõe detalhes técnicos
+    # Usa handler padrão do DRF primeiro
+    response = exception_handler(exc, context)
+    
+    error_detail = _get_error_detail(exc, error_id)
     debug_info = {"error_id": error_id} if settings.DEBUG else {}
 
     if response is not None:
-        # Se a resposta já possui uma chave 'detail', utiliza seu conteúdo (para DEBUG) ou substitui pela mensagem genérica
-        if 'detail' in response.data:
-            detail = response.data.pop('detail')
-            if settings.DEBUG:
-                error_detail = f"{detail} (Error ID: {error_id})"
-            else:
-                error_detail = generic_error_message
-        response.data = {'error': error_detail, **debug_info}
+        response.data = {
+            'error': error_detail,
+            **debug_info
+        }
     else:
-        # Caso não haja resposta, cria uma nova resposta com status 500
-        data = {'error': error_detail if settings.DEBUG else generic_error_message, **debug_info}
-        response = Response(data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        response = Response(
+            {
+                'error': error_detail if settings.DEBUG else "Erro interno do servidor",
+                **debug_info
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     
+    logger.debug(f"Resposta de erro preparada: {response.data}")
     return response
+
+def _get_error_detail(exc: Exception, error_id: str) -> str:
+    """Determina a mensagem de erro apropriada.
+    
+    Args:
+        exc: Exceção a ser processada.
+        error_id: Identificador único do erro.
+        
+    Returns:
+        str: Mensagem de erro formatada.
+    """
+    if isinstance(exc, ApplicationError):
+        return str(exc)
+    elif isinstance(exc, AuthenticationFailed):
+        return "Credenciais de autenticação inválidas ou não fornecidas"
+    elif isinstance(exc, APIException):
+        return str(exc.detail)
+    elif settings.DEBUG:
+        return f"{str(exc)} (Error ID: {error_id})"
+    return "Erro interno do servidor. Por favor, tente novamente mais tarde."

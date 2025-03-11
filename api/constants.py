@@ -1,64 +1,79 @@
+"""Constantes e tipos de dados para a API.
+
+Define estruturas de dados, enums e configurações utilizadas pela API.
+"""
+
 from typing import Dict, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import Enum, auto
 
-@dataclass
+@dataclass(frozen=True)
 class AIClientConfig:
-    """Configuração essencial para clientes de IA.
+    """Configuração completa para clientes de IA.
 
-    Args:
-        ai_global_config (Dict): Configuração global da API (api_key, api_url, etc.).
-        ai_client_config (Dict): Configurações específicas do cliente.
-        prompt_config (Dict): Configuração de prompts (base_instruction, prompt, responses).
-        kwargs (Dict, optional): Parâmetros adicionais para configuração flexível.
+    Attributes:
+        ai_global_config: Configurações globais (api_key, api_url).
+        ai_client_config: Configurações específicas do cliente.
+        prompt_config: Configurações de prompt e respostas.
+        kwargs: Parâmetros adicionais flexíveis.
     """
-    ai_global_config: Dict = field(default_factory=dict)
-    ai_client_config: Dict = field(default_factory=dict)
-    prompt_config: Dict = field(default_factory=dict)
-    kwargs: Dict = field(default_factory=dict)
+    ai_global_config: Dict[str, Any] = field(default_factory=dict)
+    ai_client_config: Dict[str, Any] = field(default_factory=dict)
+    prompt_config: Dict[str, str] = field(default_factory=dict)
+    kwargs: Dict[str, Any] = field(default_factory=dict)
 
-@dataclass
+@dataclass(frozen=True)
 class ProcessingResult:
-    """Resultado do processamento realizado pelas funções da API.
+    """Resultado de uma operação de processamento.
 
-    Args:
-        success (bool): Indica se o processamento foi bem sucedido.
-        message (str): Mensagem associada ao resultado.
-        data (Optional[Dict], optional): Dados retornados.
-        error (Optional[str], optional): Descrição do erro, se houver.
+    Attributes:
+        success: Indica sucesso da operação.
+        message: Mensagem descritiva do resultado.
+        data: Dados retornados (opcional).
+        error: Descrição do erro se houver falha.
     """
     success: bool
     message: str
-    data: Optional[Dict] = None
+    data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
 
 class TrainingStatus(Enum):
-    """Status possíveis do treinamento."""
-    NOT_STARTED = "not_started"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-@dataclass
-class TrainingResult:
-    """Resultado do treinamento.
+    """Status possíveis de um treinamento de IA.
     
-    Args:
-        job_id (str): ID do job de treinamento.
-        status (TrainingStatus): Status atual do treinamento.
-        model_name (Optional[str]): Nome do modelo se concluído.
-        error (Optional[str]): Mensagem de erro se falhou.
-        created_at (datetime): Data de criação.
-        completed_at (Optional[datetime]): Data de conclusão.
-        details (Dict[str, Any]): Detalhes adicionais do treinamento.
+    Attributes:
+        NOT_STARTED: Treinamento ainda não iniciado.
+        IN_PROGRESS: Treinamento em andamento.
+        COMPLETED: Treinamento concluído com sucesso.
+        FAILED: Treinamento falhou.
+        CANCELLED: Treinamento cancelado.
+    """
+    NOT_STARTED = auto()
+    IN_PROGRESS = auto()
+    COMPLETED = auto()
+    FAILED = auto()
+    CANCELLED = auto()
+
+@dataclass(frozen=True)
+class TrainingResult:
+    """Resultado de uma operação de treinamento.
+
+    Attributes:
+        job_id: Identificador único do job.
+        status: Status atual do treinamento.
+        model_name: Nome do modelo gerado.
+        error: Mensagem de erro se falhou.
+        created_at: Data/hora de criação.
+        completed_at: Data/hora de conclusão.
+        details: Informações adicionais.
+        progress: Progresso (0.0 a 1.0).
     """
     job_id: str
     status: TrainingStatus
     model_name: Optional[str] = None
     error: Optional[str] = None
-    created_at: datetime = datetime.now()
+    created_at: datetime = field(default_factory=datetime.now)
     completed_at: Optional[datetime] = None
-    details: Dict[str, Any] = None
-    progress: Optional[float] = 0.0
+    details: Optional[Dict[str, Any]] = None
+    progress: float = 0.0
 
