@@ -64,3 +64,8 @@ class TrainingError(AIConfigError):
 class PublicError(ApplicationError):
     """Exceções para a interface pública."""
     pass
+
+class CircuitOpenError(ApplicationError):
+    """Erro lançado quando o circuito está aberto."""
+    def __init__(self, message: str = None):
+        super().__init__(message or "Circuit breaker aberto para esta API")

@@ -1,3 +1,5 @@
+/// <reference path="./types/global.d.ts" />
+
 // Configuração de AJAX para CSRF
 function getCookie(name) {
     let cookieValue = null;
@@ -26,7 +28,7 @@ $.ajaxSetup({
 });
 
 // Função de mensagens/toasts com ícone
-function showMessage(type, message, duration = 5000) {
+function showMessage(type, message, duration = 5000, autoClose = true) {
     const toastContainer = document.querySelector('.toast-container');
     if (!toastContainer) return;
     
@@ -49,12 +51,18 @@ function showMessage(type, message, duration = 5000) {
             iconClass = 'bi-info-circle';
     }
     
+    const toastId = 'toast-' + Date.now();
     const toast = document.createElement('div');
+    toast.id = toastId;
     toast.className = `toast align-items-center border-0 ${bgClass}`;
     toast.setAttribute('role', 'alert');
     toast.setAttribute('aria-live', 'assertive');
     toast.setAttribute('aria-atomic', 'true');
-    toast.setAttribute('data-bs-delay', duration);
+    if (autoClose) {
+        toast.setAttribute('data-bs-delay', duration);
+    } else {
+        toast.setAttribute('data-bs-autohide', 'false');
+    }
     
     toast.innerHTML = `
         <div class="d-flex">
@@ -71,6 +79,18 @@ function showMessage(type, message, duration = 5000) {
     bsToast.show();
     
     toast.addEventListener('hidden.bs.toast', () => toast.remove());
+    
+    return toastId;
+}
+
+function closeMessage(toastId) {
+    const toast = document.getElementById(toastId);
+    if (toast) {
+        const bsToast = bootstrap.Toast.getInstance(toast);
+        if (bsToast) {
+            bsToast.hide();
+        }
+    }
 }
 
 // Inicializa todos os toasts estáticos na página
@@ -167,6 +187,89 @@ function resetMarkdownHeight() {
         MarkdownX.resetHeight();
     }
 }
+
+/**
+ * Funções para gerenciar o loader da página
+ */
+
+// Controle do loader inicial da página
+function showPageLoader() {
+  const loader = document.getElementById('pageLoader');
+  if (loader) {
+    loader.style.display = 'flex';
+    loader.style.opacity = '1';
+  }
+}
+
+function hidePageLoader() {
+  const loader = document.getElementById('pageLoader');
+  if (loader) {
+    loader.style.opacity = '0';
+    setTimeout(() => {
+      loader.style.display = 'none';
+    }, 300);
+  }
+}
+
+// Controle do loader de transição
+function showTransitionLoader() {
+  const transLoader = document.getElementById('transitionLoader');
+  if (transLoader) {
+    transLoader.style.display = 'flex';
+  }
+}
+
+// Configura o loader de transição apenas para saída do site
+function setupTransitionLoader() {
+  // Removemos os eventos de cliques em links - eles não devem disparar o loader
+  // O loader só será mostrado no evento beforeunload quando o usuário realmente sair da página
+  
+  // Para formulários, mantemos o comportamento mas melhoramos a detecção
+  const forms = document.querySelectorAll('form');
+  forms.forEach(form => {
+    // Não aplicar a formulários com atributo data-no-loader ou que usam AJAX
+    if (!form.hasAttribute('data-no-loader')) {
+      form.addEventListener('submit', function(e) {
+        // Verificamos se o formulário será enviado via AJAX
+        const isAjaxForm = form.hasAttribute('data-ajax') || 
+                          form.classList.contains('ajaxForm') || 
+                          form.getAttribute('onsubmit')?.includes('ajax') ||
+                          form.dataset.remote === 'true';
+        
+        // Só mostrar loader se for um envio tradicional, não AJAX
+        if (!isAjaxForm && !e.defaultPrevented) {
+          showTransitionLoader();
+        }
+      });
+    }
+  });
+}
+
+// Executar quando o DOM estiver pronto
+document.addEventListener('DOMContentLoaded', function() {
+  // Esconde o loader quando o DOM terminar de carregar
+  hidePageLoader();
+  
+  // Configura o loader de transição
+  setupTransitionLoader();
+});
+
+// Garantir que o loader seja escondido quando todos os recursos carregarem
+window.addEventListener('load', function() {
+  hidePageLoader();
+});
+
+// Mostra o loader apenas quando o usuário realmente sai do site
+window.addEventListener('beforeunload', function(e) {
+  // Verificar se a navegação não é causada por um link interno ou AJAX
+  // Se for uma saída real do site, mostrar o loader
+  if (!e.defaultPrevented) {
+    showPageLoader();
+  }
+});
+
+// Inicializa o loader ao carregar o script
+showPageLoader();
 
 // Inicializações gerais
 document.addEventListener('DOMContentLoaded', function() {

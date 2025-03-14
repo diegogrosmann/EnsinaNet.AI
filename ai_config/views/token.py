@@ -124,14 +124,11 @@ def token_ai_link(request: HttpRequest, token_id: str) -> HttpResponse:
         
         if request.method == 'POST':
             # Processar as alterações nas vinculações - com suporte para AJAX single toggle
-            ai_config_ids = request.POST.getlist('ai_configs')
-            enabled_ids = request.POST.getlist('enabled_configs')
+            enabled_ais = request.POST.getlist('enabled_ai')
+            disable_ais = request.POST.getlist('disable_ai')
             is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
             
             try:
-                # Converter os IDs para inteiros
-                ai_config_ids = [int(id) for id in ai_config_ids] if ai_config_ids else []
-                enabled_ids = [int(id) for id in enabled_ids] if enabled_ids else []
                 
                 with transaction.atomic():
                     # Para requisições AJAX de um único toggle
@@ -140,58 +137,26 @@ def token_ai_link(request: HttpRequest, token_id: str) -> HttpResponse:
                         toggled_ai_id = None
                         
                         # Verificar se temos uma IA no ai_configs (caso de ativação)
-                        if ai_config_ids:
-                            toggled_ai_id = ai_config_ids[0]
+                        for enabled_ai in enabled_ais:
                             # Atualizar ou criar a configuração
-                            is_enabled = toggled_ai_id in enabled_ids
                             AIClientTokenConfig.objects.update_or_create(
                                 token=token,
-                                ai_config_id=toggled_ai_id,
-                                defaults={'enabled': is_enabled}
+                                ai_config_id=enabled_ai,
+                                defaults={'enabled': True}
                             )
-                            logger.info(f"IA {toggled_ai_id} {'ativada' if is_enabled else 'desativada'} para token '{token.name}'")
-                        # Se não temos IA em ai_configs, estamos desativando
-                        else:
-                            # Determinar qual IA está sendo desativada (usando parâmetros da requisição)
-                            ai_id_param = request.POST.get('ai_id')
-                            if ai_id_param:
-                                toggled_ai_id = int(ai_id_param)
-                                # Desativar a configuração
-                                config = AIClientTokenConfig.objects.filter(
-                                    token=token, 
-                                    ai_config_id=toggled_ai_id
-                                ).first()
-                                
-                                if config:
-                                    config.enabled = False
-                                    config.save()
-                                    logger.info(f"IA {toggled_ai_id} desativada para token '{token.name}'")
-                    else:
-                        # Comportamento padrão para envios de formulário completo
-                        # Remover vinculações que não estão mais selecionadas
-                        removed_count = AIClientTokenConfig.objects.filter(token=token).exclude(ai_config_id__in=ai_config_ids).delete()[0]
-                        if removed_count > 0:
-                            logger.info(f"Removidas {removed_count} vinculações de IA para token '{token.name}'")
-                        
-                        # Adicionar ou atualizar vinculações
-                        for ai_config_id in ai_config_ids:
-                            is_enabled = ai_config_id in enabled_ids
-                            obj, created = AIClientTokenConfig.objects.update_or_create(
+                            logger.info(f"IA {enabled_ai} ativada para token '{token.name}'")
+
+                        for disable_ai in disable_ais:
+                            # Desativar a configuração
+                            AIClientTokenConfig.objects.update_or_create(
                                 token=token,
-                                ai_config_id=ai_config_id,
-                                defaults={'enabled': is_enabled}
+                                ai_config_id=disable_ai,
+                                defaults={'enabled': False}
                             )
-                            if created:
-                                logger.info(f"Nova vinculação criada: IA {ai_config_id} -> token '{token.name}' (enabled={is_enabled})")
-                            elif obj.enabled != is_enabled:
-                                logger.info(f"Vinculação atualizada: IA {ai_config_id} -> token '{token.name}' (enabled={is_enabled})")
-                
-                if not is_ajax:
-                    messages.success(request, 'Configurações de IA atualizadas com sucesso!')
-                    return redirect('ai_config:token_ai_link', token_id=token.id)
-                else:
-                    return JsonResponse({'status': 'success'})
-            
+                            logger.info(f"IA {toggled_ai_id} desativada para token '{token.name}'")
+                    
+                        return JsonResponse({'status': 'success'})
+                    
             except ValueError as e:
                 logger.error(f"Erro de validação ao atualizar vinculações para token {token_id}: {e}")
                 if not is_ajax:

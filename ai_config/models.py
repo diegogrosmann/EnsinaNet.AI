@@ -3,7 +3,7 @@
 Define os modelos de dados para configurações de IA, arquivos de treinamento,
 e gerenciamento de modelos treinados.
 """
-
+from datetime import time
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,14 +15,19 @@ from django.conf import settings
 from django.dispatch import receiver
 
 from accounts.models import UserToken
+from core.exceptions import APICommunicationError
+from core.validators import validate_training_file_content
 
 from api.utils.clientsIA import AI_CLIENT_MAPPING, APIClient
 from core.types import (
-    JSONDict, AIConfigData, TrainingFileData, 
-    TrainingStatus, TrainingJobID, ModelName,
-    AITrainingData
+    AIConfig,
+    AIPromptConfig,
+    AISingleComparisonData, 
+    AITrainingFileData, 
+    AITrainingStatus,
+    AITrainingResponse,
+    AITrainingExampleCollection,
 )
-from core.types import AIClientConfig as APIClientConfig
 
 from .storage import OverwriteStorage
 from django.db.models.signals import post_delete
@@ -58,22 +63,8 @@ class AIClientGlobalConfiguration(models.Model):
             str: Representação com base no nome ou na classe da API cliente.
         """
         if self.name:
-            return f"({self.api_client_class}) {self.name}"
-        return f"Cliente de IA para {self.api_client_class}"
-
-    def to_dict(self) -> JSONDict:
-        """Converte a configuração global em um dicionário.
-
-        Returns:
-            dict: Dicionário com os atributos da configuração global.
-        """
-        return {
-            'id': self.id,
-            'name': self.name,
-            'api_client_class': self.api_client_class,
-            'api_key': self.api_key,
-            'api_url': self.api_url,
-        }
+            return f"{self.name} ({self.api_client_class})"
+        return f"{self.api_client_class}"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Salva a configuração com validação e log.
@@ -87,16 +78,13 @@ class AIClientGlobalConfiguration(models.Model):
         """
         try:
             self.full_clean()
-            with transaction.atomic():
-                is_new = not self.pk
-                super().save(*args, **kwargs)
-                action = "criada" if is_new else "atualizada"
-                logger.info(f"Configuração global '{self.name}' {action}")
+            super().save(*args, **kwargs)
+            logger.info(f"Configuração global de IA salva: {self.api_client_class}")
         except Exception as e:
-            logger.error(f"Erro ao salvar configuração global '{self.name}': {e}")
+            logger.error(f"Erro ao salvar configuração global de IA: {e}")
             raise
 
-    def create_api_client_instance(self, **kwargs: Any) -> APIClient:
+    def create_api_client_instance(self) -> APIClient:
         """Cria uma instância do cliente de API.
         
         Args:
@@ -109,145 +97,26 @@ class AIClientGlobalConfiguration(models.Model):
             ValueError: Se a classe do cliente não existir.
         """
         try:
-            client_class = AI_CLIENT_MAPPING[self.api_client_class]
+            client_class = self.get_client_class()
+            if not client_class:
+                raise ValueError(f"Classe de API não encontrada: {self.api_client_class}")
+                
             return client_class(
-                api_key=self.api_key,
-                api_url=self.api_url,
-                **kwargs
+                AIConfig(
+                    api_key=self.api_key,
+                    api_url=self.api_url
+                )
             )
         except KeyError:
-            logger.error(f"Classe de cliente inválida: {self.api_client_class}")
-            raise ValueError(f"Cliente de API '{self.api_client_class}' não encontrado")
+            logger.error(f"Classe de API não registrada: {self.api_client_class}")
+            raise ValueError(f"Classe de API não registrada: {self.api_client_class}")
         except Exception as e:
-            logger.error(f"Erro ao criar cliente API '{self.api_client_class}': {e}")
+            logger.error(f"Erro ao criar cliente de API: {e}")
             raise
 
-    def get_client_name(self) -> str:
+    def get_client_class(self) -> APIClient:
         client_class = AI_CLIENT_MAPPING.get(self.api_client_class)
-        return client_class.name
-    
-    def get_client_can_train(self) -> bool:
-        client_class = AI_CLIENT_MAPPING.get(self.api_client_class)
-        return client_class.can_train
-    
-    def get_client_supports_system_message(self) -> bool:
-        client_class = AI_CLIENT_MAPPING.get(self.api_client_class)
-        return client_class.supports_system_message
-
-    def list_files(self) -> List[str]:
-        """Lista todos os arquivos disponíveis.
-
-        Returns:
-            list: Lista de arquivos.
-
-        Raises:
-            Exception: Se ocorrer erro ao listar os arquivos.
-        """
-        try:
-            client = self.create_api_client_instance()
-            if not client.can_train:
-                return []
-            return client.list_files()
-        except Exception as e:
-            logger.error(f"Erro ao listar arquivos: {e}")
-            raise
-
-    def list_trained_models(self) -> List[Dict[str, Any]]:
-        """Lista todos os modelos treinados disponíveis.
-
-        Returns:
-            list: Lista de modelos treinados.
-
-        Raises:
-            Exception: Se ocorrer erro ao listar os modelos.
-        """
-        try:
-            client = self.create_api_client_instance()
-            if not client.can_train:
-                return []
-            return client.list_trained_models()
-        except Exception as e:
-            logger.error(f"Erro ao listar modelos treinados: {e}")
-            raise
-
-    def delete_training_file(self, file_id: str) -> bool:
-        """Remove um arquivo de treinamento.
-
-        Args:
-            file_id (str): ID do arquivo a ser removido.
-
-        Returns:
-            bool: True se removido com sucesso.
-
-        Raises:
-            Exception: Se ocorrer erro ao remover o arquivo.
-        """
-        try:
-            client = self.create_api_client_instance()
-            if not client.can_train:
-                return False
-            return client.delete_training_file(file_id)
-        except Exception as e:
-            logger.error(f"Erro ao remover arquivo de treinamento: {e}")
-            raise
-
-    def delete_trained_model(self, model_name: str) -> bool:
-        """Remove um modelo treinado.
-
-        Args:
-            model_name (str): Nome do modelo a ser removido.
-
-        Returns:
-            bool: True se removido com sucesso.
-
-        Raises:
-            Exception: Se ocorrer erro ao remover o modelo.
-        """
-        try:
-            client = self.create_api_client_instance()
-            if not client.can_train:
-                return False
-            return client.delete_trained_model(model_name)
-        except Exception as e:
-            logger.error(f"Erro ao remover modelo treinado: {e}")
-            raise
-
-    def cancel_training(self, job_id: str) -> bool:
-        """Cancela um treinamento em andamento.
-
-        Args:
-            job_id (str): ID do job de treinamento a ser cancelado.
-
-        Returns:
-            bool: True se cancelado com sucesso, False caso contrário.
-
-        Raises:
-            Exception: Se ocorrer erro ao cancelar o treinamento.
-        """
-        try:
-            client = self.create_api_client_instance()
-            if not client.can_train:
-                return False
-            return client.cancel_training(job_id)
-        except Exception as e:
-            logger.error(f"Erro ao cancelar treinamento {job_id}: {e}")
-            raise
-
-class AITrainingFilesManager(AIClientGlobalConfiguration):
-    """Proxy model para gerenciar arquivos de treinamento."""
-    
-    class Meta:
-        proxy = True
-        verbose_name = "Arquivos de Treinamento na IA"
-        verbose_name_plural = "Arquivos de Treinamento na IA"
-
-class AITrainedModelsManager(AIClientGlobalConfiguration):
-    """Proxy model para gerenciar modelos treinados."""
-    
-    class Meta:
-        proxy = True
-        verbose_name = "Gerenciador de Modelos Treinados"
-        verbose_name_plural = "Gerenciador de Modelos Treinados"
+        return client_class
 
 class AIClientConfiguration(models.Model):
     """Configuração específica vinculada a um token e um cliente global de IA.
@@ -297,136 +166,59 @@ class AIClientConfiguration(models.Model):
         """
         return f"{self.name} -> {self.ai_client.api_client_class}"
 
-    def to_dict(self) -> AIConfigData:
-        """Converte a configuração do cliente em um dicionário.
-
-        Returns:
-            dict: Dicionário com os atributos da configuração do cliente.
-        """
-        return AIConfigData(
-            id=self.id,
-            name=self.name,
-            model_name=self.model_name or "",
-            use_system_message=self.use_system_message,
-            configurations=self.configurations or {},
-            training_configurations=self.training_configurations or {},
-            enabled=True
-        )
-
     def create_api_client_instance(self, token: Optional[UserToken] = None) -> APIClient:
         """Retorna uma instância configurada do cliente de IA.
-
-        Busca automaticamente as configurações de prompt do token associado.
-
+        
         Args:
-            token: Token do usuário, opcional.
+            token: Token opcional do usuário para customização
 
         Returns:
-            APIClient: Instância configurada do cliente de IA.
-
-        Raises:
-            ValueError: Se o cliente não for encontrado no mapeamento.
-        """
-        client_class = AI_CLIENT_MAPPING.get(self.ai_client.api_client_class)
-        
-        if not client_class:
-            raise ValueError(f"Cliente não encontrado: {self.ai_client.api_client_class}")
-        
-        # Configuração de prompt padrão como dicionário vazio
-        prompt_config = {}
-        
-        # Se um token foi fornecido, busca as configurações de prompt
-        if token:
-            try:
-                token_config = token.ai_configuration
-                if token_config:
-                    prompt_config = token_config.to_dict()
-            except TokenAIConfiguration.DoesNotExist:
-                logger.warning(f"Nenhuma configuração de prompt encontrada para o token {token.name}")
-        
-        client_config = APIClientConfig(
-            ai_global_config=self.ai_client.to_dict(),
-            ai_client_config=self.to_dict(),
-            prompt_config=prompt_config
-        )
-            
-        return client_class(client_config)
-    
-    def compare(self, data: Dict[str, Any], token: UserToken) -> Dict[str, Any]:
-        """Realiza uma comparação de dados usando a IA.
-
-        Args:
-            data (dict): Dados a serem comparados.
-            token (UserToken): Token do usuário, opcional.
-
-        Returns:
-            dict: Resultado da comparação.
-
-        Raises:
-            Exception: Se ocorrer erro durante a comparação.
+            APIClient: Instância configurada do cliente
         """
         try:
-            client = self.create_api_client_instance(token)
-            return client.compare(data)
+            client_class = self.ai_client.get_client_class()
+            
+            prompt_config = None
+            if token:
+                try:
+                    token_config = token.ai_configuration 
+                    prompt_config = AIPromptConfig(
+                        base_instruction=token_config.base_instruction,
+                        prompt=token_config.prompt,
+                        response=token_config.responses
+                    )
+                except Exception as e:
+                    logger.warning(f"Erro ao obter configuração de prompt para token {token.id}: {e}")
+
+            return client_class(AIConfig(
+                api_key=self.ai_client.api_key,
+                api_url=self.ai_client.api_url,
+                model_name=self.model_name,
+                configurations=self.configurations,
+                use_system_message=self.use_system_message,
+                training_configurations=self.training_configurations,
+                prompt_config=prompt_config
+            ))
+            
         except Exception as e:
-            logger.error(f"Erro ao comparar dados: {e}")
+            logger.error(f"Erro ao criar cliente de API: {e}")
             raise
 
-    def perform_training(self, training_file: 'AITrainingFile') -> AITrainingData:
-        """Realiza o treinamento para esta configuração de IA.
+class AITrainingFilesManager(AIClientGlobalConfiguration):
+    """Proxy model para gerenciar arquivos de treinamento."""
+    
+    class Meta:
+        proxy = True
+        verbose_name = "Arquivos de Treinamento na IA"
+        verbose_name_plural = "Arquivos de Treinamento na IA"
 
-        Args:
-            training_file: Arquivo de treinamento associado
-
-        Returns:
-            dict: Resultado do treinamento contendo status e informações
-        """
-        try:
-            client = self.create_api_client_instance()
-            
-            if not client.can_train:
-                return {
-                    'ai_name': self.name,
-                    'error': "Esta IA não suporta treinamento",
-                    'status': TrainingStatus.FAILED
-                }
-                
-            result = client.train(training_file.file.path)
-            
-            training = AITraining.objects.create(
-                ai_config=self,
-                file=training_file,
-                job_id=result.job_id,
-                status=result.status.value
-            )
-            
-            return AITrainingData(
-                id=training.id,
-                ai_config_id=self.id,
-                job_id=training.job_id,
-                status=TrainingStatus.IN_PROGRESS,
-                file_id=training_file.id,
-                model_name=None,
-                error=None,
-                created_at=training.created_at,
-                updated_at=training.updated_at,
-                progress=0
-            )
-            
-        except Exception as e:
-            logger.error(f"Erro ao iniciar treinamento para IA {self.id}: {e}", exc_info=True)
-            return AITrainingData(
-                id=None,
-                ai_config_id=self.id,
-                job_id=None,
-                status=TrainingStatus.FAILED,
-                file_id=training_file.id,
-                model_name=None,
-                error=str(e),
-                created_at=None,
-                updated_at=None,
-                progress=0
-            )
+class AITrainedModelsManager(AIClientGlobalConfiguration):
+    """Proxy model para gerenciar modelos treinados."""
+    
+    class Meta:
+        proxy = True
+        verbose_name = "Gerenciador de Modelos Treinados"
+        verbose_name_plural = "Gerenciador de Modelos Treinados"
 
 class AIClientTokenConfig(models.Model):
     """Configuração de associação entre Token e IA.
@@ -506,34 +298,30 @@ class AITrainingFile(models.Model):
         verbose_name = "Arquivo de Treinamento"
         verbose_name_plural = "Arquivos de Treinamento"
 
-    def get_file_data(self) -> TrainingFileData:
+    def get_file_data(self) -> AITrainingFileData:
         """Retorna os dados do arquivo no formato estruturado.
         
         Returns:
-            TrainingFileData: Dados estruturados do arquivo
+            AITrainingFileData: Dados estruturados do arquivo
         """
-        return TrainingFileData(
+        return AITrainingFileData(
             id=self.id,
             user_id=self.user_id,
             name=self.name,
-            file_path=self.file.path if self.file else "",
+            file_path=self.file.path,
             uploaded_at=self.uploaded_at,
             file_size=self.get_file_size()
         )
 
 @receiver(post_delete, sender=AITrainingFile)
 def delete_file_on_model_delete(sender: Any, instance: 'AITrainingFile', **kwargs: Any) -> None:
-    """Remove o arquivo físico quando o objeto é deletado.
-
-    Args:
-        sender: Classe do modelo.
-        instance: Instância do modelo deletado.
-        **kwargs: Argumentos adicionais.
-    """
+    """Remove o arquivo físico quando o modelo é excluído."""
     if instance.file:
-        if instance.file.storage.exists(instance.file.name):
-            instance.file.delete(save=False)
-            logger.debug(f"Arquivo físico deletado via sinal: {instance.file.name}")
+        try:
+            if os.path.isfile(instance.file.path):
+                os.remove(instance.file.path)
+        except Exception as e:
+            logger.error(f"Erro ao remover arquivo {instance.file.path}: {e}")
 
 class TokenAIConfiguration(models.Model):
     """Configuração de prompt para um token de IA.
@@ -556,42 +344,32 @@ class TokenAIConfiguration(models.Model):
         help_text='Prompt específico para cada comparação (obrigatório).'
     )
     responses = models.TextField(
-        blank=False,
-        null=False,
+        blank=True,
+        null=True,
         help_text='Respostas personalizadas para este token.'
     )
 
     class Meta:
-        verbose_name = "Token - Configuração de Prompt"
-        verbose_name_plural = "Token - Configurações de Prompt"
+        verbose_name = "Token - Configuração de IA"
+        verbose_name_plural = "Token - Configurações de IA"
 
     def __str__(self) -> str:
-        """Retorna a representação textual da configuração de prompt.
-
-        Returns:
-            str: Descrição do token relacionado.
-        """
-        return f"Configuração de IA para Token: {self.token.name}"
+        """Representação em string da configuração do token."""
+        return f"Configuração de IA para {self.token.name}"
 
     def clean(self) -> None:
-        if not self.prompt or not self.prompt.strip():
-            raise ValidationError({'prompt': 'O campo Prompt é obrigatório.'})
-        
-        if not self.responses or not self.responses.strip():
-            raise ValidationError({'responses': 'O campo Respostas é obrigatório.'})
+        """Valida os dados do modelo."""
         super().clean()
+        if not self.prompt:
+            raise ValidationError("O prompt é obrigatório")
 
-    def to_dict(self) -> Dict[str, str]:
-        """Converte as configurações de prompt em um dicionário.
-
-        Returns:
-            dict: Dicionário com as configurações de prompt.
-        """
-        return {
-            'base_instruction': self.base_instruction or "",
-            'prompt': self.prompt,
-            'responses': self.responses
-        }
+    def to_dict(self) -> AIPromptConfig:
+        """Converte a configuração para um dicionário adequado."""
+        return AIPromptConfig(
+            base_instruction=self.base_instruction or "",
+            prompt=self.prompt,
+            response=self.responses or ""
+        )
 
 class TrainingCapture(models.Model):
     """Captura de treinamento contendo informações temporárias.
@@ -645,6 +423,25 @@ class TrainingCapture(models.Model):
                 f.write('')
             self.temp_file.name = temp_filename
         super().save(*args, **kwargs)
+
+    def get_examples_collection(self) -> AITrainingExampleCollection:
+        """Retorna uma coleção de exemplos de treinamento baseada no arquivo temporário.
+        
+        Se o arquivo temporário não existir, ele será criado automaticamente.
+        A coleção retornada permite gerenciar (carregar, adicionar, remover, salvar) exemplos
+        de treinamento associados a esta captura.
+        
+        Returns:
+            AITrainingExampleCollection: Coleção de exemplos de treinamento
+        """
+        if not self.temp_file:
+            self.save()
+        
+        # Obter o caminho completo para o arquivo
+        file_path = self.temp_file.path
+        
+        # Criar e retornar a coleção de exemplos
+        return AITrainingExampleCollection(file_path=file_path)
 
 @receiver(post_delete, sender=TrainingCapture)
 def delete_temp_file_on_delete(sender: Any, instance: 'TrainingCapture', **kwargs: Any) -> None:
@@ -739,59 +536,58 @@ class AITraining(models.Model):
         verbose_name_plural = "Treinamentos de IA"
 
     def __str__(self) -> str:
-        return f"Treinamento {self.job_id} para {self.ai_config.name}"
+        """Representação em string do treinamento."""
+        status_display = dict(self.STATUS_CHOICES).get(self.status, self.status)
+        return f"Treinamento {self.job_id} - {status_display}"
 
     def get_global_client(self) -> AIClientGlobalConfiguration:
-        """Obtém o cliente global da IA associada."""
+        """Retorna a configuração global do cliente."""
         return self.ai_config.ai_client
 
     def cancel_training(self) -> bool:
-        """Cancela o treinamento em andamento.
-
-        Returns:
-            bool: True se cancelado com sucesso, False caso contrário.
-        """
-        if self.status != 'in_progress':
-            return False
-
+        """Cancela um treinamento em andamento."""
         try:
-            client = self.get_global_client()
-            if client.cancel_training(self.job_id):
-                self.status = 'failed'
-                self.error = 'Treinamento cancelado pelo usuário'
+            if self.status != 'in_progress':
+                return False
+                
+            client = self.ai_config.create_api_client_instance()
+            if not client.can_train:
+                return False
+                
+            result = client.cancel_training(self.job_id)
+            if result.success:
+                self.status = 'cancelled'
                 self.save()
-                return True
-            return False
+            return result.success
         except Exception as e:
             logger.error(f"Erro ao cancelar treinamento {self.job_id}: {e}")
             return False
 
-    def get_training_data(self) -> AITrainingData:
-        """Retorna os dados do treinamento no formato estruturado.
-        
-        Returns:
-            AITrainingData: Dados estruturados do treinamento
-        """
-        return AITrainingData(
-            id=self.id,
-            ai_config_id=self.ai_config_id,
-            job_id=self.job_id,
-            status=self.status,
-            file_id=self.file_id,
-            model_name=self.model_name,
-            error=self.error,
-            created_at=self.created_at,
-            updated_at=self.updated_at,
-            progress=self.progress
-        )
+    def get_training_data(self) -> AITrainingResponse:
+        """Obtém os dados atualizados do treinamento."""
+        try:
+            client = self.ai_config.create_api_client_instance()
+            if not client.can_train:
+                return AITrainingResponse(
+                    job_id=self.job_id,
+                    status=AITrainingStatus.FAILED,
+                    error="Cliente não suporta treinamento"
+                )
+            return client.get_training_status(self.job_id)
+        except Exception as e:
+            logger.error(f"Erro ao obter status de treinamento {self.job_id}: {e}")
+            return AITrainingResponse(
+                job_id=self.job_id,
+                status=AITrainingStatus.FAILED,
+                error=str(e)
+            )
 
 @receiver(post_delete, sender=AITraining)
 def delete_model_on_training_delete(sender: Any, instance: 'AITraining', **kwargs: Any) -> None:
-    """Remove o modelo treinado quando um registro de treinamento é excluído."""
-    if instance.model_name:
+    """Remove o modelo treinado quando o registro de treinamento é excluído."""
+    if instance.model_name and instance.status == 'completed':
         try:
-            global_config = instance.get_global_client()
-            global_config.delete_trained_model(instance.model_name)
-            logger.info(f"Modelo {instance.model_name} removido com sucesso")
+            client = instance.ai_config.create_api_client_instance()
+            client.delete_trained_model(instance.model_name)
         except Exception as e:
-            logger.error(f"Erro ao remover modelo {instance.model_name}: {e}")
+            logger.error(f"Erro ao excluir modelo {instance.model_name}: {e}")

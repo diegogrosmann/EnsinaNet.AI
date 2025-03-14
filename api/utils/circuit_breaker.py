@@ -5,90 +5,82 @@ import threading
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
-from core.types import CircuitState, CircuitConfig, CircuitOpenError
+from core.exceptions import CircuitOpenError
+from core.types import (
+    CircuitState,
+    CircuitBreakerConfig,
+    CircuitBreakerMetrics
+)
 
 logger = logging.getLogger(__name__)
 
-# Instância global do circuit breaker
-_circuit_breaker = None  # Será inicializado posteriormente
-
 class CircuitBreaker:
-    """Implementação do padrão Circuit Breaker."""
+    """Implementa o padrão Circuit Breaker para proteção de APIs."""
     
-    def __init__(self, config: Optional[CircuitConfig] = None):
-        self._states: Dict[str, Dict[str, Any]] = {}
-        self._locks: Dict[str, threading.RLock] = {}
-        self._config = config or CircuitConfig()
-
-    def _get_state(self, api_name: str) -> Dict[str, Any]:
-        """Obtém ou cria estado para uma API."""
-        if api_name not in self._states:
-            self._states[api_name] = {
-                'state': CircuitState.CLOSED,
-                'failures': 0,
-                'successes': 0,
-                'last_failure': None
-            }
-            self._locks[api_name] = threading.RLock()
-        return self._states[api_name]
-
-    def attempt_call(self, api_name: str) -> None:
-        """Verifica se é possível realizar uma chamada."""
-        with self._locks.get(api_name, threading.RLock()):
-            state = self._get_state(api_name)
+    def __init__(self, config: CircuitBreakerConfig) -> None:
+        self.config = config
+        self.metrics: Dict[str, CircuitBreakerMetrics] = {}
+        self._lock = threading.Lock()
+        
+    def _get_metrics(self, api_name: str) -> CircuitBreakerMetrics:
+        """Retorna ou cria métricas para uma API."""
+        with self._lock:
+            if api_name not in self.metrics:
+                self.metrics[api_name] = CircuitBreakerMetrics()
+            return self.metrics[api_name]
             
-            if state['state'] == CircuitState.OPEN:
-                if (state['last_failure'] + 
-                    timedelta(seconds=self._config.timeout_seconds) < datetime.now()):
-                    logger.info(f"Circuito para {api_name} mudou para meio-aberto")
-                    state['state'] = CircuitState.HALF_OPEN
-                    state['successes'] = 0
-                else:
-                    raise CircuitOpenError(f"Circuito para {api_name} está aberto")
+    def can_execute(self, api_name: str) -> bool:
+        """Verifica se uma chamada pode ser executada."""
+        metrics = self._get_metrics(api_name)
+        
+        if metrics.state == CircuitState.CLOSED:
+            return True
+            
+        if metrics.state == CircuitState.OPEN:
+            if datetime.now() - (metrics.last_failure_time or datetime.now()) > timedelta(seconds=self.config.reset_timeout):
+                metrics.state = CircuitState.HALF_OPEN
+                return True
+            return False
+            
+        # Estado HALF_OPEN
+        return True
 
     def record_success(self, api_name: str) -> None:
-        """Registra uma chamada bem-sucedida."""
-        with self._locks.get(api_name, threading.RLock()):
-            state = self._get_state(api_name)
-            state['failures'] = 0
+        """Registra uma chamada bem sucedida."""
+        metrics = self._get_metrics(api_name)
+        with self._lock:
+            metrics.success_count += 1
+            metrics.last_success_time = datetime.now()
             
-            if state['state'] == CircuitState.HALF_OPEN:
-                state['successes'] += 1
-                if state['successes'] >= self._config.success_threshold:
-                    logger.info(f"Circuito para {api_name} fechado após {state['successes']} sucessos")
-                    state['state'] = CircuitState.CLOSED
-                    state['successes'] = 0
+            if metrics.state == CircuitState.HALF_OPEN and metrics.success_count >= self.config.success_threshold:
+                metrics.state = CircuitState.CLOSED
+                metrics.failure_count = 0
+                metrics.success_count = 0
 
     def record_failure(self, api_name: str) -> None:
         """Registra uma falha na chamada."""
-        with self._locks.get(api_name, threading.RLock()):
-            state = self._get_state(api_name)
-            state['failures'] += 1
-            state['last_failure'] = datetime.now()
+        metrics = self._get_metrics(api_name)
+        with self._lock:
+            metrics.failure_count += 1
+            metrics.last_failure_time = datetime.now()
             
-            if state['state'] == CircuitState.HALF_OPEN:
-                logger.info(f"Circuito para {api_name} reaberto após falha")
-                state['state'] = CircuitState.OPEN
-                state['failures'] = self._config.error_threshold
-                return
-                
-            if (state['failures'] >= self._config.error_threshold and 
-                state['state'] == CircuitState.CLOSED):
-                logger.warning(f"Circuito para {api_name} aberto após {state['failures']} falhas")
-                state['state'] = CircuitState.OPEN
+            if metrics.state == CircuitState.HALF_OPEN or metrics.failure_count >= self.config.failure_threshold:
+                metrics.state = CircuitState.OPEN
+                metrics.failure_count = 0
+                metrics.success_count = 0
 
-# Inicialização da instância global
-_circuit_breaker = CircuitBreaker()
+# Instância global
+_circuit_breaker = CircuitBreaker(CircuitBreakerConfig())
 
-# APIs públicas
 def attempt_call(api_name: str) -> None:
-    """Wrapper para attempt_call do circuit breaker global."""
-    _circuit_breaker.attempt_call(api_name)
+    """Verifica se uma chamada pode ser realizada."""
+    if not _circuit_breaker.can_execute(api_name):
+        raise CircuitOpenError(f"Circuit breaker aberto para {api_name}")
 
 def record_success(api_name: str) -> None:
-    """Wrapper para record_success do circuit breaker global."""
+    """Registra sucesso na chamada."""
     _circuit_breaker.record_success(api_name)
 
 def record_failure(api_name: str) -> None:
-    """Wrapper para record_failure do circuit breaker global."""
+    """Registra falha na chamada."""
     _circuit_breaker.record_failure(api_name)

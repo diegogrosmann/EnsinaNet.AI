@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from accounts.models import UserToken
 from ai_config.models import AIClientGlobalConfiguration, AIClientConfiguration
 from ai_config.forms import AIClientConfigurationForm, UserAITrainingFileForm, AIClientTrainingForm
+from core.validators import validate_training_data
 
 class AIClientConfigurationFormTest(TestCase):
     def setUp(self):

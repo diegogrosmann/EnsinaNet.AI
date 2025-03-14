@@ -1,7 +1,4 @@
-"""Modelos de dados da API.
-
-Define os modelos para logging e monitoramento da API.
-"""
+"""Modelos de dados da API."""
 
 import logging
 from typing import Any
@@ -9,31 +6,13 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator
 from accounts.models import UserToken
-from core.types import APILogData, HTTP_METHODS
+from core.types import APILog, HTTP_METHODS
 
 logger = logging.getLogger(__name__)
 
 class APILog(models.Model):
-    """Registro de requisições à API.
+    """Registro de requisições à API."""
     
-    Attributes:
-        user (User): Usuário que fez a requisição
-        user_token (UserToken): Token usado na autenticação
-        path (str): Caminho da URL acessada
-        method (str): Método HTTP utilizado
-        status_code (int): Código de status HTTP retornado
-        execution_time (float): Tempo de execução em segundos
-        timestamp (datetime): Data/hora do registro
-    """
-    
-    HTTP_METHODS = [
-        ('GET', 'GET'),
-        ('POST', 'POST'),
-        ('PUT', 'PUT'),
-        ('PATCH', 'PATCH'),
-        ('DELETE', 'DELETE'),
-    ]
-
     user = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -61,6 +40,16 @@ class APILog(models.Model):
         verbose_name="Método",
         help_text="Método HTTP"
     )
+    request_body = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="Corpo da Requisição"
+    )
+    response_body = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="Corpo da Resposta"
+    )
     status_code = models.IntegerField(
         validators=[MinValueValidator(100)],
         verbose_name="Status",
@@ -70,6 +59,12 @@ class APILog(models.Model):
         validators=[MinValueValidator(0.0)],
         verbose_name="Tempo",
         help_text="Tempo de execução em segundos"
+    )
+    requester_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        verbose_name="IP",
+        help_text="Endereço IP do requisitante"
     )
     timestamp = models.DateTimeField(
         auto_now_add=True,
@@ -104,18 +99,17 @@ class APILog(models.Model):
             logger.error(f"Erro ao salvar log: {e}")
             raise
 
-    def to_log_data(self) -> APILogData:
-        """Converte o log para o formato estruturado APILogData.
-        
-        Returns:
-            APILogData: Dados estruturados do log
-        """
-        return APILogData(
+    def to_log_data(self) -> APILog:
+        """Converte o modelo para o tipo APILog."""
+        return APILog(
             id=self.id,
             user_token=self.user_token.key if self.user_token else None,
-            path=self.path,
-            method=self.method,
+            request_method=self.method,
+            request_path=self.path,
+            request_body=self.request_body,
+            response_body=self.response_body,
             status_code=self.status_code,
             execution_time=self.execution_time,
+            requester_ip=self.requester_ip,
             timestamp=self.timestamp
         )

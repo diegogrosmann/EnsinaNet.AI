@@ -7,7 +7,7 @@ import logging
 from celery import shared_task
 from django.db import transaction
 from .models import AITraining
-from api.utils.clientsIA import TrainingStatus
+
 
 # Alterar o logger para usar o namespace específico de tasks
 logger = logging.getLogger('ai_config.tasks')

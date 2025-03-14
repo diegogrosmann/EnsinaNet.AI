@@ -19,40 +19,25 @@ from core.exceptions import ApplicationError
 logger = logging.getLogger(__name__)
 
 def custom_exception_handler(exc: Exception, context: Dict[str, Any]) -> Optional[Response]:
-    """Processa exceções da API de forma padronizada.
-    
-    Args:
-        exc: Exceção capturada.
-        context: Contexto da requisição.
-        
-    Returns:
-        Response formatada ou None se não puder ser processada.
-    """
+    """Handler customizado para exceções da API."""
+    # Gera ID único para o erro
     error_id = str(uuid.uuid4())
-    logger.error(f"Error ID {error_id}: {str(exc)}", exc_info=True)
-
-    # Usa handler padrão do DRF primeiro
-    response = exception_handler(exc, context)
     
+    # Log do erro com o ID
+    logger.error(f"Error ID: {error_id}", exc_info=exc)
+    
+    # Obtém detalhes do erro
     error_detail = _get_error_detail(exc, error_id)
-    debug_info = {"error_id": error_id} if settings.DEBUG else {}
-
-    if response is not None:
-        response.data = {
-            'error': error_detail,
-            **debug_info
-        }
-    else:
-        response = Response(
-            {
-                'error': error_detail if settings.DEBUG else "Erro interno do servidor",
-                **debug_info
-            },
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
     
-    logger.debug(f"Resposta de erro preparada: {response.data}")
-    return response
+    # Retorna resposta formatada
+    return Response(
+        {
+            'success': False,
+            'error': error_detail,
+            'error_id': error_id
+        },
+        status=getattr(exc, 'status_code', status.HTTP_500_INTERNAL_SERVER_ERROR)
+    )
 
 def _get_error_detail(exc: Exception, error_id: str) -> str:
     """Determina a mensagem de erro apropriada.

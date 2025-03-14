@@ -15,7 +15,7 @@ from django.db import transaction
 
 from accounts.models import UserToken
 from ai_config.models import AIClientConfiguration, TrainingCapture, AIClientTokenConfig
-from core.types import TrainingExampleData, TrainingCaptureData
+from core.types import AITrainingExample, AITrainingCaptureConfig
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +33,24 @@ def capture_toggle(request: HttpRequest) -> JsonResponse:
     Returns:
         JsonResponse: Status da operação com mensagem e código HTTP apropriado.
     """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método não permitido'}, status=405)
+        
+    data = request.POST
+    token_id = data.get('token_id')
+    ai_config_id = data.get('ai_config_id')
+    
+    # Verificar se o token existe antes de tentar buscá-lo
     try:
-        token_id = request.POST.get('token_id')
+        token = UserToken.objects.get(id=token_id, user=request.user)
+    except UserToken.DoesNotExist:
+        logger.error(f"Token {token_id} não encontrado para o usuário {request.user.email}")
+        return JsonResponse({'error': 'Token não encontrado'}, status=404)
+    
+    try:
         ai_id = request.POST.get('ai_id')
         is_active = request.POST.get('is_active') == 'true'
         
-        token = get_object_or_404(UserToken, id=token_id, user=request.user)
         ai_config = get_object_or_404(AIClientConfiguration, id=ai_id, user=request.user)
         
         with transaction.atomic():
@@ -57,7 +69,7 @@ def capture_toggle(request: HttpRequest) -> JsonResponse:
             capture.save()
             
             # Converte para tipo estruturado
-            capture_data = TrainingCaptureData(
+            capture_data = AITrainingCaptureConfig(
                 id=capture.id,
                 token_id=token.id,
                 ai_client_config_id=ai_config.id,
@@ -75,8 +87,6 @@ def capture_toggle(request: HttpRequest) -> JsonResponse:
                 'active': is_active,
                 'message': f"Captura {status} para {token.name}"
             })
-    except UserToken.DoesNotExist:
-        return JsonResponse({'error': 'Token não encontrado.'}, status=404)
     except AIClientConfiguration.DoesNotExist:
         return JsonResponse({'error': 'Configuração de IA não encontrada.'}, status=404)
     except Exception as e:
@@ -113,7 +123,7 @@ def capture_get_examples(request: HttpRequest, token_id: str, ai_id: int) -> Jso
                 
                 # Converte para tipo estruturado
                 examples = [
-                    TrainingExampleData(
+                    AITrainingExample(
                         system_message=example.get('system_message', ''),
                         user_message=example['user_message'],
                         response=example['response']

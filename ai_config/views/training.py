@@ -18,7 +18,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
 from django.db import transaction
 
-
+from core.validators import validate_training_file_content
 from accounts.models import UserToken
 from ai_config.models import (
     AIClientGlobalConfiguration,
@@ -31,7 +31,7 @@ from ai_config.forms import (
     TrainingCaptureForm,
 )
 
-from api.utils.clientsIA import TrainingStatus
+from api.utils.clientsIA import AITrainingStatus
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +194,7 @@ def training_ai(request: HttpRequest) -> JsonResponse:
                     result = ai_config.perform_training(training_file)
                 
                 results.append(result)
-                if result.get('status') == TrainingStatus.IN_PROGRESS:
+                if result.get('status') == AITrainingStatus.IN_PROGRESS:
                     successful_trainings.append(result)
                     logger.info(f"Treinamento iniciado com sucesso para IA '{ai_config.name}' (ID: {ai_id})")
                 else:
@@ -206,7 +206,7 @@ def training_ai(request: HttpRequest) -> JsonResponse:
                 failed_trainings.append({
                     'ai_name': getattr(ai_config, 'name', f'IA {ai_id}'),
                     'error': str(e),
-                    'status': TrainingStatus.FAILED
+                    'status': AITrainingStatus.FAILED
                 })
 
         # Monta as mensagens detalhadas
@@ -287,7 +287,7 @@ def training_monitor(request: HttpRequest) -> JsonResponse:
                         results.append({
                             'job_id': job_id,
                             'config_id': config_id,
-                            'completed': status.status in [TrainingStatus.COMPLETED, TrainingStatus.FAILED],
+                            'completed': status.status in [AITrainingStatus.COMPLETED, AITrainingStatus.FAILED],
                             'status': status.status.value,
                             'progress': round(status.progress * 100, 2),
                             'error': status.error if status.error else None,
@@ -473,3 +473,17 @@ def training_delete(request: HttpRequest, training_id: int) -> JsonResponse:
         logger.exception(f"Erro ao excluir treinamento {training_id}: {e}")
         messages.error(request, f'Erro ao excluir treinamento: {str(e)}')
         return JsonResponse({'error': str(e)}, status=500)
+
+# Alterar o código que causa o warning
+def check_client_can_train(ai_config):
+    """Verifica se um cliente de IA suporta treinamento."""
+    try:
+        # Acessar o atributo diretamente em vez de usar o método get()
+        client_config = ai_config.to_dict()  # AIConfigData já é retornado como dicionário
+        
+        # Criar cliente e verificar se suporta treinamento
+        ai_client = ai_config.create_api_client_instance()
+        return ai_client.can_train if hasattr(ai_client, "can_train") else False
+    except Exception as e:
+        logger.warning(f"Erro ao verificar capacidade de treinamento para {ai_config.name} (ID: {ai_config.id}): {str(e)}")
+        return False

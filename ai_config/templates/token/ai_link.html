@@ -36,6 +36,16 @@
                                 </div>
                             </div>
                             
+                            <!-- Controles para ativar/desativar todas as IAs -->
+                            <div class="d-flex gap-2 mb-2 mb-md-0">
+                                <button class="btn btn-sm btn-success" id="activateAllBtn" title="Ativar todas as IAs">
+                                    <i class="bi bi-check-all me-1"></i>Ativar Todas
+                                </button>
+                                <button class="btn btn-sm btn-secondary" id="deactivateAllBtn" title="Desativar todas as IAs">
+                                    <i class="bi bi-x-circle me-1"></i>Desativar Todas
+                                </button>
+                            </div>
+                            
                             <!-- Controles à direita - MODIFICADO para ser mais compacto -->
                             <div class="input-group input-group-sm" style="width: auto; max-width: 200px;">
                                 <span class="input-group-text">Itens por página</span>
@@ -185,8 +195,32 @@
     </div>
 </div>
 
+<!-- Modal de Confirmação -->
+<div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmModalLabel">Confirmar Ação</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body" id="confirmModalBody">
+                <!-- Mensagem será inserida dinamicamente -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="confirmModalAccept">Confirmar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Adicionar variáveis para o modal no início do script
+        const confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+        const confirmModalBody = document.getElementById('confirmModalBody');
+        const confirmModalAccept = document.getElementById('confirmModalAccept');
+        
         // Função para salvar a configuração via AJAX
         function toggleAI(aiId, isActive) {
             const toggle = document.getElementById(`toggle-${aiId}`);
@@ -204,10 +238,10 @@
             formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
             
             if (isActive) {
-                formData.append('enabled_configs', aiId);
+                formData.append('enabled_ai', aiId);
             } else {
                 // Quando desativamos, enviamos o ID da IA explicitamente
-                formData.append('ai_id', aiId);
+                formData.append('disable_ai', aiId);
             }
             
             fetch(window.location.href, {
@@ -250,6 +284,156 @@
             });
         }
         
+        // Função para ativar/desativar todas as IAs
+        function toggleAllAIs(activate) {
+            const actionText = activate ? 'ativar' : 'desativar';
+            
+            // Obter todas as IAs visíveis (filtradas)
+            const visibleAIs = filteredRows.map(row => {
+                const toggle = row.querySelector('.ai-toggle');
+                if (toggle) return toggle.dataset.aiId;
+                return null;
+            }).filter(id => id);
+            
+            if (visibleAIs.length === 0) {
+                showToast('warning', 'Nenhuma IA visível para processar.');
+                return;
+            }
+            
+            // Configurar e mostrar o modal
+            confirmModalBody.innerHTML = `Tem certeza que deseja ${actionText} todas as IAs visíveis para este token?`;
+            
+            // Remover listener anterior do botão de confirmação
+            const confirmButton = document.getElementById('confirmModalAccept');
+            const oldButton = confirmButton.cloneNode(true);
+            confirmButton.parentNode.replaceChild(oldButton, confirmButton);
+            
+            // Adicionar novo listener com referência preservada
+            oldButton.addEventListener('click', function processToggleAll() {
+                confirmModal.hide();
+                
+                // Remover o listener após o uso para evitar duplicação
+                oldButton.removeEventListener('click', processToggleAll);
+                
+                // Desabilitar botões durante o processamento
+                const activateBtn = document.getElementById('activateAllBtn');
+                const deactivateBtn = document.getElementById('deactivateAllBtn');
+                activateBtn.disabled = true;
+                deactivateBtn.disabled = true;
+                
+                // Resto do código original da função
+                const processToastId = showMessage('info', `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Processando ${actionText} todas as IAs...`, 0, false);
+                
+                // Montar dados para envio
+                const formData = new FormData();
+                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+                
+                // Usar a mesma lógica da view atual, com enabled_ai e disable_ai
+                if (activate) {
+                    // Quando ativa, adiciona todas as IAs como enabled_ai
+                    visibleAIs.forEach(aiId => {
+                        formData.append('enabled_ai', aiId);
+                    });
+                } else {
+                    // Quando desativa, adiciona todas as IAs como disable_ai
+                    visibleAIs.forEach(aiId => {
+                        formData.append('disable_ai', aiId);
+                    });
+                }
+                
+                fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Fechar o toast de processamento
+                        closeMessage(processToastId);
+                        
+                        // Atualizar os switches e badges
+                        visibleAIs.forEach(aiId => {
+                            const toggle = document.getElementById(`toggle-${aiId}`);
+                            if (!toggle) return;
+                            
+                            const statusBadge = toggle.nextElementSibling;
+                            
+                            toggle.checked = activate;
+                            statusBadge.className = activate 
+                                ? 'badge ms-2 bg-success' 
+                                : 'badge ms-2 bg-secondary';
+                            statusBadge.textContent = activate ? 'Ativa' : 'Inativa';
+                            
+                            // Atualizar o valor do atributo data-value
+                            toggle.closest('td').setAttribute('data-value', activate ? '1' : '0');
+                        });
+                        
+                        showMessage('success', `Todas as IAs foram ${activate ? 'ativadas' : 'desativadas'} com sucesso!`);
+                        updateTable(); // Atualizar tabela para refletir as mudanças em filtros/ordenação
+                    } else {
+                        throw new Error(data.message || `Erro ao ${actionText} IAs`);
+                    }
+                })
+                .catch(error => {
+                    // Fechar o toast de processamento
+                    closeMessage(processToastId);
+                    
+                    console.error('Erro:', error);
+                    showMessage('danger', `Erro ao ${actionText} IAs: ${error.message}`);
+                })
+                .finally(() => {
+                    // Re-habilitar botões
+                    activateBtn.disabled = false;
+                    deactivateBtn.disabled = false;
+                });
+            });
+            
+            confirmModal.show();
+        }
+        
+        // Função para exibir toasts usando o sistema do base.html
+        function showToast(type, message) {
+            // Criar o elemento toast
+            const toast = document.createElement('div');
+            toast.className = `toast align-items-center border-0 text-bg-${type === 'danger' ? 'danger' : type}`;
+            toast.setAttribute('role', 'alert');
+            toast.setAttribute('aria-live', 'assertive');
+            toast.setAttribute('aria-atomic', 'true');
+            toast.setAttribute('data-bs-delay', '5000');
+            
+            // Definir o conteúdo do toast
+            toast.innerHTML = `
+                <div class="d-flex">
+                    <div class="toast-body">
+                        ${message}
+                    </div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                </div>
+            `;
+            
+            // Adicionar à container de toasts
+            const toastContainer = document.querySelector('.toast-container');
+            toastContainer.appendChild(toast);
+            
+            // Inicializar e mostrar o toast usando o Bootstrap
+            const bsToast = new bootstrap.Toast(toast);
+            bsToast.show();
+            
+            // Auto-remover depois de fechado (para não acumular no DOM)
+            toast.addEventListener('hidden.bs.toast', function() {
+                this.remove();
+            });
+        }
+        
         // Listeners para os switches
         document.querySelectorAll('.ai-toggle').forEach(toggle => {
             toggle.addEventListener('change', function() {
@@ -257,6 +441,15 @@
                 const isActive = this.checked;
                 toggleAI(aiId, isActive);
             });
+        });
+
+        // Listeners para os botões de ativar/desativar todas
+        document.getElementById('activateAllBtn')?.addEventListener('click', function() {
+            toggleAllAIs(true);
+        });
+        
+        document.getElementById('deactivateAllBtn')?.addEventListener('click', function() {
+            toggleAllAIs(false);
         });
 
         // ----- CÓDIGO PARA GERENCIAMENTO DE TABELA -----

@@ -19,6 +19,7 @@ from django.core.files import File
 from django.forms import formset_factory
 from django.db import transaction
 
+from core.validators import validate_training_file
 from accounts.models import UserToken
 from ai_config.models import AITrainingFile, TrainingCapture, AIClientGlobalConfiguration
 from ai_config.forms import (
@@ -28,66 +29,6 @@ from ai_config.forms import (
 )
 
 logger = logging.getLogger(__name__)
-
-def validate_training_file_format(file) -> Tuple[bool, str, List[Dict]]:
-    """Valida o formato do arquivo de treinamento.
-    
-    Verifica se o arquivo JSON contém uma estrutura válida de exemplos de treinamento.
-    
-    Args:
-        file: Objeto de arquivo (tipo file-like) contendo dados JSON.
-        
-    Returns:
-        Tuple contendo:
-            - bool: True se o arquivo é válido, False caso contrário.
-            - str: Mensagem de erro (vazia se o arquivo for válido).
-            - List[Dict]: Dados do arquivo (vazia se o arquivo for inválido).
-    """
-    try:
-        content = file.read()
-        file.seek(0)  # Reset file pointer
-        data = json.loads(content)
-        
-        if not isinstance(data, list):
-            logger.warning("Arquivo de treinamento inválido: não é uma lista")
-            return False, "O arquivo deve conter uma lista de exemplos", []
-        
-        for idx, example in enumerate(data, 1):
-            if not isinstance(example, dict):
-                logger.warning(f"Arquivo de treinamento inválido: exemplo {idx} não é um objeto")
-                return False, f"O exemplo {idx} deve ser um objeto", []
-            
-            # system_message é opcional
-            required_fields = {'user_message', 'response'}
-            missing_fields = required_fields - set(example.keys())
-            
-            if missing_fields:
-                logger.warning(f"Arquivo de treinamento inválido: exemplo {idx} faltando campos: {missing_fields}")
-                return False, f"Exemplo {idx} está faltando campos: {', '.join(missing_fields)}", []
-            
-            # Adiciona system_message vazio se não existir
-            if 'system_message' not in example:
-                example['system_message'] = ''
-            
-            # Valida tipos dos campos
-            all_fields = {'system_message', 'user_message', 'response'}
-            if not all(isinstance(example.get(field, ''), str) for field in all_fields):
-                logger.warning(f"Arquivo de treinamento inválido: exemplo {idx} com campos não textuais")
-                return False, f"Exemplo {idx} contém campos que não são texto", []
-            
-            # Apenas user_message e response não podem ser vazios
-            if not all(example[field].strip() for field in required_fields):
-                logger.warning(f"Arquivo de treinamento inválido: exemplo {idx} com campos obrigatórios vazios")
-                return False, f"Exemplo {idx} contém campos obrigatórios vazios", []
-    
-        logger.debug(f"Arquivo de treinamento válido com {len(data)} exemplos")
-        return True, "", data
-    except json.JSONDecodeError as e:
-        logger.warning(f"Arquivo de treinamento com JSON inválido: {str(e)}")
-        return False, "Arquivo JSON inválido", []
-    except Exception as e:
-        logger.error(f"Erro ao validar arquivo de treinamento: {str(e)}")
-        return False, f"Erro ao validar arquivo: {str(e)}", []
 
 @login_required
 def training_file_upload(request: HttpRequest) -> JsonResponse:
@@ -120,7 +61,7 @@ def training_file_upload(request: HttpRequest) -> JsonResponse:
             }, status=400)
 
         # Valida o formato do arquivo
-        is_valid, error_message, _ = validate_training_file_format(file)
+        is_valid, error_message, _ = validate_training_file(file)
         if not is_valid:
             return JsonResponse({'error': error_message}, status=400)
 
@@ -187,7 +128,7 @@ def training_file_create(request: HttpRequest, file_id: Optional[int] = None) ->
             
             try:
                 with training_file.file.open('r') as f:
-                    is_valid, error_message, data = validate_training_file_format(f)
+                    is_valid, error_message, data = validate_training_file(f)
                     if not is_valid:
                         logger.warning(f"Arquivo '{initial_name}' com formato inválido: {error_message}")
                         messages.error(request, f'Arquivo inválido: {error_message}')

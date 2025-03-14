@@ -6,19 +6,19 @@ import random
 import threading
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Any, Dict, List, Optional
+from typing import Any, List
 
-from core.types import Task, QueueConfig
+from core.types import QueueableTask, QueueConfig, QueueableTaskCollection
 
 logger = logging.getLogger(__name__)
 
 class TaskQueue:
     """Fila de tarefas com parâmetros configuráveis."""
     
-    def __init__(self, name: str, config: QueueConfig):
-        self.name = name
-        self.config = config
-        self.tasks: List[Task] = []
+    def __init__(self, config: QueueConfig):
+        self.name: str = config.name
+        self.config: QueueConfig = config
+        self.tasks: QueueableTaskCollection = []
         
         # Configura semáforos para controle de concorrência
         first_limit = (sys.maxsize if config.max_parallel_first == -1 
@@ -29,14 +29,14 @@ class TaskQueue:
         self.first_semaphore = threading.Semaphore(first_limit)
         self.retry_semaphore = threading.Semaphore(retry_limit)
         
-        logger.info(f"Fila '{name}' criada com max_attempts={config.max_attempts}")
+        logger.info(f"Fila '{self.name}' criada com max_attempts={config.max_attempts}")
 
-    def add_task(self, task: Task) -> None:
+    def add_task(self, task: QueueableTask) -> None:
         """Adiciona uma tarefa à fila."""
-        logger.debug(f"Fila '{self.name}': Tarefa '{task.identifier}' adicionada")
+        logger.debug(f"Fila '{self.config.name}': Tarefa '{task.identifier}' adicionada")
         self.tasks.append(task)
 
-    def _run_task(self, task: Task) -> Any:
+    def _run_task(self, task: QueueableTask) -> Any:
         """Executa uma tarefa com retentativas.
         
         Args:

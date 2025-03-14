@@ -20,6 +20,7 @@ O **EnsinaNet.AI** é uma aplicação web desenvolvida em Django que permite cor
   - [API de Comparação](#api-de-comparação)
     - [Versionamento da API](#versionamento-da-api)
     - [Versão 1](#versão-1)
+  - [Monitoramento e Logs da API](#monitoramento-e-logs-da-api)
   - [Interface Pública](#interface-pública)
 - [Guia de Início Rápido](#guia-de-início-rápido)
   - [Pré-requisitos](#pré-requisitos)
@@ -33,7 +34,6 @@ O **EnsinaNet.AI** é uma aplicação web desenvolvida em Django que permite cor
   - [Como Contribuir](#como-contribuir)
   - [Testes](#testes)
   - [Tecnologias Utilizadas](#tecnologias-utilizadas)
-- [Testes](#testes)
 - [Suporte](#suporte)
   - [FAQ](#faq)
   - [Documentação Adicional](#documentação-adicional)
@@ -46,119 +46,69 @@ O **EnsinaNet.AI** é uma aplicação web desenvolvida em Django que permite cor
 ## Funcionalidades Principais
 
 ### Autenticação e Tokens
-- **Login via Email:** Utiliza um backend customizado (`accounts/backends.py`) que permite autenticação usando o email.
-- **Confirmação de Email:** O cadastro exige que o usuário confirme seu endereço de email para ativar a conta.
-- **Perfis e Aprovação:** Cada usuário tem um `Profile` associado, que pode ser aprovado pelo administrador.
-- **Tokens de API:** Usuários aprovados podem criar tokens exclusivos (modelo `UserToken`) para acessar os endpoints da API. Estes tokens podem ser gerenciados (criados, editados e excluídos) através da interface.
+- **Autenticação via Email**  
+  Utiliza um backend customizado (`accounts/backends.py`) que permite login exclusivamente com o campo de email.
+- **Confirmação de Email**  
+  O cadastro exige que o usuário confirme seu endereço de email (via `allauth` e view customizada `CustomConfirmEmailView`), antes de ativar a conta.
+- **Perfis e Aprovação de Usuários**  
+  Cada usuário tem um `Profile` vinculado (1:1), que pode ser **aprovado** manualmente pelo administrador. Somente usuários aprovados têm acesso pleno às funcionalidades.
+- **Tokens de API**  
+  Tokens são gerenciados via `UserToken` e vinculados a `AIClientConfiguration` através da tabela de junção `AIClientTokenConfig`, conforme implementado em `accounts/models.py` e `ai_config/models.py`.
 
 ### Configuração de IA
-- **Múltiplos Clientes de IA:** O sistema suporta diversos provedores configurados globalmente (em `ai_config/models.py`):
-  - **OpenAI**
-  - **Azure**
-  - **Anthropic**
-  - **Google Gemini**
-  - **Llama**
-  - **Perplexity**
-- **Configuração Específica por Token:** Para cada token, é possível definir:
-  - **Modelo:** Escolha do modelo de IA (ex.: `gpt-3.5-turbo`, `gemini-pro`).
-  - **Parâmetros Personalizados:** Ajuste de parâmetros como `temperature`, `top_k`, etc.
-  - **Instrução Base (System Message):** Definição de uma instrução base que, se suportada pelo provedor, orienta a resposta.
-  - **Prompt Personalizado:** Texto que complementa a instrução para a IA.
-  - **Upload de Arquivos de Treinamento:** Permite enviar arquivos (JSON) para treinamento.
-- **Captura de Exemplos:** Mecanismo (modelo `TrainingCapture`) que permite capturar, durante o uso da API, exemplos (prompt e resposta) para posterior fine-tuning.
+- **Vários Provedores de IA**  
+  O projeto inclui integrações com múltiplos clientes de IA (via `AIClientGlobalConfiguration` e `AIClientConfiguration`), como:
+  - OpenAI
+  - Azure OpenAI
+  - Anthropic (Claude 3)
+  - Google Gemini
+  - Llama
+  - Perplexity
+- **Configuração Específica por Token**  
+  Para cada token (`UserToken`), é possível selecionar quais IAs estarão ativas, habilitar/desabilitar, definir parâmetros (modelo, hyperparams) e personalizar prompts (via `TokenAIConfiguration`).
+- **Captura de Exemplos (TrainingCapture)**  
+  Caso o usuário ative a opção, as interações realizadas podem ser capturadas em um arquivo temporário, armazenando exemplo de *prompt* e *resposta*. Isso facilita a criação de conjuntos de treinamento para *fine-tuning*.
+- **Treinamento de Modelos**  
+  Para IAs compatíveis (ex.: OpenAI e Gemini), o sistema permite o **upload de arquivos de treinamento** e abertura de *jobs* de *fine-tuning*, monitorando status e progresso via `AITraining` e tasks assíncronas (Celery).
+- **Extração de Conteúdo de Arquivos**  
+  Suporte à extração de texto de PDFs e DOCX por meio do `docling`, permitindo que o usuário envie documentos e compare seu conteúdo. (Vide `api/utils/doc_extractor.py`.)
 
 ### API de Comparação
+- **Versionamento**  
+  O projeto implementa versionamento de rota (exemplo: `/api/v1/compare/`) usando `URLPathVersioning`, mantendo compatibilidade em múltiplas versões.
+- **Execução Paralela**  
+  O endpoint `/api/v1/compare/` processa cada IA em paralelo, aplicando *circuit breaker* para controlar falhas em chamadas externas.  
+- **Suporte a Arquivos**  
+  Suporta extrair texto de PDFs e DOCX (via `docling`) quando recebidos no campo `"type":"file"`, convertendo-os dinamicamente para comparação.
+- **Circuit Breaker**  
+  Componente que monitora falhas de comunicação com provedores de IA e abre/fecha o circuito conforme o número de erros ou tempo decorrido, mitigando cascatas de falhas.
+- **Captura de Exemplos**  
+  Suporte a captura de exemplos via `TrainingCapture`.
+- **Validação de Dados**  
+  Validação de dados via `validate_request_data()`.
 
-  #### Versionamento da API
+#### Versionamento da API
+O versionamento atual é implementado nas rotas, iniciando pela versão "v1". Exemplos:
+- `POST /api/v1/compare/`
 
-  O EnsinaNet.AI implementa versionamento de API para garantir compatibilidade com diferentes versões de clientes e possibilitar atualizações sem impactar usuários existentes.
+#### Versão 1
+A versão 1 é a principal atualmente, abrangendo o endpoint `/compare/` para comparar as atividades. Futuramente, a estrutura de versionamento facilita a adição de funcionalidades nas próximas versões.
 
-  ##### Métodos de Versionamento Implementados
-
-  - **`URLPathVersioning`**: A versão é definida diretamente na URL, por exemplo:
-    ```
-    /api/v1/compare/
-    /api/v2/compare/
-    ```
-  - **`NamespaceVersioning`**: Cada versão da API é organizada em namespaces distintos, permitindo modularidade na evolução dos endpoints.
-
-  ##### Como Utilizar as Versões da API
-
-  Para acessar uma versão específica da API, inclua a versão na URL da requisição. Exemplo para a versão 1:
-
-  ```bash
-  curl -X POST http://127.0.0.1:8000/api/v1/compare/ \
-    -H "Authorization: Token SEU_TOKEN_AQUI" \
-    -H "Content-Type: application/json" \
-    -d '{
-          ....
-        }'
-  ```
-
-  ---
-
-  #### Versão 1
-  - **Endpoint Principal:** `/api/v1/compare/` (método POST)
-  - **Autenticação:** Requer token no header:
-    ```http
-    Authorization: Token <seu_token>
-    ```
-  - **Formato da Requisição (JSON):**
-    O payload deve conter:
-    - `instructor`: Dados do instrutor (config, network, instruction)
-    - `students`: Objeto com dados dos alunos
-
-    ```json
-    {
-      "instructor": {
-        "lab": {
-          "config": {
-            "PC-B": "set pcname PC-B \n ip 192.168.1.11 24",
-            "S1": ""
-          },
-          "network": {
-            "1": {
-              "PC-B": "eth0",
-              "S2": "e0/0"
-            },
-            "2": {
-              "S1": "e0/0",
-              "PC-A": "eth0"
-            }
-          }
-        },
-        "instruction": {
-          "type": "file",
-          "name": "instructions.pdf",
-          "content": "base64_encoded_content"
-        }
-      },
-      "students": {
-        "aluno1": {
-          // Similar structure to instructor
-        }
-      }
-    }
-    ```
-
-  - **Resposta:**
-    ```json
-    {
-      "students": {
-        "aluno1": {
-          "OpenAi": {
-            "response": "Resultado formatado em Markdown",
-            "model_name": "gpt-3.5-turbo",
-            "configurations": { "temperature": 0.7 },
-            "processing_time": 0.123
-          }
-        }
-      }
-    }
-    ```
+### Monitoramento e Logs da API
+- **Middleware de Monitoramento**  
+  A aplicação inclui o `MonitoringMiddleware`, que registra dados de cada requisição API em `APILog`.  
+- **Logs Detalhados**  
+  São armazenados o método HTTP, a rota acessada, o status da resposta e o tempo de execução.  
+- **Dashboard de Monitoramento**  
+  Permite que usuários (especialmente administradores) visualizem os logs recentes via `/api/monitoring/`.  
+- **Visualização no Django Admin**  
+  O modelo `APILog` aparece na interface de administração, possibilitando filtrar por usuário, token, rota etc.
 
 ### Interface Pública
-- **Página Inicial:** Exibe informações básicas sobre a API, exemplos de uso e links para login/registro.
+- **Página Inicial**  
+  Aplicação em `public/` com view `index()`, exibindo conteúdo básico se o usuário não estiver logado.  
+- **Redirecionamento**  
+  Usuário autenticado é encaminhado diretamente para a área de gerenciamento de tokens, caso já possua login ativo.
 
 ---
 
@@ -169,7 +119,7 @@ O **EnsinaNet.AI** é uma aplicação web desenvolvida em Django que permite cor
 - Git
 - Virtualenv (recomendado)
 - Banco de Dados (por padrão, SQLite; para produção, considere PostgreSQL)
-- Redis (para cache, se configurado)
+- Redis (para cache, se configurado ou para Celery, caso opte por processamento assíncrono)
 
 ### Instalação
 
@@ -223,8 +173,6 @@ O **EnsinaNet.AI** é uma aplicação web desenvolvida em Django que permite cor
       DEFAULT_FROM_EMAIL=NetEnsina.AI <seu_email@gmail.com>
     ```
 
-
-
 5. **Configure Arquivos Estáticos:**
 
    No arquivo `myproject/settings.py`, configure:
@@ -254,52 +202,103 @@ O **EnsinaNet.AI** é uma aplicação web desenvolvida em Django que permite cor
 
 ---
 
+## Documentação da API
+
+A aplicação utiliza `DRF` (Django REST Framework) e a documentação dos endpoints pode ser mantida via docstrings ou gerada pelo `drf-yasg` (opcional, caso configurado). Também é possível gerar documentação pelo Sphinx, pois já existe um `docs/` com configuração inicial (`docs/conf.py`).
+
+Para gerar a documentação Sphinx localmente:
+```bash
+cd docs
+make html
+```
+O resultado ficará em `docs/_build/html/`.
+
+---
+
 ## Arquitetura
 
 ### Estrutura de Diretórios
 
 ```plaintext
 .
-├── accounts/                                    # App de gerenciamento de usuários e autenticação
-│   ├── backends.py                             # Backend customizado para autenticação por email
-│   ├── views.py                               # Views para registro, login e gerenciamento de tokens
-│   ├── models.py                              # Modelos para Profile e UserToken
-│   ├── forms.py                               # Formulários de autenticação e gerenciamento
-│   └── templates/                             # Templates relacionados a contas e autenticação
-├── ai_config/                                  # App de configuração das IAs
-│   ├── utils.py                               # Utilitários para treinamento e configuração de IA
-│   ├── models.py                              # Modelos para configurações e treinamento de IA
-│   ├── views.py                               # Views para gerenciamento de configurações de IA
-│   └── templates/                             # Templates para configuração e treinamento
-├── api/                                        # App principal da API REST
-│   ├── v1/                                    # Implementação da versão 1 da API
-│   │   ├── views.py                           # Views da API v1 (endpoint compare)
-│   │   └── urls.py                            # Roteamento da API v1
-│   ├── utils/                                 # Utilitários da API
-│   │   ├── clientsIA.py                       # Implementação dos clientes de IA (OpenAI, Gemini, etc)
-│   │   ├── doc_extractor.py                   # Extrator de texto de documentos
-│   │   └── docling_doc_converter.py           # Conversor de documentos usando Docling
-│   ├── constants.py                           # Constantes e configurações da API
-│   └── exceptions.py                          # Exceções customizadas da API
-├── public/                                     # App para páginas públicas
-│   ├── views.py                               # Views para páginas públicas
-│   └── templates/                             # Templates públicos (landing page)
-├── templates/                                  # Templates globais do projeto
-│   └── base.html                              # Template base para herança
-├── myproject/                                 # Configurações do projeto Django
-│   ├── urls.py                                # URLs principais do projeto
-│   └── settings.py                            # Configurações do Django
-├── manage.py                                  # Script de gerenciamento do Django
-├── requirements.txt                           # Dependências do projeto
-└── static/                                    # Arquivos estáticos
-    └── img/                                   # Imagens do projeto
-        └── logo_slogan.png                    # Logo do projeto
+├── accounts/                                 # App de autenticação, perfis e tokens
+│   ├── backends.py                           # Backend customizado (login por email)
+│   ├── views.py                              # Views para registro, login/logout, tokens etc.
+│   ├── models.py                             # Modelos Profile e UserToken
+│   ├── forms.py                              # Formulários de criação/edição de usuários e tokens
+│   ├── admin.py                              # Integração com o Django Admin
+│   ├── signals.py                            # Criação de perfil e aprovação de usuários
+│   ├── authentication.py                     # Autenticação por Token (DRF)
+│   ├── urls.py                               # Rotas de autenticação, tokens, configurações
+│   ├── apps.py                               # Configuração da aplicação accounts
+│   ├── context_processors.py                 # Processadores de contexto (ex.: info do Site)
+│   ├── tests/                                # Testes unitários e de integração
+│   └── templates/                            # Templates HTML (cadastro, login, gerenciamento de tokens etc.)
+│
+├── ai_config/                                # App para gerenciar configurações de IA
+│   ├── models.py                             # Modelos de config global, config por token, arquivos de treinamento
+│   ├── forms.py                              # Formulários para configurar IA, uploads e captura
+│   ├── views/                                # Módulo com várias views (training, token, ai_client etc.)
+│   ├── tasks.py                              # Tasks Celery para atualizar status de treinamentos
+│   ├── admin.py                              # Integração com o Django Admin (gerenciamento de IAs, arquivos etc.)
+│   ├── urls.py                               # Rotas para criar/editar config de IA, treinamento, captura etc.
+│   ├── storage.py                            # Storage customizado para sobrescrever arquivos
+│   ├── validators.py                         # Schemas e validações de dados de treinamento
+│   ├── apps.py                               # Configuração da aplicação ai_config
+│   ├── tests/                                # Testes para as funcionalidades de IA
+│   └── migrations/                           # Migrações do banco de dados
+│
+├── api/                                      # App principal da API REST
+│   ├── v1/                                   # Versão 1 da API (views e urls)
+│   │   ├── views.py                          # Lógica principal do endpoint /api/v1/compare
+│   │   └── urls.py                           # Rotas (apenas compare/)
+│   ├── utils/                                # Funções auxiliares (clientes IA, doc_extractor, circuit_breaker etc.)
+│   │   ├── clientsIA.py                      # Implementações dos clientes de IA
+│   │   ├── circuit_breaker.py                # Implementação do circuit breaker
+│   │   ├── doc_extractor.py                  # Extração de texto de documentos
+│   │   ├── docling_doc_converter.py          # Conversão via docling
+│   │   └── queue_manager.py                  # Gerenciamento de filas de tarefas
+│   ├── middleware/                           # Middleware de monitoramento (APILog) e afins
+│   ├── exception_handlers.py                 # Tratamento customizado de exceções
+│   ├── models.py                             # Modelo APILog para registro de chamadas
+│   ├── admin.py                              # Admin para exibir logs de API
+│   ├── urls.py                               # Inclui rotas v1 e monitoramento
+│   ├── apps.py                               # Configuração da aplicação API
+│   └── tests/                                # Testes de integração, circuit breaker, doc extraction etc.
+│
+├── public/                                   # App de páginas públicas
+│   ├── views.py                              # View principal (index) e qualquer conteúdo público
+│   ├── urls.py                               # Rotas públicas
+│   ├── apps.py                               # Configuração do app public
+│   └── templates/                            # Templates públicos (ex.: página inicial)
+│
+├── core/                                     # Funções utilitárias genéricas, exceções customizadas, middlewares
+│   ├── exceptions.py                         # Exceções específicas do projeto
+│   ├── middleware/                           # Middleware global (ex.: GlobalExceptionMiddleware)
+│   ├── types.py                              # Tipos e dataclasses usados em vários módulos
+│   └── utils.py                              # Funções helpers (ex.: conversões model->dataclass)
+│
+├── myproject/                                # Configurações principais do Django
+│   ├── settings.py                           # Configurações gerais (INSTALLED_APPS, LOGGING, EMAIL etc.)
+│   ├── urls.py                               # Rotas centrais que incluem as urls de cada app
+│   ├── wsgi.py                               # Configuração WSGI para produção
+│   ├── asgi.py                               # Configuração ASGI (opcional, se usar Channels)
+│   ├── celery.py                             # Configuração do Celery (tarefas assíncronas)
+│   └── __init__.py
+│
+├── manage.py                                 # Script de gerenciamento (migrar, criar superuser, runserver etc.)
+├── requirements.txt                          # Lista de dependências e versões
+├── README.md                                 # Documentação principal do projeto
+├── static/                                   # Arquivos estáticos (CSS, JS, imagens)
+│   └── ...
+├── templates/                                # Templates compartilhados do Django
+│   └── base.html                             # Exemplo de template base para todo o projeto
+└── logs/                                     # Diretório onde são armazenados arquivos de log (criado se não existir)
 ```
 
 ### Diagramas
 
 ### Diagrama de Classes
-
 
 ```mermaid
 classDiagram
@@ -324,6 +323,7 @@ classDiagram
 	    +can_train: bool
 	    +supports_system_message: bool
 	    +api_key: str
+	    +api_url: str
 	    +model_name: str
 	    +configurations: dict
 	    +base_instruction: str
@@ -387,13 +387,16 @@ classDiagram
     }
 
     class AIClientConfiguration {
-	    +token: ForeignKey to UserToken
+	    +user: ForeignKey to User
 	    +ai_client: ForeignKey to AIClientGlobalConfiguration
 	    +name: CharField
-	    +enabled: BooleanField
 	    +model_name: CharField
 	    +configurations: JSONField
-	    +use_system_message: BooleanField
+	    +training_configurations: JSONField
+	    +use_system_message: bool
+	    +compare()
+	    +perform_training()
+	    +create_api_client_instance()
     }
 
     class AIClientTraining {
@@ -440,6 +443,7 @@ classDiagram
     class Profile {
 	    +user: OneToOneField to User
 	    +is_approved: BooleanField
+	    +capture_inactivity_timeout: IntegerField
     }
 
     class APILog {
@@ -452,7 +456,7 @@ classDiagram
 	    +timestamp: DateTimeField
     }
 
-    
+    %% Relações:
     User "1" -- "1" Profile : user
     User "1" <-- "0..*" APILog : user
     User "1" <-- "0..*" AITrainingFile : user
@@ -460,7 +464,7 @@ classDiagram
 
     UserToken "1" -- "1" TokenAIConfiguration : token
     UserToken "1" <-- "0..*" TrainingCapture : token 
-    UserToken "1" <-- "0..*" AIClientConfiguration : token
+    UserToken "1" <-- "0..*" AIClientConfiguration : tokens
     UserToken "1" <-- "0..*" APILog : user_token
     
     AIClientGlobalConfiguration "1" <-- "0..*" AIClientConfiguration : ai_client 
@@ -532,9 +536,9 @@ sequenceDiagram
     DB-->>EB: Retorna usuário
     EB->>EB: Verifica senha
     EB-->>D: Retorna usuário autenticado
-    alt Login bem sucedido
+    alt Login bem-sucedido
         D->>DB: Cria sessão
-        D-->>N: Redireciona para /manage-tokens/
+        D-->>N: Redireciona para /accounts/tokens_manage/
     else Login falhou
         D-->>N: Retorna erro no formulário
     end
@@ -594,10 +598,7 @@ sequenceDiagram
         D->>DB: Cria UserToken
         
         loop Para cada IA selecionada
-            rect rgb(0, 51, 102)
-                Note over D: Configuração de IA
-                Note over D: Veja o diagrama [3.2 - Configuração de IA por Token](#configuração-de-ia-por-token)
-            end
+            D->>DB: Cria AIClientTokenConfig
         end
         
         D-->>N: Redireciona para configurações
@@ -614,76 +615,29 @@ sequenceDiagram
     participant DB as Banco de Dados
 
     U->>N: Acessa config do token
-    N->>D: GET /manage-tokens/<token_id>/configurations/
+    N->>D: GET /manage-tokens/<token_id>/config/
     D->>DB: Busca configurações do token
     D-->>N: Exibe formulário de configurações
 
     alt Configurar Base Instruction
         U->>N: Define instrução base
-        N->>D: POST .../configurations/ (base_instruction)
+        N->>D: POST .../config/ (base_instruction)
+        D->>D: Sanitiza HTML
         D->>DB: Atualiza TokenAIConfiguration
     else Configurar Prompt
         U->>N: Define prompt padrão
-        N->>D: POST .../configurations/ (prompt)
+        N->>D: POST .../config/ (prompt)
+        D->>D: Sanitiza HTML
         D->>DB: Atualiza TokenAIConfiguration
     else Configurar Parâmetros IA
-        U->>N: Ajusta parâmetros (temperatura, etc)
-        N->>D: POST .../configurations/ (ai_params)
+        U->>N: Ajusta parâmetros (temperature, etc)
+        N->>D: POST .../config/ (ai_params)
         D->>DB: Atualiza AIClientConfiguration
     end
     D-->>N: Atualiza página com novas configs
 ```
 
-##### 2.3. Upload de Arquivo de Treinamento
-```mermaid
-sequenceDiagram
-    actor U as Usuário
-    participant N as Navegador
-    participant D as Django
-    participant DB as Banco de Dados
-    participant FS as Sistema de Arquivos
-
-    U->>N: Seleciona arquivo
-    N->>D: POST /upload-training-file/
-    D->>D: Valida formato do arquivo
-    D->>FS: Salva arquivo
-    D->>DB: Cria AITrainingFile
-    D->>DB: Vincula ao TokenAIConfiguration
-    D-->>N: Confirma upload
-    
-    alt Arquivo existente
-        D->>FS: Remove arquivo antigo
-        D->>FS: Salva novo arquivo
-        D->>DB: Atualiza referência
-    end
-```
-
-##### 2.4. Exclusão de Token
-```mermaid
-sequenceDiagram
-    actor U as Usuário
-    participant N as Navegador
-    participant D as Django
-    participant DB as Banco de Dados
-    participant FS as Sistema de Arquivos
-    participant FS as Sistema de Arquivos
-
-    U->>N: Seleciona arquivo
-    N->>D: POST /upload-training-file/
-    D->>D: Valida formato do arquivo
-    D->>FS: Salva arquivo
-    D->>DB: Cria AITrainingFile
-    D->>DB: Vincula ao TokenAIConfiguration
-    D-->>N: Confirma upload
-    
-    alt Arquivo existente
-        D->>FS: Remove arquivo antigo
-        D->>FS: Salva novo arquivo
-        D->>DB: Atualiza referência
-    end
-```
-
-##### 2.4. Exclusão de Token
+##### 2.3. Exclusão de Token
 ```mermaid
 sequenceDiagram
     actor U as Usuário
@@ -702,10 +656,7 @@ sequenceDiagram
         D->>DB: Busca configurações associadas
         
         par Limpeza de Recursos
-            D->>DB: Remove AIClientConfigurations
-            D->>DB: Remove TokenAIConfiguration
-            D->>DB: Remove TrainingCapture
-            D->>FS: Remove arquivos de treinamento
+            D->>FS: Remove arquivos de treinamento (se houver)
         end
         
         D->>DB: Remove UserToken
@@ -729,56 +680,47 @@ sequenceDiagram
     A->>N: Acessa /admin/ai_config/aiclientglobalconfiguration/add/
     N->>D: GET /admin/
     D->>DB: Lista configurações existentes
-    D-->>N: Exibe formulário de configuração global
+    D-->>N: Exibe formulário de config global
 
-    A->>N: Preenche dados da IA
-    Note over N: Nome<br>Classe da API<br>URL da API<br>Chave de API
-    N->>D: POST /admin/ai_config/aiclientglobalconfiguration/add/
+    A->>N: Preenche dados (nome, classe, URL, chave)
+    N->>D: POST .../add/
     D->>D: Valida dados
-    D->>DB: Salva configuração global
-    D-->>N: Redireciona para lista
+    D->>DB: Salva config global
+    D-->>N: Confirma criação
 ```
 
-##### 3.2. Configuração de IA por Token
+##### 3.2. Configuração de IA
 ```mermaid
 sequenceDiagram
     actor U as Usuário
     participant N as Navegador
     participant D as Django
     participant DB as Banco de Dados
-    participant IA as Cliente IA
 
     U->>N: Acessa /ai-config/manage-ai-configurations/<token_id>/
     N->>D: GET /ai-config/
     D->>DB: Busca configurações do token
     D->>DB: Busca IAs globais disponíveis
-    D-->>N: Exibe página de configurações
+    D-->>N: Exibe página de config
 
     alt Criar Nova Configuração
-        U->>N: Clica em "Criar Nova IA"
+        U->>N: Clica em "Nova IA"
         N->>D: GET .../create/
         D-->>N: Exibe formulário
-        U->>N: Preenche configuração
-        Note over N: Nome da IA<br>Cliente Global<br>Modelo<br>Parâmetros
+        U->>N: Preenche config (nome, classe, params)
         N->>D: POST .../create/
-        D->>DB: Salva configuração
-        D->>IA: Testa conexão
-        alt Teste OK
-            IA-->>D: Confirma conexão
-            D-->>N: Exibe sucesso
-        else Teste Falha
-            IA-->>D: Retorna erro
-            D-->>N: Exibe erro
-        end
+        D->>DB: Salva config
+        D-->>N: Testa conexão e confirma
     else Editar Configuração
-        U->>N: Seleciona configuração
-        N->>D: GET .../edit/<config_id>/
+        U->>N: Seleciona config
+        N->>D: GET .../edit/<id>/
         D->>DB: Busca detalhes
         D-->>N: Exibe formulário
-        U->>N: Modifica parâmetros
-        N->>D: POST .../edit/<config_id>/
-        D->>DB: Atualiza configuração
+        U->>N: Modifica e envia
+        N->>D: POST .../edit/<id>/
+        D->>DB: Atualiza config
     end
+    D-->>N: Retorna lista atualizada
 ```
 
 ##### 3.3. Gestão de Instruções e Prompts
@@ -787,64 +729,18 @@ sequenceDiagram
     actor U as Usuário
     participant N as Navegador
     participant D as Django
-    participant DB as Banco de Dados
-    participant TC as TinyMCE
+    participant T as TinyMCE
 
-    U->>N: Acessa configurações do token
-    N->>D: GET /ai-config/manage-token-configurations/<token_id>/
-    D->>DB: Busca TokenAIConfiguration
-    D-->>N: Carrega editor TinyMCE
+    U->>N: Acessa /token/<id>/prompt_config
+    N->>D: GET ...
+    D-->>N: Carrega editor (TinyMCE)
 
-    alt Configurar Instrução Base
-        U->>TC: Edita instrução base
-        TC->>N: Atualiza preview
-        N->>D: POST /save-base-instruction/
-        D->>D: Sanitiza HTML
-        D->>DB: Salva instrução
-        D-->>N: Confirma salvamento
-    else Configurar Prompt
-        U->>TC: Edita prompt
-        TC->>N: Atualiza preview
-        N->>D: POST /save-prompt/
-        D->>D: Sanitiza HTML
-        D->>DB: Salva prompt
-        D-->>N: Confirma salvamento
-    else Configurar Respostas
-        U->>TC: Edita respostas
-        TC->>N: Atualiza preview
-        N->>D: POST /save-responses/
-        D->>D: Sanitiza HTML
-        D->>DB: Salva respostas
-        D-->>N: Confirma salvamento
-    end
-```
-
-##### 3.4. Upload de Arquivo de Treinamento
-```mermaid
-sequenceDiagram
-    actor U as Usuário
-    participant N as Navegador
-    participant D as Django
-    participant DB as Banco de Dados
-    participant FS as Sistema de Arquivos
-
-    U->>N: Acessa configuração de treinamento
-    N->>D: GET /ai-config/manage-training-configurations/<token_id>/
-    D->>DB: Busca configurações habilitadas
-    D-->>N: Exibe opções de upload
-
-    U->>N: Seleciona arquivo JSON
-    N->>D: POST /upload-training-file/
-    D->>D: Valida formato JSON
-    D->>FS: Salva arquivo
-    D->>DB: Registra AITrainingFile
-    D-->>N: Confirma upload
-    
-    alt Arquivo existente
-        D->>FS: Remove arquivo antigo
-        D->>FS: Salva novo arquivo
-        D->>DB: Atualiza referência
-    end
+    U->>T: Edita "Instrução Base" / "Prompt" / "Responses"
+    T->>N: Atualiza preview
+    N->>D: POST /save-config/
+    D->>D: Sanitiza HTML e valida
+    D->>DB: Salva TokenAIConfiguration
+    D-->>N: Confirma sucesso
 ```
 
 #### 4. Processo de Treinamento
@@ -856,58 +752,74 @@ sequenceDiagram
     participant N as Navegador
     participant D as Django
     participant DB as Banco de Dados
-    participant IA as Cliente IA
+    participant AI as Cliente IA
 
     U->>N: Inicia treinamento
-    N->>D: POST /train-ai/
-    D->>DB: Busca arquivo de treinamento
+    N->>D: POST /ai-config/training-ai/
+    D->>DB: Busca arquivo e config IA
     
     rect rgb(0, 51, 102)
-        Note over D: Processamento do Arquivo
-        Note over D: Veja o diagrama [4.3 - Processamento de Arquivo de Treinamento](#processamento-de-arquivo-de-treinamento)
+    Note over D: Processa arquivo de treino
     end
-    
-    D->>IA: Envia dados para treinamento
-    
-    alt Treinamento bem-sucedido
-        IA-->>D: Retorna modelo treinado
-        D->>DB: Atualiza AIClientTraining
-        D-->>N: Exibe sucesso e detalhes do modelo
-    else Erro no treinamento
-        IA-->>D: Retorna erro
-        D->>DB: Registra falha
-        D-->>N: Exibe detalhes do erro
+
+    D->>AI: Envia dados p/ treinamento
+    alt Sucesso
+        AI-->>D: OK, job_id
+        D->>DB: Cria AITraining (status in_progress)
+        D-->>N: Retorna success
+    else Erro
+        AI-->>D: Falha
+        D-->>N: Erro e logs
     end
 ```
 
-##### 4.2. Captura de Exemplos de Treinamento
+##### 4.2. Upload de Arquivo de Treinamento
 ```mermaid
 sequenceDiagram
     actor U as Usuário
     participant N as Navegador
     participant D as Django
     participant DB as Banco de Dados
-    participant API as API Compare
+    participant FS as Sistema de Arquivos
 
-    U->>N: Ativa captura de exemplos
-    N->>D: POST /toggle-capture/
-    D->>DB: Cria/Atualiza TrainingCapture
-    D-->>N: Confirma ativação
+    U->>N: Acessa /ai-config/training/files/
+    N->>D: GET ...
+    D-->>N: Exibe opções de upload
 
-    loop Durante uso da API
-        API->>D: Chamada ao endpoint compare
-        D->>D: Processa requisição
-        D->>DB: Armazena exemplo (prompt/resposta)
-        D-->>API: Retorna resposta normal
-    end
-
-    U->>N: Consulta exemplos capturados
-    N->>D: GET /training-examples/
-    D->>DB: Busca exemplos
-    D-->>N: Exibe lista de exemplos
+    U->>N: Seleciona arquivo JSON
+    N->>D: POST /training-file/upload/
+    D->>D: Valida JSON
+    D->>FS: Salva arquivo
+    D->>DB: Cria AITrainingFile
+    D-->>N: Confirma
 ```
 
-##### 4.3. Processamento de Arquivo de Treinamento
+##### 4.3. Captura de Exemplos de Treinamento
+```mermaid
+sequenceDiagram
+    actor U as Usuário
+    participant N as Navegador
+    participant D as Django
+    participant DB as Banco de Dados
+    participant API as /api/v1/compare
+
+    U->>N: Ativa "Captura"
+    N->>D: POST /capture/toggle?is_active=true
+    D->>DB: Marca TrainingCapture is_active=True
+
+    loop Uso da API
+        API->>D: request compare
+        D->>DB: Se is_active, salva (prompt+resp)
+        API-->>Cliente: Resposta normal
+    end
+
+    U->>N: Consulta /capture/get-examples
+    N->>D: GET ...
+    D->>DB: Lê JSON de TrainingCapture
+    D-->>N: Retorna exemplos
+```
+
+##### 4.4. Processamento de Arquivo de Treinamento
 ```mermaid
 sequenceDiagram
     actor U as Usuário
@@ -941,40 +853,27 @@ sequenceDiagram
 sequenceDiagram
     actor C as Cliente
     participant API as API Gateway
-    participant V as Views
+    participant V as Views (v1.compare)
     participant P as Processador
     participant DB as Banco de Dados
 
-    C->>API: POST /api/v1/compare/
+    C->>API: POST /api/v1/compare/ (JSON + Token)
     API->>V: Encaminha requisição
-    
-    rect rgb(0, 51, 102)
-        Note over V: Validação de Token e Configurações
-        Note over V: Veja o diagrama [5.3 - Validação de Token e Configurações](#validação-de-token-e-configurações)
-    end
-    
-    alt Token válido
-        V->>P: Processa dados do request
-        P->>P: Valida estrutura do JSON
-        
-        alt Dados inválidos
-            P-->>V: Erro de validação
-            V-->>API: Retorna erro 400
-            API-->>C: Bad Request
-        else Dados válidos
-            rect rgb(0, 51, 102)
-                Note over P: Processamento de Arquivos
-                Note over P: Veja o diagrama [5.2 - Processamento de Arquivos](#processamento-de-arquivos)
+    V->>DB: Valida token e configurações
+    alt Token inválido
+        V-->>API: 401 Unauthorized
+    else Token válido
+        V->>P: process_request_data (extrai texto de arquivos)
+        alt Falha
+            P-->>V: Erro
+            V-->>API: 400
+        else Sucesso
+            V->>V: Organiza tasks p/ cada IA
+            par Chamadas em paralelo
+                V->>IAClients: compare()
             end
-            
-            rect rgb(0, 51, 102)
-                Note over V: Execução Paralela de IAs
-                Note over V: Veja o diagrama [5.4 - Execução Paralela](#execução-paralela-de-múltiplas-ias)
-            end
-            
-            V->>V: Consolida resultados finais
-            V-->>API: Retorna resultados
-            API-->>C: Resposta JSON
+            V->>V: Consolida resultados
+            V-->>API: JSON { "students": {...} }
         end
     end
 ```
@@ -983,71 +882,49 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant V as Views
-    participant P as Processador
-    participant DE as DocExtractor
-    participant DC as DoclingConverter
+    participant D as doc_extractor
+    participant DC as docling_doc_converter
     participant FS as Sistema Arquivos
-    participant DB as Banco de Dados
 
-    V->>P: Detecta campo tipo file
-    P->>DE: Encaminha para extração
-    
-    alt Arquivo PDF
-        DE->>DC: convert_pdf_bytes_to_text()
-        DC->>FS: Cria arquivo temporário
-        DC->>DC: Configura Docling
-        DC->>DC: Executa conversão
-        opt OCR Necessário
-            DC->>DC: Executa OCR
-        end
-        DC->>DC: Extrai texto
-        DC-->>DE: Retorna texto extraído
-        DE->>FS: Remove arquivo temporário
-    else Arquivo DOCX
-        DE->>DC: convert_word_bytes_to_text()
-        DC->>FS: Cria arquivo temporário
-        DC->>DC: Configura Docling
-        DC->>DC: Extrai conteúdo
-        DC-->>DE: Retorna texto extraído
-        DE->>FS: Remove arquivo temporário
+    V->>D: extract_text({name, content, type})
+    D->>D: decode base64
+    alt PDF
+        D->>DC: convert_pdf_bytes_to_text
+    else DOCX
+        D->>DC: convert_word_bytes_to_text
     end
-    
-    DE-->>P: Retorna texto processado
-    P-->>V: Texto extraído
+    DC->>FS: Cria arquivo temp
+    DC->>DC: Extração docling
+    DC-->>D: Retorna texto
+    D-->>V: Texto final
 ```
 
 ##### 5.3. Validação de Token e Configurações
 ```mermaid
 sequenceDiagram
-    participant API as API Gateway
-    participant V as Views
+    participant API as /api/v1/compare
+    participant V as View compare
     participant DB as Banco de Dados
-    participant Cache as Cache Redis
+    participant Cache as Cache
 
-    API->>V: Request com token
-    V->>Cache: Busca token em cache
-    
+    API->>V: Request (token)
+    V->>Cache: busca config
     alt Cache hit
-        Cache-->>V: Retorna configurações
-    else Cache miss
-        V->>DB: Busca UserToken
-        
-        alt Token não encontrado
-            DB-->>V: Token inexistente
-            V-->>API: Erro 401
-        else Token encontrado
-            DB->>DB: Verifica user.is_active
-            DB->>DB: Verifica profile.is_approved
-            
-            alt Usuário inativo/não aprovado
-                DB-->>V: Status inválido
-                V-->>API: Erro 403
-            else Usuário válido
-                DB->>DB: Busca AIClientConfigurations
-                DB->>DB: Busca TokenAIConfiguration
-                DB-->>V: Retorna configurações
-                V->>Cache: Armazena em cache
-                V->>V: Processa configurações
+        Cache-->>V: Retorna configs
+    else Miss
+        V->>DB: UserToken.objects.get(key=token)
+        alt Não encontrado
+            DB-->>V: Token inválido
+            V-->>API: 401
+        else Encontrado
+            DB->>DB: Valida user.is_active e profile.is_approved
+            alt user inativo
+                DB-->>V: Falha
+                V-->>API: 403
+            else user aprovado
+                V->>DB: AIClientTokenConfig (enabled=True)
+                V->>Cache: Armazena config
+                V-->>API: segue fluxo
             end
         end
     end
@@ -1056,44 +933,24 @@ sequenceDiagram
 ##### 5.4. Execução Paralela de Múltiplas IAs
 ```mermaid
 sequenceDiagram
-    participant V as Views
-    participant P as Processador
-    participant Pool as ThreadPool
-    participant IA as Clientes IA
+    participant V as View compare
+    participant TQ as TaskQueue
+    participant IA as Clients
     participant DB as Banco de Dados
 
-    V->>DB: Busca configurações habilitadas
-    DB-->>V: Lista de AIClientConfigurations
-    V->>P: Prepara dados para processamento
-
-    rect rgb(0, 51, 102)
-        Note over V,IA: Execução Paralela com ThreadPoolExecutor
-
-        V->>Pool: Cria pool de threads
-        
-        par Processamento Paralelo
-            Pool->>IA: OpenAI._call_api()
-            Pool->>IA: Gemini._call_api()
-            Pool->>IA: Anthropic._call_api()
-            Pool->>IA: Outros clientes...
-        end
-
-        opt Captura de Treinamento
-            V->>DB: Verifica TrainingCapture ativa
-            alt Captura ativa
-                V->>DB: Salva exemplos capturados
-            end
-        end
-
-        loop Para cada resposta
-            IA-->>Pool: Retorna resultado
-            Pool->>V: Adiciona ao dicionário
-        end
+    V->>DB: Obter configs habilitadas
+    V->>TQ: Cria tasks p/ cada IA e estudante
+    TQ->>IA: _call_api()
+    alt Sucesso
+        IA-->>TQ: Resposta
+    else Falha
+        IA-->>TQ: Exceção
     end
-
-    V->>V: Consolida resultados
-    V->>V: Calcula tempo de processamento
-    V->>V: Formata resposta final
+    
+    TQ->>TQ: Armazena ou reintenta
+    TQ-->>V: Retorna resultados
+    V->>V: Monta JSON final
+    V-->>Cliente: OK 200 { ... }
 ```
 
 #### 6. Fluxos de Administração
@@ -1107,47 +964,33 @@ sequenceDiagram
     participant DB as Banco de Dados
     participant AI as Clientes IA
 
-    A->>N: Acessa /admin/ai_config/aiclientglobalconfiguration/
+    A->>N: /admin/ai_config/aiclientglobalconfiguration/
     N->>D: GET /admin/
-    D->>DB: Lista configurações existentes
+    D->>DB: Lista configs
+    D-->>N: Exibe
 
-    alt Criar Nova Configuração
-        A->>N: Clica em "Adicionar"
-        N->>D: GET .../add/
-        D-->>N: Exibe formulário
-        A->>N: Preenche dados
-        Note over N: Nome da IA<br>Classe da API<br>URL da API<br>Chave API
-        N->>D: POST .../add/
-        D->>D: Valida dados
-        D->>AI: Testa conexão
-        alt Teste OK
-            AI-->>D: Confirma conexão
-            D->>DB: Salva configuração
-            D-->>N: Redireciona para lista
-        else Erro na Conexão
-            AI-->>D: Retorna erro
-            D-->>N: Exibe erro
-        end
-    else Editar Configuração
-        A->>N: Seleciona configuração
-        N->>D: GET .../change/
-        D->>DB: Busca detalhes
-        D-->>N: Exibe formulário
-        A->>N: Modifica dados
-        N->>D: POST .../change/
-        D->>D: Valida dados
-        D->>DB: Atualiza configuração
-    else Excluir Configuração
-        A->>N: Seleciona configuração
-        N->>D: POST .../delete/
-        D->>DB: Verifica dependências
-        alt Com Dependências
-            D-->>N: Alerta sobre tokens vinculados
-            A->>N: Confirma exclusão
-        end
-        D->>DB: Remove configuração
-        D-->>N: Redireciona para lista
+    alt Criar Config
+        A->>N: /add/
+        N->>D: GET
+        D-->>N: Formulário
+        A->>N: Preenche e submete
+        N->>D: POST
+        D->>AI: Testa conex. 
+        D->>DB: Cria config
+    else Editar
+        A->>N: /change/
+        N->>D: GET
+        D->>DB: Busca config
+        D-->>N: Formulário
+        A->>N: Submete
+        N->>D: POST
+        D->>DB: Atualiza
+    else Excluir
+        A->>N: /delete/
+        N->>D: POST
+        D->>DB: Remove config
     end
+    D-->>N: Lista atualizada
 ```
 
 ##### 6.2. Aprovação de Usuários
@@ -1159,32 +1002,27 @@ sequenceDiagram
     participant DB as Banco de Dados
     participant E as Servidor Email
 
-    A->>N: Acessa /admin/accounts/profile/
-    N->>D: GET /admin/
+    A->>N: /admin/accounts/profile/
+    N->>D: GET ...
     D->>DB: Lista perfis pendentes
-    D-->>N: Exibe lista filtrada
+    D-->>N: Mostra
 
-    alt Aprovar Usuário
-        A->>N: Marca checkbox "is_approved"
-        N->>D: POST /admin/accounts/profile/.../change/
-        D->>DB: Atualiza status
-        D->>E: Envia email de aprovação
-        E->>E: Envia notificação
-        D-->>N: Atualiza lista
-    else Rejeitar Usuário
-        A->>N: Desmarca checkbox "is_approved"
-        N->>D: POST /admin/accounts/profile/.../change/
-        D->>DB: Atualiza status
-        D->>E: Envia email de rejeição
-        E->>E: Envia notificação
-        D-->>N: Atualiza lista
-    else Excluir Usuário
-        A->>N: Seleciona usuário
-        N->>D: POST .../delete/
-        D->>DB: Remove perfil e usuário
-        D->>E: Envia notificação
-        D-->>N: Atualiza lista
+    alt Aprovar
+        A->>N: Marca is_approved=True
+        N->>D: POST ...
+        D->>DB: Salva profile
+        D->>E: Email "Conta aprovada"
+    else Reprovar
+        A->>N: Marca is_approved=False
+        N->>D: POST ...
+        D->>DB: Salva profile
+        D->>E: Email "Conta reprovada"
+    else Excluir
+        A->>N: /delete/
+        N->>D: POST
+        D->>DB: Remove user e profile
     end
+    D-->>N: Concluído
 ```
 
 ##### 6.3. Monitoramento de Uso da API
@@ -1194,36 +1032,29 @@ sequenceDiagram
     participant N as Navegador
     participant D as Django
     participant DB as Banco de Dados
-    participant C as Cache Redis
+    participant C as Cache
 
-    A->>N: Acessa painel de monitoramento
-    N->>D: GET /admin/api/monitoring/
-    
-    par Consultas Paralelas
-        D->>DB: Busca estatísticas de uso
-        D->>C: Busca métricas em cache
-        D->>DB: Busca logs de erro
-    end
-
-    D->>D: Agrega dados
+    A->>N: /api/monitoring/
+    N->>D: GET ...
+    D->>DB: Logs (APILog)
     D-->>N: Exibe dashboard
 
-    loop Monitoramento em Tempo Real
-        N->>D: Polling a cada 30s
-        D->>C: Atualiza métricas
-        D-->>N: Atualiza dados
+    loop Polling
+        N->>D: /monitoring/data
+        D->>DB: Filtro logs
+        D-->>N: JSON logs recentes
     end
 
-    alt Investigar Erro
-        A->>N: Seleciona log de erro
-        N->>D: GET .../error/<id>/
-        D->>DB: Busca detalhes
-        D-->>N: Exibe detalhes do erro
-    else Exportar Relatório
-        A->>N: Solicita relatório
-        N->>D: GET .../report/
-        D->>D: Gera relatório
-        D-->>N: Download do relatório
+    alt Detalhar erro
+        A->>N: Seleciona log
+        N->>D: GET .../<id>/
+        D->>DB: logs
+        D-->>N: Exibe stack
+    else Relatório
+        A->>N: /report/
+        N->>D: GET ...
+        D->>D: Gera PDF
+        D-->>N: Download
     end
 ```
 
@@ -1235,43 +1066,29 @@ sequenceDiagram
     participant D as Django
     participant DB as Banco de Dados
     participant FS as Sistema de Arquivos
-    participant V as Validador
 
-    A->>N: Acessa /admin/ai_config/aitrainingfile/
-    N->>D: GET /admin/
-    D->>DB: Lista arquivos
-    D-->>N: Exibe lista
+    A->>N: /admin/ai_config/aitrainingfile/
+    N->>D: GET ...
+    D->>DB: Lista AITrainingFile
+    D-->>N: Exibe
 
-    alt Revisar Arquivo
-        A->>N: Seleciona arquivo
-        N->>D: GET .../review/<id>/
+    alt Revisar arquivo
+        A->>N: Seleciona
+        N->>D: GET .../review/
         D->>FS: Lê arquivo
-        D->>V: Valida estrutura
-        alt Arquivo Válido
-            V-->>D: Retorna estatísticas
-            D-->>N: Exibe detalhes e estatísticas
-        else Arquivo Inválido
-            V-->>D: Retorna erros
-            D-->>N: Exibe problemas encontrados
-        end
-    else Aprovar Arquivo
-        A->>N: Marca como aprovado
-        N->>D: POST .../approve/<id>/
-        D->>DB: Atualiza status
-        D-->>N: Atualiza lista
-    else Excluir Arquivo
-        A->>N: Seleciona arquivo
-        N->>D: POST .../delete/<id>/
-        D->>FS: Remove arquivo físico
+        D->>D: Valida
+        D-->>N: Exibe info
+    else Aprovar
+        A->>N: Marca OK
+        N->>D: POST ...
+        D->>DB: Altera status
+    else Excluir
+        A->>N: /delete/
+        N->>D: POST
+        D->>FS: Remove arquivo
         D->>DB: Remove registro
-        D-->>N: Atualiza lista
     end
-
-    opt Backup Automático
-        Note over D,FS: Executado diariamente
-        D->>FS: Cria backup
-        D->>DB: Registra backup
-    end
+    D-->>N: Atualizado
 ```
 
 #### 7. Integração com IAs
@@ -1279,65 +1096,55 @@ sequenceDiagram
 ##### 7.1. Fluxo OpenAI
 ```mermaid
 sequenceDiagram
-    participant C as Cliente API
+    participant C as Chamador
     participant V as Views
     participant OAI as OpenAiClient
     participant API as OpenAI API
-    participant Cache as Cache Redis
+    participant Cache as Cache
 
-    C->>V: Requisição com dados
-    V->>OAI: compare(data)
-
-    OAI->>OAI: _prepare_prompts()
+    C->>V: compare(data)
+    V->>OAI: _prepare_prompts()
 
     rect rgb(0, 51, 102)
-        Note over OAI: Preparação do Contexto
-        OAI->>OAI: _render_template(prompt)
-        OAI->>OAI: Configura system_message
+    Note over OAI: Monta system/user messages
     end
 
-    OAI->>API: "client.chat.completions.create(model='gpt-3.5-turbo', messages=[...], temperature=0.7)"
-
-    alt Resposta Bem-sucedida
-        API-->>OAI: Resposta OpenAI
-        OAI->>Cache: Armazena resultado (TTL=1h)
-        OAI-->>V: Retorna resultado formatado
-    else Erro de API
-        API-->>OAI: Erro 429 (Rate Limit)
-        OAI->>OAI: Aguarda 2s
-        OAI->>API: "Retry (max 3x)"
+    OAI->>API: chat.completions.create(model, messages, ...)
+    alt Sucesso
+        API-->>OAI: {choices: [...]}
+        OAI->>Cache: Armazena (TTL=1h)
+        OAI-->>V: Retorna texto
+    else Erro
+        API-->>OAI: 429 ou outro
+        OAI->>OAI: retry 3x
+        OAI-->>V: Lança exceção c/ log
     end
 ```
 
 ##### 7.2. Fluxo Gemini
 ```mermaid
 sequenceDiagram
-    participant C as Cliente API
+    participant C as Chamador
     participant V as Views
     participant G as GeminiClient
-    participant API as Gemini API
-    participant Cache as Cache Redis
+    participant API as Gemini
+    participant Cache as Cache
 
-    C->>V: Requisição com dados
-    V->>G: compare(data)
-
-    G->>G: _prepare_prompts()
+    C->>V: compare(data)
+    V->>G: _prepare_prompts()
 
     rect rgb(0, 51, 102)
-        Note over G: Preparação do Modelo
-        G->>G: genai.configure(api_key)
-        G->>G: model = genai.GenerativeModel('gemini-pro')
+    Note over G: base_instruction -> system_instruction
     end
 
-    G->>API: "model.generate_content(contents=[prompt], generation_config={...})"
-
-    alt Resposta Bem-sucedida
-        API-->>G: Resposta Gemini
-        G->>Cache: Armazena resultado (TTL=1h)
-        G-->>V: Retorna resultado formatado
-    else Erro de Safety
-        API-->>G: BlockedPrompt
-        G-->>V: Erro: "Conteúdo bloqueado por política de segurança"
+    G->>API: models.generate_content(model, contents, config)
+    alt OK
+        API-->>G: texto
+        G->>Cache: store
+        G-->>V: Resposta
+    else Erro
+        API-->>G: Falha
+        G-->>V: Exceção
     end
 ```
 
@@ -1377,93 +1184,69 @@ sequenceDiagram
 ##### 7.4. Fluxo Azure
 ```mermaid
 sequenceDiagram
-    participant C as Cliente API
+    participant C as Chamador
     participant V as Views
     participant AZ as AzureClient
-    participant API as Azure OpenAI API
-    participant Cache as Cache Redis
+    participant API as Azure Chat
+    participant Cache as Cache
 
-    C->>V: Requisição com dados
-    V->>AZ: compare(data)
+    C->>V: compare(data)
+    V->>AZ: _prepare_prompts()
+    AZ->>API: complete(**configurations)
 
-    AZ->>AZ: _prepare_prompts()
-
-    %% Se quiser apenas uma linha com "client = AzureOpenAI(...)":
-    AZ->>AZ: "client = AzureOpenAI(azure_endpoint='...', api_key='...', api_version='2024-02-15-preview')"
-
-    AZ->>API: "client.chat.completions.create(model='gpt-4', messages=[...], temperature=0.7)"
-
-    alt Resposta Bem-sucedida
-        API-->>AZ: Resposta Azure
-        AZ->>Cache: Armazena resultado (TTL=1h)
-        AZ-->>V: Retorna resultado formatado
-    else Erro de Quota
-        API-->>AZ: QuotaExceededError
-        AZ-->>V: Erro: "Limite de uso excedido"
+    alt Resposta
+        API-->>AZ: { choices: [...] }
+        AZ->>Cache: store
+        AZ-->>V: texto
+    else Erro
+        API-->>AZ: error
+        AZ-->>V: Exceção
     end
 ```
 
 ##### 7.5. Fluxo Llama
 ```mermaid
 sequenceDiagram
-    participant C as Cliente API
+    participant C as Chamador
     participant V as Views
     participant L as LlamaClient
     participant API as Llama API
-    participant Cache as Cache Redis
+    participant Cache as Cache
 
-    C->>V: Requisição com dados
-    V->>L: compare(data)
+    C->>V: compare(data)
+    V->>L: _prepare_prompts()
+    L->>API: run(configurations)
 
-    L->>L: _prepare_prompts()
-
-    rect rgb(0, 51, 102)
-        Note over L: Configuração Llama
-        L->>L: client = LlamaAPI(api_key)
-        L->>L: Prepara requisição
-    end
-
-    L->>API: "client.run(prompt=prompt, stream=False, max_tokens=1000)"
-
-    alt Resposta Bem-sucedida
-        API-->>L: Resposta Llama
-        L->>Cache: Armazena resultado (TTL=1h)
-        L-->>V: Retorna resultado formatado
-    else Erro de Modelo
-        API-->>L: ModelNotAvailableError
-        L-->>V: Erro: "Modelo temporariamente indisponível"
+    alt OK
+        API-->>L: { choices: [...] }
+        L->>Cache: store
+        L-->>V: texto
+    else Erro
+        API-->>L: Falha
+        L-->>V: Exceção
     end
 ```
 
 ##### 7.6. Fluxo Perplexity
 ```mermaid
 sequenceDiagram
-    participant C as Cliente API
+    participant C as Chamador
     participant V as Views
     participant P as PerplexityClient
-    participant API as Perplexity API
-    participant Cache as Cache Redis
+    participant API as Perplexity
+    participant Cache as Cache
 
-    C->>V: Requisição com dados
-    V->>P: compare(data)
-    
-    P->>P: _prepare_prompts()
-    
-    rect rgb(0, 51, 102)
-        Note over P: Configuração Perplexity
-        P->>P: headers = {"Authorization": f"Bearer {api_key}"}
-        P->>P: Prepara payload
-    end
+    C->>V: compare(data)
+    V->>P: _prepare_prompts()
+    P->>API: POST /chat/completions
 
-    P->>API: POST /api/v1/chat/completions
-    
-    alt Resposta Bem-sucedida
-        API-->>P: Resposta Perplexity
-        P->>Cache: Armazena resultado (TTL=1h)
-        P-->>V: Retorna resultado formatado
-    else Erro de Autenticação
-        API-->>P: 401 Unauthorized
-        P-->>V: Erro: "Chave de API inválida"
+    alt Sucesso
+        API-->>P: {choices: [...]}
+        P->>Cache: store
+        P-->>V: texto
+    else Erro
+        API-->>P: 401 ou falha
+        P-->>V: Exceção
     end
 ```
 
@@ -1472,85 +1255,49 @@ sequenceDiagram
 ##### 8.1. Tratamento de Erros de API
 ```mermaid
 sequenceDiagram
-    participant C as Cliente API
+    participant C as Cliente
     participant V as Views
-    participant H as Error Handler
+    participant H as Handler
     participant L as Logger
-    participant M as Métricas
 
-    C->>V: Requisição com erro
-    V->>H: Captura exceção
-    
-    rect rgb(0, 51, 102)
-        Note over H: Classificação do Erro
-        H->>H: Identifica tipo de erro
-        H->>L: Registra erro detalhado
-        H->>M: Incrementa contador
-    end
-    
+    C->>V: Request com erro
+    V->>H: exception_handler(exc)
+    H->>L: logger.error(stacktrace)
     alt Erro de Validação (400)
-        H-->>V: ValidationError
-        V-->>C: Status 400 + Detalhes
+        H-->>V: 400
     else Erro de Autenticação (401)
-        H-->>V: AuthenticationError
-        V-->>C: Status 401 + Mensagem
+        H-->>V: 401
     else Erro de Permissão (403)
-        H-->>V: PermissionError
-        V-->>C: Status 403 + Mensagem
-    else Erro do Servidor (500)
-        H-->>V: ServerError
-        V-->>C: Status 500 + ID do Erro
-        H->>L: Registra stack trace
+        H-->>V: 403
+    else Erro de Servidor (500)
+        H-->>V: 500
     end
-
-    H->>M: Atualiza métricas de erro
+    V-->>C: Retorna JSON com detalhes
 ```
 
 ##### 8.2. Tratamento de Falhas de Comunicação
 ```mermaid
 sequenceDiagram
-    participant C as Cliente API
+    participant C as Cliente
     participant V as Views
-    participant IA as Cliente IA
-    participant API as API Externa
-    participant CM as Circuit Breaker
+    participant IA as IAClient
+    participant CB as CircuitBreaker
 
-    C->>V: Requisição
-    V->>CM: Verifica estado
-    
-    alt Circuit Breaker Fechado
-        CM->>IA: Permite requisição
-        
-        rect rgb(0, 51, 102)
-            Note over IA: Tentativa de Comunicação
-            IA->>API: Requisição HTTP
-            
-            alt Timeout (5s)
-                API--xIA: Sem resposta
-                IA->>CM: Registra falha
-            else Erro de Rede
-                API--xIA: ConnectionError
-                IA->>CM: Registra falha
-            else Erro de DNS
-                API--xIA: DNSError
-                IA->>CM: Registra falha
-            end
-        end
-        
-        CM->>CM: Incrementa contador de falhas
-        
-        alt Limiar Atingido (5 falhas/1min)
-            CM->>CM: Abre circuit breaker
-            CM-->>V: Erro: "Serviço indisponível"
-        end
-        
-    else Circuit Breaker Aberto
-        CM-->>V: Erro: "Serviço temporariamente indisponível"
-        
-        rect rgb(0, 51, 102)
-            Note over CM: Período de Recuperação
-            CM->>CM: Aguarda 30s
-            CM->>CM: Muda para half-open
+    C->>V: Chamada de IA
+    V->>CB: attempt_call(api_name)
+    alt Circuito Aberto
+        CB-->>V: CircuitOpenError
+        V-->>C: 503 "Service Unavailable"
+    else Circuito Fechado/Half-Open
+        V->>IA: _call_api()
+        alt Sucesso
+            IA-->>V: OK
+            V->>CB: record_success(api_name)
+            V-->>C: Resposta normal
+        else Falha
+            IA-->>V: Exceção
+            V->>CB: record_failure(api_name)
+            V-->>C: Erro
         end
     end
 ```
@@ -1558,39 +1305,37 @@ sequenceDiagram
 ##### 8.3. Timeout e Retry
 ```mermaid
 sequenceDiagram
-    participant C as Chamador (usuário/admin)
-    participant V as View/Util
+    participant C as Chamador
     participant O as OpenAiClient
-    participant API as OpenAI FineTune
+    participant API as OpenAI
+    participant T as Timer
 
-    C->>V: Solicita treinamento (train)
-    V->>O: O.train(training_file, parameters)
-
-    Note over O: Cria file JSONL c/ exemplos
-    O->>API: POST /files (upload do arquivo)
-
-    alt Falha de Upload
-        API-->>O: Erro (429 ou outro)
-        O-->>V: Lança APICommunicationError
-        V-->>C: Retorna erro
-    else Sucesso no Upload
-        API-->>O: OK, file_id
-        O->>API: POST /fine_tuning/jobs (model=self.model_name)
-        API-->>O: Retorna job (id)
-        
-        loop Checa status até concluir
-            O->>API: GET /fine_tuning/jobs/<id>
-            alt status=succeeded
-                API-->>O: Fine-tune concluído
-                O-->>V: Retorna nome do modelo final
-                V-->>C: "Modelo treinado: gpt-3.5-turbo-finetuned"
-            else status=failed
-                API-->>O: "failed"
-                O-->>V: Lança APICommunicationError
-                V-->>C: "Erro ao treinar o modelo"
-            else
-                API-->>O: "still running"
-                O->>O: Aguarda 5s
+    C->>O: train()
+    O->>API: files.upload
+    alt Falha
+        API-->>O: 429 rate-limit
+        O->>T: aguarda 2s
+        O->>API: retry
+        alt Falha final
+            O-->>C: Exceção
+        else Sucesso
+            O->>API: fine_tuning.jobs.create
+            
+        end
+    else Sucesso
+        API-->>O: file_id
+        O->>API: fine_tuning.jobs.create
+        API-->>O: job_id
+        loop Poll job status
+            O->>API: retrieve(job_id)
+            alt Succeeded
+                API-->>O: fine_tuned_model
+                O-->>C: "Treinamento OK"
+            else Failed
+                API-->>O: erro
+                O-->>C: "Falha no treinamento"
+            else Em progresso
+                O->>T: sleep(5s)
             end
         end
     end
@@ -1599,35 +1344,57 @@ sequenceDiagram
 ##### 8.4. Validação de Dados
 ```mermaid
 sequenceDiagram
-    participant C as Cliente (chamando API)
+    participant C as Cliente
     participant V as Views
-    participant P as process_request_data
-    participant F as DjangoForms/ModelForms
+    participant F as DjangoForms
+    participant L as Logger
 
-    C->>V: POST /api/v1/compare/ (JSON)
-    alt Falta 'students' ou 'instructor'
-        V-->>C: HTTP 400 {"error": "A solicitação deve conter 'students' e 'instructor'."}
-    else Estrutura básica presente
-        V->>F: Valida token e forms
-        alt Token inválido
-            F-->>V: Falha
-            V-->>C: HTTP 401 {"error":"Token inválido"}
-        else Token válido
-            V->>P: process_request_data(dados) 
-            alt Conteúdo de arquivo inválido
-                P-->>V: Lança FileProcessingError
-                V-->>C: HTTP 400 {"error":"Erro ao processar arquivo"}
-            else Tudo OK
-                V->>F: (Opcional) Valida configurações extras
-                alt Form Inválido
-                    F-->>V: Falha de form
-                    V-->>C: HTTP 400 {"error":"Formulário inválido"}
-                else Form Válido
-                    V-->>C: HTTP 200 {"students": {...resultados...}}
-                end
-            end
+    C->>V: POST /api/v1/compare
+    V->>F: validate(fields)
+    alt Falta 'instructor' ou 'students'
+        F-->>V: Erro
+        V-->>C: 400
+    else Email / Token faltando
+        F-->>V: Erro
+        V-->>C: 401
+    else Form OK
+        V->>L: logger.info
+        V-->>C: 200
+    end
+```
+
+#### 9. Fluxo de Tarrefas
+
+##### 9.1. Fluxos Celery e Tarefas de Treinamento
+```mermaid
+sequenceDiagram
+    participant Sch as Celery Scheduler
+    participant T as Celery Worker
+    participant DB as DB
+    participant AI as AI Client
+    participant S as Sistema
+
+    rect rgb(0, 51, 102)
+    Note over Sch: Beat agenda <br> update_training_status a cada 1min
+    end
+
+    Sch->>T: Tarefa: update_training_status
+    T->>DB: Busca AITraining (status=in_progress)
+    loop Para cada job
+        T->>AI: get_training_status(job_id)
+        alt Concluído
+            AI-->>T: status=success + model
+            T->>DB: training.status=completed, model_name=...
+        else Falha
+            AI-->>T: erro
+            T->>DB: training.status=failed
+        else Em Andamento
+            AI-->>T: Progresso
+            T->>DB: training.progress = ...
         end
     end
+    T-->>Sch: OK
+    Sch-->>S: Logs
 ```
 
 ---
@@ -1644,7 +1411,7 @@ Contribuições são muito bem-vindas! Para contribuir:
    git checkout -b feature/minha-feature
    ```
 3. Faça _commits_ com suas alterações, seguindo as convenções de código (PEP 8).
-4. Execute os testes (quando implementados):
+4. Execute os testes:
    ```bash
    python manage.py test
    ```
@@ -1656,20 +1423,24 @@ Contribuições são muito bem-vindas! Para contribuir:
 
 ### Testes
 
-> **Atenção:** Atualmente, não há testes implementados. Contribuições para a criação de testes unitários e de integração são muito bem-vindas!
+> **Importante:** O projeto **possui** testes implementados para diversos módulos, incluindo `accounts/`, `ai_config/` e `api/`. Os testes abrangem autenticação, views, formulários, modelos e funcionalidades principais (como o *circuit breaker* e extração de arquivos).
 
-Para executar os testes (quando disponíveis), utilize:
+Para executar todos os testes do projeto:
 ```bash
 python manage.py test
 ```
 
+> Se você desejar rodar testes de um app específico (ex.: só os testes de `accounts`):
+```bash
+python manage.py test accounts
+```
+
 ### Tecnologias Utilizadas
 
-Updated versions based on requirements.txt:
+Updated versions based on requirements.txt (exemplos):
 - **Django (v4.2.7)**: Framework web principal.
 - **Django REST Framework (v3.15.2)**: Criação dos endpoints REST.
 - **Allauth e dj-rest-auth**: Gerenciamento de autenticação e registro de usuários.
-- **Clientes de IA**: OpenAI, Azure OpenAI, Anthropic, Google Gemini, Llama, Perplexity.
 - **Docling (v2.17.0)**: Extração de texto de documentos (PDF, DOCX).
 - **python-dotenv (v1.0.0)**: Gerenciamento de variáveis de ambiente.
 - **Requests (v2.32.3)**: Realização de requisições HTTP.
@@ -1677,14 +1448,7 @@ Updated versions based on requirements.txt:
 - **Bootstrap (v5.3.2)**: Framework CSS para a interface.
 - **TinyMCE (django-tinymce v4.1.0)**: Editor de texto (opcional).
 - **Sphinx**: Geração de documentação (opcional).
-
----
-
-## Testes
-
-### Testes Unitários
-
-O projeto contém uma suíte de testes unitários organizados por módulo:
+- **Celery (última versão compatível)**: Para execução de tarefas assíncronas.
 
 ---
 
@@ -1747,3 +1511,12 @@ furnished to do so, subject to the following conditions:
 
 [O aviso de copyright acima e
 este aviso de permissão devem ser incluídos em todas as cópias ou partes significativas do Software.]
+```
+
+*(Abaixo, constam também licenças de terceiros utilizadas em `staticfiles/` do admin, como a biblioteca Select2:)*
+
+```
+=== staticfiles/admin/js/vendor/select2/LICENSE.md ===
+The MIT License (MIT)
+... (conteúdo da licença da biblioteca)
+```

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 
 from ..models import APILog
 from accounts.models import UserToken
-from core.types import APILogData, TokenMetrics, UsageMetrics
+from core.types import APILog, TokenMetrics, UsageMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def monitoring_data(request: HttpRequest) -> JsonResponse:
         logs = APILog.objects.filter(user=request.user).order_by('-timestamp')[:50]
 
     # Converte logs para o formato estruturado
-    log_data_list: List[APILogData] = []
+    log_data_list: List[APILog] = []
     for log in logs:
         log_data_list.append(log.to_log_data())
     

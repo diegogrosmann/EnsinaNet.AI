@@ -6,36 +6,12 @@ usando o docling como backend de processamento.
 
 import base64
 import logging
-from typing import Dict, Optional
+from typing import Dict
 from core.exceptions import FileProcessingError
-from api.utils.docling_doc_converter import convert_pdf_bytes_to_text, convert_word_bytes_to_text
+from core.validators import validate_document_input
+from core.utils.docling_doc_converter import convert_pdf_bytes_to_text, convert_word_bytes_to_text
 
 logger = logging.getLogger(__name__)
-
-def _validate_input(data: Optional[Dict]) -> None:
-    """Valida os dados de entrada.
-    
-    Args:
-        data: Dicionário com os dados do arquivo.
-        
-    Raises:
-        FileProcessingError: Se os dados forem inválidos.
-    """
-    if not data:
-        logger.error("Dados de instrução não fornecidos")
-        raise FileProcessingError("Dados de instrução não fornecidos")
-    
-    if not isinstance(data, dict):
-        logger.error(f"Dados em formato inválido: {type(data)}")
-        raise FileProcessingError("Dados devem ser um dicionário")
-        
-    if not data.get('name'):
-        logger.error("Nome do arquivo não fornecido")
-        raise FileProcessingError("Nome do arquivo é obrigatório")
-        
-    if not data.get('content'):
-        logger.error("Conteúdo do arquivo não fornecido")
-        raise FileProcessingError("Conteúdo do arquivo é obrigatório")
 
 def _get_file_extension(filename: str) -> str:
     """Obtém a extensão do arquivo.
@@ -61,7 +37,8 @@ def extract_text(data: Dict) -> str:
         FileProcessingError: Se houver erro no processamento.
     """
     try:
-        _validate_input(data)
+        # Valida a entrada
+        validate_document_input(data)
         
         name = data['name']
         content = data['content']
