@@ -8,7 +8,13 @@ from django.urls import path, include
 from django.urls.resolvers import URLPattern, URLResolver
 from typing import List, Union
 
-from api.views.monitoring import monitoring_dashboard, monitoring_data
+from api.views.monitoring import (
+    monitoring_dashboard, 
+    monitoring_data,
+    monitoring_stats,
+    monitoring_requests,
+    monitoring_request_details
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +24,9 @@ app_name = 'api'
 monitoring_patterns: List[Union[URLPattern, URLResolver]] = [
     path('', monitoring_dashboard, name='monitoring_dashboard'),
     path('data/', monitoring_data, name='monitoring_data'),
+    path('stats/', monitoring_stats, name='monitoring_stats'),
+    path('requests/', monitoring_requests, name='monitoring_requests'),
+    path('requests/<int:request_id>/', monitoring_request_details, name='monitoring_request_details'),
 ]
 
 # Todas as URLs da aplicação
@@ -27,6 +36,4 @@ urlpatterns: List[Union[URLPattern, URLResolver]] = [
 ]
 
 # Log das URLs registradas
-logger.debug("URLs de monitoramento registradas")
-logger.debug("URLs da API v1 registradas")
 logger.info("Todas as URLs da API inicializadas com sucesso")

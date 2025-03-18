@@ -20,12 +20,13 @@ from .ai_client import (
     edit_ai,
     delete_ai,
     ai_available_tokens,
-    ai_link_token
+    get_ai_models
 )
 
 from .token import (
     prompt_config,
     token_ai_link,
+    token_ai_toggle,
 )
 
 from .training import (
@@ -37,7 +38,7 @@ from .training import (
 )
 
 from .training_files import (
-    training_file_create,
+    training_file_form,
     training_file_upload,
     training_file_download,
     training_file_delete
@@ -54,15 +55,16 @@ __all__ = [
     'edit_ai',
     'delete_ai',
     'ai_available_tokens',
-    'ai_link_token',
+    'get_ai_models',
     'prompt_config',
     'token_ai_link',
+    'token_ai_toggle',
     'training_center',
     'training_ai',
     'training_monitor',
     'training_cancel',
     'training_delete',
-    'training_file_create',
+    'training_file_form',
     'training_file_upload',
     'training_file_download',
     'training_file_delete',

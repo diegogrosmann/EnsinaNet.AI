@@ -104,33 +104,36 @@ def process_client(
 def handle_training_capture(user_token: UserToken, ai_config: AIClientConfiguration, message: AIMessage, comparison_result: AIComparisonResponse) -> None:
     """Gerencia a captura de dados de treinamento, adicionando exemplos ao arquivo se houver captura ativa."""
     try:
-        capture = TrainingCapture.objects.get(
-            token=user_token,
-            ai_client_config=ai_config,
-            is_active=True
-        )
-
-        # Usa o timeout configurado no perfil do usuário
-        timeout_minutes = user_token.user.profile.capture_inactivity_timeout
-        if timezone.now() - capture.last_activity > timedelta(minutes=timeout_minutes):
-            logger.info(f"Captura expirada para {ai_config.ai_client.api_client_class} - Removendo...")
-            capture.delete()
-            return
-
-        training_data = capture.get_examples_collection()
-            
-        training_data.add(
-            AITrainingExample(
-                message=message,
-                response=comparison_result.response
+        try:
+            capture = TrainingCapture.objects.get(
+                token=user_token,
+                ai_client_config=ai_config,
+                is_active=True
             )
-        )
-        
-        training_data.save()
 
-        logger.info(f"Exemplo capturado para {ai_config.ai_client.api_client_class}")
-    except TrainingCapture.DoesNotExist:
-        pass
+            # Usa o timeout configurado no perfil do usuário
+            timeout_minutes = user_token.user.profile.capture_inactivity_timeout
+            if timezone.now() - capture.last_activity > timedelta(minutes=timeout_minutes):
+                logger.info(f"Captura expirada para {ai_config.ai_client.api_client_class} - Removendo...")
+                capture.delete()
+                return
+
+            capture.file_data.examples.append(
+                AITrainingExample(
+                    system_message=message.system_message,            
+                    user_message=message.user_message,
+                    response=comparison_result.response
+                )
+            )
+            
+            capture.save()
+
+            logger.info(f"Exemplo capturado para {ai_config.ai_client.api_client_class}")
+        except TrainingCapture.DoesNotExist:
+            pass
+    except Exception as e:
+        logger.error(f"Erro durante captura de treinamento para {ai_config.ai_client.api_client_class}: {str(e)}")
+        
 
 def process_request_data(data: JSONDict) -> JSONDict:
     """Processa os dados recursivamente para extrair texto de arquivos quando o campo 'type' é 'file'."""

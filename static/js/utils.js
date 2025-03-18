@@ -1,5 +1,3 @@
-/// <reference path="./types/global.d.ts" />
-
 // Configuração de AJAX para CSRF
 function getCookie(name) {
     let cookieValue = null;
@@ -163,6 +161,10 @@ function toggleTheme() {
 }
 
 function buildUrl(url, tempID, replaceID) {
+    if (!url || !tempID || replaceID === undefined) {
+        console.error('buildUrl: parâmetros inválidos', {url, tempID, replaceID});
+        return url;
+    }
     return url.replace(tempID, replaceID);
 }
 
@@ -219,6 +221,13 @@ function showTransitionLoader() {
   }
 }
 
+function hideTransitionLoader() {
+  const transLoader = document.getElementById('transitionLoader');
+  if (transLoader) {
+    transLoader.style.display = 'none';
+  }
+}
+
 // Configura o loader de transição apenas para saída do site
 function setupTransitionLoader() {
   // Removemos os eventos de cliques em links - eles não devem disparar o loader
@@ -236,8 +245,12 @@ function setupTransitionLoader() {
                           form.getAttribute('onsubmit')?.includes('ajax') ||
                           form.dataset.remote === 'true';
         
-        // Só mostrar loader se for um envio tradicional, não AJAX
-        if (!isAjaxForm && !e.defaultPrevented) {
+        // Verificar se o destino do formulário contém no_loader=true
+        const formAction = form.getAttribute('action') || '';
+        const isNoLoader = formAction.includes('no_loader=true');
+        
+        // Só mostrar loader se for um envio tradicional, não AJAX e não tiver no_loader
+        if (!isAjaxForm && !isNoLoader && !e.defaultPrevented) {
           showTransitionLoader();
         }
       });
@@ -249,6 +262,7 @@ function setupTransitionLoader() {
 document.addEventListener('DOMContentLoaded', function() {
   // Esconde o loader quando o DOM terminar de carregar
   hidePageLoader();
+  hideTransitionLoader(); // Garantir que o loader de transição também esteja escondido
   
   // Configura o loader de transição
   setupTransitionLoader();
@@ -257,14 +271,31 @@ document.addEventListener('DOMContentLoaded', function() {
 // Garantir que o loader seja escondido quando todos os recursos carregarem
 window.addEventListener('load', function() {
   hidePageLoader();
+  hideTransitionLoader();
+});
+
+// Tratar especificamente quando a página é restaurada do histórico de navegação
+window.addEventListener('pageshow', function(event) {
+  // Verificar se a página está sendo restaurada do cache
+  if (event.persisted) {
+    // Esconder todos os loaders quando voltamos usando o botão voltar
+    hidePageLoader();
+    hideTransitionLoader();
+  }
 });
 
 // Mostra o loader apenas quando o usuário realmente sai do site
 window.addEventListener('beforeunload', function(e) {
-  // Verificar se a navegação não é causada por um link interno ou AJAX
+  // Verificar se a navegação não é causada por um link interno, AJAX ou download (no_loader)
+  if (window.location.href.includes('no_loader=true')) {
+    // Não mostrar o loader para downloads
+    e.preventDefault();
+    return;
+  }
+  
   // Se for uma saída real do site, mostrar o loader
   if (!e.defaultPrevented) {
-    showPageLoader();
+    showTransitionLoader();
   }
 });
 

@@ -63,11 +63,32 @@
                                             <label class="form-label" for="{{ form.model_name.id_for_label }}">
                                                 <i class="bi bi-box me-1"></i> Nome do Modelo
                                             </label>
-                                            {{ form.model_name }}
+                                            <div class="input-group">
+                                                {{ form.model_name }}
+                                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" 
+                                                        id="modelDropdownButton" data-bs-toggle="dropdown" 
+                                                        aria-expanded="false" disabled>
+                                                    Selecionar
+                                                </button>
+                                                <ul class="dropdown-menu dropdown-menu-end w-100" id="modelsList">
+                                                    <li>
+                                                        <h6 class="dropdown-header">Selecione um Cliente IA primeiro</h6>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                            <div id="modelLoadingIndicator" class="d-none">
+                                                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                                    <span class="visually-hidden">Carregando...</span>
+                                                </div>
+                                                <small class="text-muted ms-2">Carregando modelos...</small>
+                                            </div>
                                             {% if form.model_name.errors %}
                                                 <div class="invalid-feedback d-block">{{ form.model_name.errors|join:", " }}</div>
                                             {% else %}
                                                 <small class="form-text text-muted">{{ form.model_name.help_text }}</small>
+                                                <small class="form-text text-muted d-block">
+                                                    Você pode selecionar um modelo da lista ou digitar manualmente o nome.
+                                                </small>
                                             {% endif %}
                                         </div>
                                     </div>
@@ -243,6 +264,21 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
     
+    // Adicione estilo para a barra de rolagem no dropdown de modelos e no select de cliente IA
+    const style = document.createElement('style');
+    style.textContent = `
+        #modelsList {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        #{{ form.ai_client.id_for_label }} {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    `;
+    document.head.appendChild(style);
+    
     // Detecção de mudanças não salvas
     const form = document.getElementById('aiConfigForm');
     
@@ -265,10 +301,168 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Quando o formulário for enviado, não considerar mais como mudanças não salvas
-    form.addEventListener('submit', function() {
+    // Quando o formulário for enviado, adicionar função para verificar a resposta
+    form.addEventListener('submit', function(originalEvent) {
+        originalEvent.preventDefault();
+        
+        // Resetar a flag de mudanças não salvas
         window.hasUnsavedChanges = false;
+        
+        document.querySelector('form').submit();
+
+        // Prevenir envio normal do formulário
+        return false;
     });
+    
+    // Implementação para carregamento dinâmico de modelos
+    const aiClientSelect = document.getElementById('{{ form.ai_client.id_for_label }}');
+    const modelNameInput = document.getElementById('{{ form.model_name.id_for_label }}');
+    const modelDropdownButton = document.getElementById('modelDropdownButton');
+    const modelsList = document.getElementById('modelsList');
+    const loadingIndicator = document.getElementById('modelLoadingIndicator');
+    
+    // Função para carregar os modelos disponíveis
+    function loadAvailableModels(clientId) {
+        if (!clientId) {
+            modelDropdownButton.disabled = true;
+            modelsList.innerHTML = '<li><h6 class="dropdown-header">Selecione um Cliente IA primeiro</h6></li>';
+            return;
+        }
+        
+        // Mostrar indicador de carregamento
+        loadingIndicator.classList.remove('d-none');
+        modelDropdownButton.disabled = true;
+        
+        // Limpar o campo de nome do modelo (será removido quando um novo cliente for selecionado)
+        modelNameInput.value = '';
+        
+        // Fazer a requisição AJAX
+        fetch(`{% url 'ai_config:ai_manage' %}client/${clientId}/models/`, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Esconder indicador de carregamento
+            loadingIndicator.classList.add('d-none');
+            
+            if (data.success) {
+                // Limpar lista atual
+                modelsList.innerHTML = '';
+                
+                // Verificar se temos modelos para mostrar
+                const baseModels = data.models.base || [];
+                const trainedModels = data.models.trained || [];
+                
+                if (baseModels.length === 0 && trainedModels.length === 0) {
+                    modelsList.innerHTML = '<li><h6 class="dropdown-header">Nenhum modelo disponível</h6></li>';
+                    modelDropdownButton.disabled = true;
+                    return;
+                }
+                
+                // Habilitar o botão dropdown
+                modelDropdownButton.disabled = false;
+                
+                // Adicionar modelos base
+                if (baseModels.length > 0) {
+                    modelsList.innerHTML += '<li><h6 class="dropdown-header">Modelos Base</h6></li>';
+                    baseModels.forEach(model => {
+                        const item = document.createElement('li');
+                        const link = document.createElement('a');
+                        link.className = 'dropdown-item';
+                        link.href = '#';
+                        link.textContent = model.name;
+                        link.onclick = function(e) {
+                            e.preventDefault();
+                            modelNameInput.value = model.id;
+                            markAsChanged();
+                        };
+                        item.appendChild(link);
+                        modelsList.appendChild(item);
+                    });
+                }
+                
+                // Adicionar divisor se tivermos ambos os tipos
+                if (baseModels.length > 0 && trainedModels.length > 0) {
+                    const divider = document.createElement('li');
+                    divider.innerHTML = '<hr class="dropdown-divider">';
+                    modelsList.appendChild(divider);
+                }
+                
+                // Adicionar modelos treinados do usuário
+                if (trainedModels.length > 0) {
+                    modelsList.innerHTML += '<li><h6 class="dropdown-header">Seus Modelos Treinados</h6></li>';
+                    trainedModels.forEach(model => {
+                        const item = document.createElement('li');
+                        const link = document.createElement('a');
+                        link.className = 'dropdown-item';
+                        link.href = '#';
+                        link.textContent = model.name;
+                        link.onclick = function(e) {
+                            e.preventDefault();
+                            modelNameInput.value = model.id;
+                            markAsChanged();
+                        };
+                        item.appendChild(link);
+                        modelsList.appendChild(item);
+                    });
+                }
+                
+                // Adicionar opção para entrada manual
+                const divider = document.createElement('li');
+                divider.innerHTML = '<hr class="dropdown-divider">';
+                modelsList.appendChild(divider);
+                
+                const manualItem = document.createElement('li');
+                manualItem.innerHTML = '<span class="dropdown-item-text text-muted small">Não encontrou o modelo? Digite manualmente no campo acima.</span>';
+                modelsList.appendChild(manualItem);
+                
+            } else {
+                // Em caso de erro
+                modelDropdownButton.disabled = true;
+                modelsList.innerHTML = `<li><h6 class="dropdown-header text-danger">Erro ao carregar modelos</h6></li>
+                                      <li><span class="dropdown-item-text">${data.error || 'Tente novamente ou digite o modelo manualmente'}</span></li>`;
+            }
+        })
+        .catch(error => {
+            // Esconder indicador de carregamento
+            loadingIndicator.classList.add('d-none');
+            modelDropdownButton.disabled = true;
+            modelsList.innerHTML = '<li><h6 class="dropdown-header text-danger">Erro ao carregar modelos</h6></li>' +
+                                  '<li><span class="dropdown-item-text">Tente novamente ou digite o modelo manualmente</span></li>';
+            console.error('Erro ao carregar modelos:', error);
+        });
+    }
+    
+    // Event listener para mudança na seleção de cliente IA
+    aiClientSelect.addEventListener('change', function() {
+        const clientId = this.value;
+        loadAvailableModels(clientId);
+    });
+    
+    // Carrega os modelos se um cliente já estiver selecionado
+    if (aiClientSelect.value) {
+        loadAvailableModels(aiClientSelect.value);
+    }
 });
+
+// Obter cookie CSRF
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
 </script>
 {% endblock %}

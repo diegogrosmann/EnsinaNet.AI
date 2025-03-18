@@ -6,32 +6,36 @@ arquivos de treinamento usados para treinar modelos de IA.
 """
 
 import logging
-import json
-import os
-from typing import Optional, Tuple, List, Dict
 import uuid
-import tempfile
+import os
+
+from typing import Optional
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.http import HttpRequest, HttpResponse, JsonResponse, FileResponse
-from django.core.files import File
 from django.forms import formset_factory
-from django.db import transaction
+from django.conf import settings
 
-from core.validators import validate_training_file
 from accounts.models import UserToken
-from ai_config.models import AITrainingFile, TrainingCapture, AIClientGlobalConfiguration
+from ai_config.models import AITrainingFile, TrainingCapture, AIClientConfiguration
 from ai_config.forms import (
-    TrainingExampleForm,
     AITrainingFileNameForm,
-    TrainingCaptureForm
+    TrainingCaptureForm,
+    TrainingExampleForm
+)
+from core.types import (
+    AITrainingExample, 
+    AITrainingExampleCollection, 
+    APPResponse
 )
 
 logger = logging.getLogger(__name__)
 
 @login_required
-def training_file_upload(request: HttpRequest) -> JsonResponse:
+def training_file_upload(request: HttpRequest) -> HttpResponse:
     """Processa o upload de um arquivo de treinamento.
     
     Recebe um arquivo JSON via upload, valida seu formato e o salva como
@@ -41,67 +45,102 @@ def training_file_upload(request: HttpRequest) -> JsonResponse:
         request: Objeto de requisição HTTP.
         
     Returns:
-        JsonResponse: Resposta JSON com status da operação.
+        HttpResponse: Resposta JSON se AJAX ou redirecionamento se não.
     """
     if request.method != 'POST':
-        logger.warning(f"Tentativa de acessar upload com método inválido: {request.method}")
-        return JsonResponse({'error': 'Método não permitido'}, status=405)
-    
-    try:
-        user = request.user
-        name = request.POST.get('name')
-        file = request.FILES.get('file')
-
-        logger.debug(f"Iniciando upload de arquivo de treinamento: '{name}' por {user.email}")
-
-        if not file or not name:
-            logger.warning(f"Upload de arquivo sem nome ou arquivo: nome={bool(name)}, arquivo={bool(file)}")
-            return JsonResponse({
-                'error': 'Nome do arquivo e arquivo são obrigatórios'
-            }, status=400)
-
-        # Valida o formato do arquivo
-        is_valid, error_message, _ = validate_training_file(file)
-        if not is_valid:
-            return JsonResponse({'error': error_message}, status=400)
-
-        # Gera um nome único para o arquivo
-        extension = file.name.split('.')[-1] if '.' in file.name else ''
-        unique_filename = f"{uuid.uuid4().hex[:8]}_{name}.{extension}"
-        file.name = unique_filename
-
-        # Verifica se já existe um arquivo com este nome
-        if AITrainingFile.objects.filter(user=user, name=name).exists():
-            logger.warning(f"Tentativa de criar arquivo com nome duplicado: '{name}' por {user.email}")
-            return JsonResponse({
-                'error': 'Já existe um arquivo com este nome'
-            }, status=400)
-
-        # Cria novo arquivo de treinamento
-        with transaction.atomic():
-            training_file = AITrainingFile(
-                user=user,
-                name=name,
-                file=file
-            )
-            training_file.save()
-
-        logger.info(f"Arquivo de treinamento '{name}' (ID: {training_file.id}) enviado com sucesso por {user.email}")
-        return JsonResponse({
-            'success': True,
-            'message': 'Arquivo enviado com sucesso',
-            'id': training_file.id,
-            'name': training_file.name
-        })
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse(APPResponse(
+                success=False,
+                error="Método não suportado"
+            ).to_dict())
+        else:
+            messages.error('Método não suportado!')
+            return redirect('ai_config:training_center')
         
+    try:
+        # Verifica se há um arquivo na requisição
+        if 'file' not in request.FILES:
+            messages.error(request, f"Nenhum arquivo enviado.")
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse(APPResponse(
+                    success=False,
+                    error="Nenhum arquivo enviado"
+                ).to_dict())
+            else:
+                messages.error('Nenhum arquivo enviado!')
+                return redirect('ai_config:training_center')
+            
+        uploaded_file = request.FILES['file']
+        file_name = request.POST.get('name', uploaded_file.name)
+        
+        # Verificar se já existe um arquivo com o mesmo nome
+        existing_file = AITrainingFile.objects.filter(
+            user=request.user,
+            name=file_name
+        ).first()
+        
+        if existing_file:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse(APPResponse(
+                    success=False,
+                    error="Já existe um arquivo com esse nome. Por favor, escolha outro."
+                ).to_dict())
+            else:
+                messages.error('Já existe um arquivo com esse nome. Por favor, escolha outro.')
+                return redirect('ai_config:training_center')
+
+        try:
+            # Criar novo arquivo
+            training_file = AITrainingFile.objects.create(
+                user=request.user,
+                name=file_name,
+                file_data=uploaded_file.file
+            )
+
+            logger.info(f"Novo arquivo de treinamento criado: {file_name}")
+            messages.success(request, f"Arquivo '{file_name}' criado com sucesso.")
+            
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse(APPResponse(
+                    success=True,
+                    data={"message": f"Arquivo {file_name} criado com sucesso", "id": training_file.id}
+                ).to_dict())
+            else:
+                return redirect('ai_config:training_center')
+                
+        except ValidationError as e:            
+            logger.error(f"Erro na validação do arquivo: {e}")
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse(APPResponse(
+                    success=False,
+                    error=f"Arquivo inválido."
+                ).to_dict())
+            else:
+                messages.error('Arquivo inválido!')
+                return redirect('ai_config:training_center')
+        except Exception as e:
+            logger.error(f"Erro ao processar arquivo: {e}")
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse(APPResponse(
+                    success=False,
+                    error=f"Erro ao processar arquivo."
+                ).to_dict())
+            else:
+                messages.error('Erro ao processar arquivo!')
+                return redirect('ai_config:training_center')
+            
     except Exception as e:
-        logger.exception(f"Erro no upload do arquivo de treinamento: {str(e)}")
-        return JsonResponse({
-            'error': 'Erro ao processar o upload do arquivo'
-        }, status=500)
+        logger.error(f"Erro ao processar upload de arquivo: {e}")
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse(APPResponse(
+                success=False,
+                error=f"Erro ao processar o arquivo: {e}"
+            ).to_dict())
+        else:
+            return redirect('ai_config:training_center')
 
 @login_required
-def training_file_create(request: HttpRequest, file_id: Optional[int] = None) -> HttpResponse:
+def training_file_form(request: HttpRequest, file_id: Optional[int] = None) -> HttpResponse:
     """Cria ou edita um arquivo de treinamento usando o editor web.
     
     Permite criar um novo arquivo de treinamento ou editar um existente
@@ -114,154 +153,110 @@ def training_file_create(request: HttpRequest, file_id: Optional[int] = None) ->
     Returns:
         HttpResponse: Página renderizada ou redirecionamento.
     """
-    user = request.user
     training_file = None
-    initial_data = []
-    initial_name = ''
+    initial_examples = []
+
+    # Verifica se estamos editando um arquivo existente
+    if file_id:
+        training_file = get_object_or_404(AITrainingFile, id=file_id, user=request.user)
+        
+        try:
+            examples = training_file.file_data
+            initial_examples = examples.to_dict()
+        except Exception as e:
+            logger.error(f"Erro ao carregar dados do arquivo {file_id}: {e}")
+            messages.error(request, f"Erro ao carregar o arquivo: {e}")
+            return redirect('ai_config:training_center')
     
-    try:
-        # Se file_id for fornecido, estamos editando um arquivo existente
-        if file_id:
-            training_file = get_object_or_404(AITrainingFile, id=file_id, user=user)
-            initial_name = training_file.name
-            logger.debug(f"Editando arquivo de treinamento existente: '{initial_name}' (ID: {file_id})")
-            
+    # Prepara o formulário
+    formset_class = formset_factory(TrainingExampleForm, can_delete=True, extra=0 if file_id else 1)
+
+    # Processar o formulário
+    if request.method == 'POST':
+        
+        # Carrega dados do POST
+        name_form = AITrainingFileNameForm(request.POST, prefix='name')
+        example_formset = formset_class(request.POST, prefix='form')
+        
+        if name_form.is_valid() and example_formset.is_valid():
             try:
-                with training_file.file.open('r') as f:
-                    is_valid, error_message, data = validate_training_file(f)
-                    if not is_valid:
-                        logger.warning(f"Arquivo '{initial_name}' com formato inválido: {error_message}")
-                        messages.error(request, f'Arquivo inválido: {error_message}')
-                        return redirect('ai_config:training_center')
-                    initial_data = data
-            except Exception as e:
-                logger.exception(f"Erro ao abrir arquivo de treinamento '{initial_name}' (ID: {file_id}): {e}")
-                messages.error(request, 'Erro ao abrir arquivo.')
-                return redirect('ai_config:training_center')
-        else:
-            logger.debug(f"Criando novo arquivo de treinamento para {user.email}")
-        
-        # Configura os formulários necessários
-        formset_class = formset_factory(TrainingExampleForm, can_delete=True, extra=0 if file_id else 1)
-        name_form = AITrainingFileNameForm(initial={'name': initial_name} if file_id else None, prefix='name')
-        formset = formset_class(initial=initial_data, prefix='form')
-        
-        # Processar submissão do formulário
-        if request.method == 'POST':
-            name_form = AITrainingFileNameForm(request.POST, prefix='name')
-            formset = formset_class(request.POST, prefix='form')
-            
-            if name_form.is_valid() and formset.is_valid():
-                name = name_form.cleaned_data['name']
+                # Preparar a coleção de exemplos
                 examples = []
-                
-                # Processar exemplos do formulário
-                for form in formset:
-                    if form.is_valid() and form.cleaned_data and not form.cleaned_data.get('DELETE', False):
-                        examples.append({
-                            'system_message': form.cleaned_data.get('system_message', '').strip(),
-                            'user_message': form.cleaned_data.get('user_message', '').strip(),
-                            'response': form.cleaned_data.get('response', '').strip()
+                for form in example_formset:
+                    if form.cleaned_data and not form.cleaned_data.get('DELETE', False):
+                        examples.append(AITrainingExample(
+                            system_message=form.cleaned_data.get('system_message', ''),
+                            user_message=form.cleaned_data.get('user_message'),
+                            response=form.cleaned_data.get('response')
+                        ))
+                new_name = name_form.cleaned_data['name']
+                temp_training_files = AITrainingFile.objects.filter(
+                        user=request.user, 
+                        name=new_name
+                    )
+
+                # Criar ou atualizar o arquivo
+                if training_file:
+
+                    # Verificar se já existe um arquivo com esse nome, mas ID diferente
+                    if temp_training_files.exclude(id=training_file.id).exists():
+                        messages.error(request, "Já existe outro arquivo com esse nome. Escolha outro nome.")
+                        return render(request, 'training/file_form.html', {
+                            'name_form': name_form,
+                            'formset': example_formset,
+                            'training_file': training_file,
+                            'active_capture': TrainingCapture.objects.filter(token__user=request.user, is_active=True).first(),
+                            'capture_form': TrainingCaptureForm(user=request.user)
                         })
-                
-                # Validar que há pelo menos um exemplo
-                if not examples:
-                    logger.warning(f"Tentativa de salvar arquivo de treinamento sem exemplos: '{name}'")
-                    messages.error(request, 'Adicione pelo menos um exemplo.')
-                    context = {
-                        'formset': formset,
-                        'name_form': name_form,
-                        'capture_form': TrainingCaptureForm(prefix='capture', user=user)
-                    }
-                    return render(request, 'training/file_form.html', context)
-                
-                # Criar arquivo temporário com os exemplos
-                with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.json') as temp_file:
-                    json.dump(examples, temp_file, ensure_ascii=False, indent=4)
-                    temp_file_path = temp_file.name
-                
-                try:
-                    if training_file:
-                        # Atualizar arquivo existente
-                        existing_file_name = os.path.basename(training_file.file.name)
-                        with open(temp_file_path, 'rb') as f:
-                            training_file.file.save(existing_file_name, File(f), save=True)
-                        
-                        if training_file.name != name:
-                            training_file.name = name
-                            training_file.save()
-                            
-                        logger.info(f"Arquivo de treinamento '{name}' (ID: {file_id}) atualizado por {user.email}")
-                        messages.success(request, 'Arquivo atualizado com sucesso!')
-                        
-                        if 'save_and_continue' in request.POST:
-                            return redirect('ai_config:training_file_edit', file_id=training_file.id)
-                    else:
-                        # Verificar se já existe um arquivo com este nome
-                        if AITrainingFile.objects.filter(user=user, name=name).exists():
-                            logger.warning(f"Tentativa de criar arquivo com nome duplicado: '{name}' por {user.email}")
-                            messages.error(request, 'Já existe um arquivo com este nome.')
-                            os.remove(temp_file_path)
-                            return render(request, 'training/file_form.html', {
-                                'formset': formset,
-                                'name_form': name_form,
-                                'capture_form': TrainingCaptureForm(prefix='capture', user=user)
-                            })
-                        
-                        # Criar novo arquivo
-                        unique_filename = f"{name}_{uuid.uuid4().hex}.json"
-                        with open(temp_file_path, 'rb') as f:
-                            with transaction.atomic():
-                                training_file = AITrainingFile.objects.create(
-                                    user=user,
-                                    name=name,
-                                    file=File(f, name=unique_filename)
-                                )
-                        
-                        logger.info(f"Novo arquivo de treinamento '{name}' (ID: {training_file.id}) criado por {user.email}")
-                        messages.success(request, 'Arquivo criado com sucesso!')
-                        
-                        if 'save_and_continue' in request.POST:
-                            return redirect('ai_config:training_file_edit', file_id=training_file.id)
                     
+                    training_file.name = new_name
+                    training_file.file_data.examples = examples
+                    training_file.save()
+                    messages.success(request, f"Arquivo '{training_file.name}' atualizado com sucesso.")
+                else:
+
+                    # Verificar se já existe um arquivo com esse nome
+                    if temp_training_files.exists():
+                        messages.error(request, "Já existe um arquivo com esse nome. Escolha outro nome.")
+                        return render(request, 'training/file_form.html', {
+                            'name_form': name_form,
+                            'formset': example_formset,
+                            'training_file': None,
+                            'active_capture': TrainingCapture.objects.filter(token__user=request.user, is_active=True).first(),
+                            'capture_form': TrainingCaptureForm(user=request.user)
+                        })
+                    
+                    # Criar o arquivo
+                    training_file = AITrainingFile.objects.create(
+                        user=request.user,
+                        name=new_name,
+                        file_data=AITrainingExampleCollection(examples=examples)
+                    )
+                    logger.info(f"Novo arquivo de treinamento criado: {new_name}")
+                    messages.success(request, f"Arquivo '{new_name}' criado com sucesso.")
+                
+                # Verificar para onde redirecionar
+                if 'save_and_continue' in request.POST:
+                    return redirect('ai_config:training_file_edit', file_id=training_file.id)
+                else:
                     return redirect('ai_config:training_center')
-                except Exception as e:
-                    logger.exception(f"Erro ao salvar arquivo de treinamento '{name}': {e}")
-                    messages.error(request, f'Erro ao salvar arquivo: {str(e)}')
-                finally:
-                    # Limpeza do arquivo temporário
-                    if os.path.exists(temp_file_path):
-                        os.remove(temp_file_path)
-            else:
-                if not name_form.is_valid():
-                    logger.warning(f"Formulário de nome inválido: {name_form.errors}")
-                    messages.error(request, 'Corrija os erros no campo de nome.')
-                if not formset.is_valid():
-                    logger.warning(f"Formulário de exemplos inválido")
-                    messages.error(request, 'Corrija os erros nos exemplos.')
-        
-        # Configuração da captura ativa
-        active_capture = TrainingCapture.objects.filter(token__user=user, is_active=True).first()
-        if active_capture and active_capture.is_active:
-            active_capture.save()  # Atualiza last_activity
-            capture_form = TrainingCaptureForm(instance=active_capture, prefix='capture', user=user)
-            logger.debug(f"Captura ativa encontrada para {user.email}")
-        else:
-            capture_form = TrainingCaptureForm(prefix='capture', user=user)
-        
-        context = {
-            'formset': formset,
-            'name_form': name_form,
-            'training_file': training_file,
-            'capture_form': capture_form,
-            'active_capture': active_capture,
-        }
-        
-        return render(request, 'training/file_form.html', context)
-    except Exception as e:
-        logger.exception(f"Erro ao processar criação/edição de arquivo de treinamento: {e}")
-        messages.error(request, f'Ocorreu um erro: {str(e)}')
-        return redirect('ai_config:training_center')
+                    
+            except Exception as e:
+                logger.error(f"Erro ao salvar arquivo de treinamento: {e}")
+                messages.error(request, f"Erro ao salvar arquivo: {e}")
+
+    else:
+        # Para GET
+        name_form = AITrainingFileNameForm(initial={'name': training_file.name} if file_id else None, prefix='name')
+        example_formset = formset_class(initial=initial_examples, prefix='form')
+
+    return render(request, 'training/file_form.html', {
+        'name_form': name_form,
+        'formset': example_formset,
+        'training_file': training_file,
+        'active_capture': TrainingCapture.objects.filter(token__user=request.user, is_active=True).first(),
+        'capture_form': TrainingCaptureForm(user=request.user)
+    })
 
 @login_required
 def training_file_download(request: HttpRequest, file_id: int) -> HttpResponse:
@@ -274,27 +269,36 @@ def training_file_download(request: HttpRequest, file_id: int) -> HttpResponse:
     Returns:
         HttpResponse: Resposta com o arquivo para download.
     """
-    user = request.user
     try:
-        training_file = get_object_or_404(AITrainingFile, id=file_id, user=user)
-        logger.info(f"Download do arquivo '{training_file.name}' (ID: {file_id}) por {user.email}")
+        # Obter o arquivo verificando se pertence ao usuário
+        training_file = get_object_or_404(AITrainingFile, id=file_id, user=request.user)
         
-        # Criar nome do arquivo para download (usar apenas o nome original sem o UUID)
+        # Preparar o nome do arquivo para download
         filename = f"{training_file.name}.json"
         
+        # Verificar se o arquivo existe fisicamente
+        file_path = training_file.get_full_path()
+        if not os.path.exists(file_path):
+            logger.error(f"Arquivo físico não encontrado: {file_path}")
+            messages.error(request, "Arquivo não encontrado no servidor.")
+            return redirect('ai_config:training_center')
+        
+        # Retornar o arquivo como resposta para download
         response = FileResponse(
-            training_file.file.open('rb'), 
-            as_attachment=True, 
+            open(file_path, 'rb'),
+            as_attachment=True,
             filename=filename
         )
+        
+        # Adicionar cabeçalhos para informar que não queremos mostrar o loading
+        response['X-No-Transition-Loader'] = 'true'
+        
+        logger.info(f"Download do arquivo {file_id} realizado pelo usuário {request.user.id}")
         return response
-    except AITrainingFile.DoesNotExist:
-        logger.warning(f"Tentativa de download de arquivo inexistente (ID: {file_id}) por {user.email}")
-        messages.error(request, 'Arquivo não encontrado.')
-        return redirect('ai_config:training_center')
+        
     except Exception as e:
-        logger.exception(f"Erro ao fazer download do arquivo {file_id}: {e}")
-        messages.error(request, f'Erro ao baixar arquivo: {str(e)}')
+        logger.error(f"Erro ao processar download do arquivo {file_id}: {e}")
+        messages.error(request, f"Erro ao baixar arquivo: {e}")
         return redirect('ai_config:training_center')
 
 @login_required
@@ -306,40 +310,172 @@ def training_file_delete(request: HttpRequest, file_id: int) -> HttpResponse:
         file_id: ID do arquivo de treinamento.
         
     Returns:
-        JsonResponse: Resposta JSON com status da operação.
+        HttpResponse: Redirecionamento ou resposta JSON.
     """
-    user = request.user
-    
-    if request.method != 'POST':
-        logger.warning(f"Tentativa de exclusão com método não permitido: {request.method}")
-        return JsonResponse({'error': 'Método não permitido'}, status=405)
+    if request.method != 'POST' and request.method != 'DELETE':
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse(APPResponse(
+                success=False,
+                error="Método não suportado"
+            ).to_dict())
+        else:
+            messages.error(request, "Método não suportado")
+            return redirect('ai_config:training_center')
     
     try:
-        training_file = get_object_or_404(AITrainingFile, id=file_id, user=user)
+        # Obter o arquivo
+        training_file = get_object_or_404(AITrainingFile, id=file_id, user=request.user)
+        
+        # Armazenar nome para mensagem
         file_name = training_file.name
         
-        try:
-            # Salvar caminho do arquivo antes de deletar o modelo
-            file_path = training_file.file.path if training_file.file else None
+        # Excluir o arquivo
+        training_file.delete()
+        logger.info(f"Arquivo de treinamento {file_id} excluído pelo usuário {request.user.id}")
+        
+        # Retornar resposta adequada
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse(APPResponse(
+                success=True,
+                data={"message": f"Arquivo '{file_name}' excluído com sucesso"}
+            ).to_dict())
+        else:
+            messages.success(request, f"Arquivo '{file_name}' excluído com sucesso.")
+            return redirect('ai_config:training_center')
             
-            with transaction.atomic():
-                # Excluir o arquivo físico primeiro
-                if file_path and os.path.exists(file_path):
-                    training_file.file.delete()
-                    logger.debug(f"Arquivo físico deletado: {file_path}")
-                
-                # Em seguida, excluir o registro do banco de dados
-                training_file.delete()
-            
-            logger.info(f"Arquivo de treinamento '{file_name}' (ID: {file_id}) excluído por {user.email}")
-            messages.success(request, 'Arquivo excluído com sucesso!')
-            return JsonResponse({'success': True, 'message': 'Arquivo excluído com sucesso!'})
-        except Exception as e:
-            logger.exception(f"Erro ao excluir arquivo '{file_name}' (ID: {file_id}): {e}")
-            return JsonResponse({'error': f'Erro ao excluir arquivo: {str(e)}'}, status=500)
-    except AITrainingFile.DoesNotExist:
-        logger.warning(f"Tentativa de exclusão de arquivo inexistente (ID: {file_id}) por {user.email}")
-        return JsonResponse({'error': 'Arquivo não encontrado.'}, status=404)
     except Exception as e:
-        logger.exception(f"Erro ao processar exclusão do arquivo {file_id}: {e}")
-        return JsonResponse({'error': f'Erro ao excluir arquivo: {str(e)}'}, status=500)
+        logger.error(f"Erro ao excluir arquivo de treinamento: {e}")
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse(APPResponse(
+                success=False,
+                error=f"Erro ao excluir arquivo: {e}"
+            ).to_dict())
+        else:
+            messages.error(request, f"Erro ao excluir arquivo: {e}")
+            return redirect('ai_config:training_center')
+
+@login_required
+def capture_toggle(request: HttpRequest) -> JsonResponse:
+    """Ativa ou desativa a captura de exemplos de treinamento.
+    
+    Args:
+        request: Objeto de requisição HTTP.
+        
+    Returns:
+        JsonResponse: Status da operação.
+    """
+    if request.method != 'POST':
+        return JsonResponse(APPResponse(
+            success=False,
+            error="Método não suportado"
+        ).to_dict())
+    
+    action = request.POST.get('action')
+    
+    if action == 'activate':
+        token_id = request.POST.get('token')
+        ai_config_id = request.POST.get('ai_client_config')
+        
+        if not token_id or not ai_config_id:
+            return JsonResponse(APPResponse(
+                success=False,
+                error="Token e configuração de IA são obrigatórios"
+            ).to_dict())
+            
+        try:
+            # Buscar objetos
+            token = get_object_or_404(UserToken, id=token_id, user=request.user)
+            ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id, user=request.user)
+            
+            # Desativar qualquer captura existente
+            TrainingCapture.objects.filter(token__user=request.user, is_active=True).update(is_active=False)
+            
+            # Buscar ou criar nova captura
+            capture, created = TrainingCapture.objects.get_or_create(
+                token=token,
+                defaults={
+                    'ai_client_config': ai_config,
+                    'is_active': True
+                }
+            )
+            
+            if not created:
+                # Atualizar configuração existente
+                capture.ai_client_config = ai_config
+                capture.is_active = True
+                capture.save()
+            
+            return JsonResponse(APPResponse(
+                success=True,
+                data={"message": "Captura desativada com sucesso"}
+            ).to_dict())
+            
+        except Exception as e:
+            logger.error(f"Erro ao desativar captura: {e}")
+            return JsonResponse(APPResponse(
+                success=False,
+                error=f"Erro ao desativar captura: {e}"
+            ).to_dict())
+    else:
+        return JsonResponse(APPResponse(
+            success=False,
+            error="Ação inválida"
+        ).to_dict())
+
+@login_required
+def capture_get_examples(request: HttpRequest, token_id: uuid.UUID, ai_id: int) -> JsonResponse:
+    """Obtém exemplos capturados para um token e IA específicos.
+    
+    Args:
+        request: Objeto de requisição HTTP.
+        token_id: ID do token.
+        ai_id: ID da configuração da IA.
+        
+    Returns:
+        JsonResponse: Lista de exemplos capturados.
+    """
+    if request.method != 'GET':
+        return JsonResponse(APPResponse(
+            success=False,
+            error="Método não suportado"
+        ).to_dict())
+    
+    try:
+        # Verificar se a captura existe e está ativa
+        capture = get_object_or_404(
+            TrainingCapture, 
+            token__id=token_id,
+            token__user=request.user,
+            ai_client_config__id=ai_id,
+            is_active=True
+        )
+        
+        # Obter exemplos da coleção
+        examples_collection = capture.get_examples_collection()
+        examples = []
+        
+        # Converter exemplos para dicionários e resetar a coleção
+        if examples_collection and examples_collection.examples:
+            for example in examples_collection.examples:
+                examples.append({
+                    "system_message": example.system_message,
+                    "user_message": example.user_message,
+                    "response": example.response
+                })
+            
+            # Limpar exemplos após recuperá-los
+            examples_collection.examples = []
+            examples_collection.save()
+        
+        return JsonResponse(APPResponse(
+            success=True,
+            data={"examples": examples}
+        ).to_dict())
+        
+    except Exception as e:
+        logger.error(f"Erro ao obter exemplos capturados: {e}")
+        return JsonResponse(APPResponse(
+            success=False,
+            error=f"Erro ao obter exemplos: {e}"
+        ).to_dict())

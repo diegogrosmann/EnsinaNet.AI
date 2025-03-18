@@ -3,31 +3,28 @@
 Define os modelos de dados para configurações de IA, arquivos de treinamento,
 e gerenciamento de modelos treinados.
 """
-from datetime import time
+import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 import uuid
-from django.db import models, transaction
+from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.conf import settings
 from django.dispatch import receiver
 
 from accounts.models import UserToken
-from core.exceptions import APICommunicationError
-from core.validators import validate_training_file_content
 
 from api.utils.clientsIA import AI_CLIENT_MAPPING, APIClient
 from core.types import (
     AIConfig,
     AIPromptConfig,
-    AISingleComparisonData, 
-    AITrainingFileData, 
     AITrainingStatus,
     AITrainingResponse,
     AITrainingExampleCollection,
 )
+from core.types.training import AITrainingCaptureConfig, AITrainingFileData
 
 from .storage import OverwriteStorage
 from django.db.models.signals import post_delete
@@ -182,11 +179,7 @@ class AIClientConfiguration(models.Model):
             if token:
                 try:
                     token_config = token.ai_configuration 
-                    prompt_config = AIPromptConfig(
-                        base_instruction=token_config.base_instruction,
-                        prompt=token_config.prompt,
-                        response=token_config.responses
-                    )
+                    prompt_config = token_config.to_prompt_config()  # Usar o método mais específico
                 except Exception as e:
                     logger.warning(f"Erro ao obter configuração de prompt para token {token.id}: {e}")
 
@@ -204,21 +197,21 @@ class AIClientConfiguration(models.Model):
             logger.error(f"Erro ao criar cliente de API: {e}")
             raise
 
-class AITrainingFilesManager(AIClientGlobalConfiguration):
-    """Proxy model para gerenciar arquivos de treinamento."""
+class AIFilesManager(AIClientGlobalConfiguration):
+    """Proxy model para gerenciar arquivos de IA."""
     
     class Meta:
         proxy = True
-        verbose_name = "Arquivos de Treinamento na IA"
-        verbose_name_plural = "Arquivos de Treinamento na IA"
+        verbose_name = "Arquivos na IA"
+        verbose_name_plural = "Arquivos na IA"
 
-class AITrainedModelsManager(AIClientGlobalConfiguration):
-    """Proxy model para gerenciar modelos treinados."""
+class AIModelsManager(AIClientGlobalConfiguration):
+    """Proxy model para gerenciar modelos."""
     
     class Meta:
         proxy = True
-        verbose_name = "Gerenciador de Modelos Treinados"
-        verbose_name_plural = "Gerenciador de Modelos Treinados"
+        verbose_name = "Gerenciador de Modelos das IAs"
+        verbose_name_plural = "Gerenciador de Modelos"
 
 class AIClientTokenConfig(models.Model):
     """Configuração de associação entre Token e IA.
@@ -258,32 +251,142 @@ class AITrainingFile(models.Model):
     Attributes:
         user: Usuário que carregou o arquivo.
         name (str): Nome do arquivo.
-        file: Campo de arquivo.
+        file_path: Caminho do arquivo gerado internamente.
         uploaded_at: Data e hora do upload.
+        file_data: Coleção de arquivos de treinamento (não persistido no BD).
     """
+    def _generate_file_path(self) -> str:
+        """Gera um caminho único para o arquivo."""
+        unique_id = uuid.uuid4().hex
+        filename = f"{unique_id}.json"
+        return os.path.join('training_files', filename)
+    
+    def get_full_path(self) -> str:
+        """Retorna o caminho completo do arquivo."""
+        return os.path.join(settings.MEDIA_ROOT, self.file_path)
+        
+    def __init__(self, *args, **kwargs):
+        """Inicializa o arquivo de treinamento.
+        
+        Gera um caminho de arquivo único se não for fornecido.
+        
+        Args:
+            *args: Argumentos posicionais para a classe pai.
+            **kwargs: Argumentos nomeados, incluindo user, name e file_path.
+        """
+        super().__init__(*args, **kwargs)
+
+        if not self.file_path:
+            self.file_path = self._generate_file_path()
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='training_files')
     name = models.CharField(max_length=255)
-    file = models.FileField(upload_to='training_files/', storage=OverwriteStorage())
+    file_path = models.CharField(max_length=255, editable=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
-
-    def file_exists(self) -> bool:
-        """Verifica se o arquivo físico existe.
+    
+    # Atributo privado para cache do file_data
+    _file_data_cache = None
+    
+    @property
+    def file_data(self) -> AITrainingExampleCollection:
+        """Retorna uma coleção de arquivos de treinamento baseada no arquivo.
         
         Returns:
-            bool: True se o arquivo existir, False caso contrário
+            AITrainingExampleCollection: Coleção de arquivos de treinamento
         """
-        return self.file and self.file.storage.exists(self.file.name)
+        if self._file_data_cache is None and self.file_path:
+            self._file_data_cache = AITrainingExampleCollection.create(self.get_full_path())
+        return self._file_data_cache
+    
+    @file_data.setter
+    def file_data(self, value):
+        """Define a coleção de arquivos de treinamento.
+        
+        Args:
+            value: Nova coleção de arquivos de treinamento
+        """
+        if isinstance(value, AITrainingExampleCollection):
+            self._file_data_cache = value
+        else:
+            self._file_data_cache = AITrainingExampleCollection.create(value)
 
-    def get_file_size(self) -> int:
-        """Retorna o tamanho do arquivo se ele existir.
+    def to_data(self) -> 'AITrainingFileData':
+        """Converte o modelo em uma estrutura de dados AITrainingFileData.
+        
+        Esta função transfere os dados do modelo para um objeto de tipo de dados,
+        possibilitando sua utilização em contextos onde a estrutura do Django
+        não está disponível ou não é adequada.
         
         Returns:
-            int: Tamanho do arquivo em bytes ou 0 se não existir
+            AITrainingFileData: Objeto com os dados estruturados do arquivo
+        """        
+        # Obtém o tamanho do arquivo se ele existir
+        file_size = 0
+        full_path = self.get_full_path()
+        if os.path.exists(full_path):
+            file_size = os.path.getsize(full_path)
+            
+        return AITrainingFileData(
+            id=self.id,
+            user_id=self.user.id,
+            name=self.name,
+            uploaded_at=self.uploaded_at,
+            file=self.file_data,
+            file_size=file_size,
+            example_count=len(self.file_data.examples) if self.file_data else 0
+        )
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Salva o arquivo após validação.
+        
+        Usa um arquivo temporário para garantir a integridade dos dados.
+        Se a operação falhar, o arquivo original permanece intacto.
+        
+        Args:
+            *args: Argumentos posicionais.
+            **kwargs: Argumentos nomeados.
+            
+        Raises:
+            ValidationError: Se a validação falhar.
         """
+        # Verifica se há exemplos antes de permitir o salvamento
+        if self._file_data_cache and len(self._file_data_cache.examples) == 0:
+            raise ValidationError("Não é possível salvar um arquivo de treinamento sem exemplos.")
+        
+        # Caminho para o arquivo temporário
+        full_path = self.get_full_path()
+        temp_path = f"{full_path}.new"
+        file_existed = os.path.exists(full_path)
+        
         try:
-            return self.file.size if self.file_exists() else 0
-        except Exception:
-            return 0
+            # Salvar primeiro em um arquivo temporário
+            if self._file_data_cache:
+                with open(temp_path, 'w', encoding='utf-8') as f:
+                    json.dump(self._file_data_cache.to_dict(), f, indent=2)
+            
+            # Salvar o modelo no banco de dados
+            super().save(*args, **kwargs)
+            
+            # Se chegou até aqui, a operação foi bem-sucedida
+            # Agora podemos substituir o arquivo original pelo novo
+            if os.path.exists(temp_path):
+                if file_existed:
+                    # Se o arquivo já existia, substitui-o pelo novo
+                    os.replace(temp_path, full_path)
+                else:
+                    # Se é um arquivo novo, apenas mover para o lugar correto
+                    os.rename(temp_path, full_path)
+                
+        except Exception as e:
+            # Em caso de erro, remove apenas o arquivo temporário
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass  # Ignora erros na limpeza do arquivo temporário
+            
+            logger.error(f"Erro ao salvar arquivo de treinamento: {e}")
+            raise  # Re-lança a exceção para tratamento superior
 
     def __str__(self) -> str:
         """Retorna a representação em string do arquivo de treinamento.
@@ -298,30 +401,16 @@ class AITrainingFile(models.Model):
         verbose_name = "Arquivo de Treinamento"
         verbose_name_plural = "Arquivos de Treinamento"
 
-    def get_file_data(self) -> AITrainingFileData:
-        """Retorna os dados do arquivo no formato estruturado.
-        
-        Returns:
-            AITrainingFileData: Dados estruturados do arquivo
-        """
-        return AITrainingFileData(
-            id=self.id,
-            user_id=self.user_id,
-            name=self.name,
-            file_path=self.file.path,
-            uploaded_at=self.uploaded_at,
-            file_size=self.get_file_size()
-        )
-
 @receiver(post_delete, sender=AITrainingFile)
 def delete_file_on_model_delete(sender: Any, instance: 'AITrainingFile', **kwargs: Any) -> None:
     """Remove o arquivo físico quando o modelo é excluído."""
-    if instance.file:
+    if instance.file_path:
         try:
-            if os.path.isfile(instance.file.path):
-                os.remove(instance.file.path)
+            full_path = instance.get_full_path()
+            if os.path.isfile(full_path):
+                os.remove(full_path)
         except Exception as e:
-            logger.error(f"Erro ao remover arquivo {instance.file.path}: {e}")
+            logger.error(f"Erro ao remover arquivo {instance.file_path}: {e}")
 
 class TokenAIConfiguration(models.Model):
     """Configuração de prompt para um token de IA.
@@ -363,11 +452,15 @@ class TokenAIConfiguration(models.Model):
         if not self.prompt:
             raise ValidationError("O prompt é obrigatório")
 
-    def to_dict(self) -> AIPromptConfig:
-        """Converte a configuração para um dicionário adequado."""
+    def to_prompt_config(self) -> AIPromptConfig:
+        """Converte a configuração para um objeto de configuração de prompt.
+        
+        Returns:
+            AIPromptConfig: Configuração de prompt estruturada
+        """
         return AIPromptConfig(
-            base_instruction=self.base_instruction or "",
-            prompt=self.prompt,
+            system_message=self.base_instruction or "",
+            user_message=self.prompt,
             response=self.responses or ""
         )
 
@@ -382,23 +475,156 @@ class TrainingCapture(models.Model):
         create_at: Data de criação.
         last_activity: Última atividade registrada.
     """
-    def _generate_temp_filename(instance: 'TrainingCapture', filename: str) -> str:
-        """Gera um nome único para o arquivo temporário."""
-        ext = filename.split('.')[-1] if '.' in filename else 'tmp'
-        filename = f"{uuid.uuid4()}.{ext}"
+    
+    def _generate_file_path(self) -> str:
+        """Gera um caminho único para o arquivo temporário."""
+        unique_id = uuid.uuid4().hex
+        filename = f"capture_{unique_id}.json"
         return os.path.join('training_captures', filename)
+    
+    @classmethod
+    def _generate_temp_filename(cls, instance, filename):
+        """Gera um caminho único para o arquivo temporário.
+        
+        Este método é usado por migrações existentes e deve ser mantido
+        para compatibilidade com o banco de dados.
+        
+        Args:
+            instance: Instância do modelo TrainingCapture.
+            filename: Nome original do arquivo enviado.
+            
+        Returns:
+            str: Caminho de destino para o arquivo.
+        """
+        if instance and hasattr(instance, 'token') and instance.token:
+            token_id = instance.token.id
+        else:
+            token_id = "unknown"
+            
+        unique_id = uuid.uuid4().hex
+        filename = f"capture_{token_id}_{unique_id}.json"
+        return os.path.join('training_captures', filename)
+    
+    def get_full_path(self) -> str:
+        """Retorna o caminho completo do arquivo temporário."""
+        return os.path.join(settings.MEDIA_ROOT, self.temp_file)
 
     token = models.ForeignKey(UserToken, related_name='training_captures', on_delete=models.CASCADE)
     ai_client_config = models.ForeignKey('AIClientConfiguration', on_delete=models.CASCADE) 
     is_active = models.BooleanField(default=False)
-    temp_file = models.FileField(
-        upload_to=_generate_temp_filename,
-        null=True,
-        blank=True,
-        storage=OverwriteStorage()
-    )
+    temp_file = models.CharField(max_length=255, editable=False)
     create_at = models.DateTimeField(auto_now_add=True)
     last_activity = models.DateTimeField(auto_now=True)
+
+    # Atributo privado para cache do file_data
+    _file_data_cache = None
+    
+    def __init__(self, *args, **kwargs):
+        """Inicializa a captura de treinamento.
+        
+        Gera um caminho de arquivo único se não for fornecido.
+        
+        Args:
+            *args: Argumentos posicionais para a classe pai.
+            **kwargs: Argumentos nomeados.
+        """
+        super().__init__(*args, **kwargs)
+
+        if not self.temp_file:
+            self.temp_file = self._generate_file_path()
+    
+    @property
+    def file_data(self) -> AITrainingExampleCollection:
+        """Retorna uma coleção de exemplos de treinamento baseada no arquivo temporário.
+        
+        Returns:
+            AITrainingExampleCollection: Coleção de exemplos de treinamento
+        """
+        if self._file_data_cache is None and self.temp_file:
+            full_path = self.get_full_path()
+            if os.path.exists(full_path):
+                self._file_data_cache = AITrainingExampleCollection.create(full_path)
+            else:
+                self._file_data_cache = AITrainingExampleCollection()
+        return self._file_data_cache
+    
+    @file_data.setter
+    def file_data(self, value):
+        """Define a coleção de exemplos de treinamento.
+        
+        Args:
+            value: Nova coleção de exemplos de treinamento
+        """
+        if isinstance(value, AITrainingExampleCollection):
+            self._file_data_cache = value
+        else:
+            self._file_data_cache = AITrainingExampleCollection.create(value)
+
+    def to_data(self) -> 'AITrainingCaptureConfig':
+        """Converte o modelo em uma estrutura de dados AITrainingCaptureConfig.
+        
+        Esta função transfere os dados do modelo para um objeto de tipo de dados,
+        possibilitando sua utilização em contextos onde a estrutura do Django
+        não está disponível ou não é adequada.
+        
+        Returns:
+            AITrainingCaptureConfig: Objeto com os dados estruturados da captura
+        """        
+        return AITrainingCaptureConfig(
+            id=self.id,
+            token_id=self.token.id,
+            ai_client_config_id=self.ai_client_config.id,
+            is_active=self.is_active,
+            file=self.file_data,
+            create_at=self.create_at,
+            last_activity=self.last_activity
+        )
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Salva a captura após validação.
+        
+        Usa um arquivo temporário para garantir a integridade dos dados.
+        Se a operação falhar, o arquivo original permanece intacto.
+        
+        Args:
+            *args: Argumentos posicionais.
+            **kwargs: Argumentos nomeados.
+        """
+        # Caminho para o arquivo temporário
+        full_path = self.get_full_path()
+        temp_path = f"{full_path}.new"
+        file_existed = os.path.exists(full_path)
+        
+        try:
+            # Salvar primeiro em um arquivo temporário
+            if self._file_data_cache:
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                with open(temp_path, 'w', encoding='utf-8') as f:
+                    json.dump(self._file_data_cache.to_dict(), f, indent=2)
+            
+            # Salvar o modelo no banco de dados
+            super().save(*args, **kwargs)
+            
+            # Se chegou até aqui, a operação foi bem-sucedida
+            # Agora podemos substituir o arquivo original pelo novo
+            if os.path.exists(temp_path):
+                if file_existed:
+                    # Se o arquivo já existia, substitui-o pelo novo
+                    os.replace(temp_path, full_path)
+                else:
+                    # Se é um arquivo novo, apenas mover para o lugar correto
+                    os.rename(temp_path, full_path)
+                
+        except Exception as e:
+            # Em caso de erro, remove apenas o arquivo temporário
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass  # Ignora erros na limpeza do arquivo temporário
+            
+            logger.error(f"Erro ao salvar captura de treinamento: {e}")
+            raise  # Re-lança a exceção para tratamento superior
 
     class Meta:
         unique_together = ('token',)
@@ -414,42 +640,17 @@ class TrainingCapture(models.Model):
         status = "Ativa" if self.is_active else "Inativa"
         return f"Captura {status} para {self.ai_client_config} do Token {self.token.name}"
 
-    def save(self, *args: Any, **kwargs: Any) -> None:
-        """Garante que um arquivo temporário seja criado se não existir."""
-        if not self.temp_file:
-            temp_filename = self._generate_temp_filename("capture.tmp")
-            # Cria um arquivo vazio
-            with open(os.path.join(settings.MEDIA_ROOT, temp_filename), 'w') as f:
-                f.write('')
-            self.temp_file.name = temp_filename
-        super().save(*args, **kwargs)
-
-    def get_examples_collection(self) -> AITrainingExampleCollection:
-        """Retorna uma coleção de exemplos de treinamento baseada no arquivo temporário.
-        
-        Se o arquivo temporário não existir, ele será criado automaticamente.
-        A coleção retornada permite gerenciar (carregar, adicionar, remover, salvar) exemplos
-        de treinamento associados a esta captura.
-        
-        Returns:
-            AITrainingExampleCollection: Coleção de exemplos de treinamento
-        """
-        if not self.temp_file:
-            self.save()
-        
-        # Obter o caminho completo para o arquivo
-        file_path = self.temp_file.path
-        
-        # Criar e retornar a coleção de exemplos
-        return AITrainingExampleCollection(file_path=file_path)
-
 @receiver(post_delete, sender=TrainingCapture)
 def delete_temp_file_on_delete(sender: Any, instance: 'TrainingCapture', **kwargs: Any) -> None:
     """Remove o arquivo temporário quando a captura for deletada."""
     if instance.temp_file:
-        if instance.temp_file.storage.exists(instance.temp_file.name):
-            instance.temp_file.delete(save=False)
-            logger.debug(f"Arquivo temporário deletado: {instance.temp_file.name}")
+        full_path = instance.get_full_path()
+        if os.path.exists(full_path):
+            try:
+                os.remove(full_path)
+                logger.debug(f"Arquivo temporário deletado: {full_path}")
+            except Exception as e:
+                logger.error(f"Erro ao deletar arquivo temporário: {e}")
 
 class DoclingConfiguration(models.Model):
     """Configuração específica para o Docling.

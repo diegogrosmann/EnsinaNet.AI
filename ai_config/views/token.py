@@ -5,6 +5,7 @@ Este módulo contém funções para gerenciar configurações de prompt
 e vinculação de tokens com clientes de IA.
 """
 
+import json
 import logging
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
@@ -15,6 +16,7 @@ from django.db import transaction
 from accounts.models import UserToken
 from ai_config.models import TokenAIConfiguration, AIClientConfiguration, AIClientTokenConfig
 from ai_config.forms import TokenAIConfigurationForm
+from core.types import APPResponse
 
 logger = logging.getLogger(__name__)
 
@@ -57,19 +59,38 @@ def prompt_config(request: HttpRequest, token_id: str) -> HttpResponse:
                         logger.info(f"Configurações TokenAI atualizadas para token '{token.name}' (ID: {token_id})")
                         
                         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                            return JsonResponse({'status': 'success', 'message': 'Configurações salvas com sucesso!'})
+                            response = APPResponse(
+                                success=True,
+                                data={'message': 'Configurações salvas com sucesso!'}
+                            )
+                            return JsonResponse(response.to_dict())
                         
                         messages.success(request, 'Configurações TokenAI atualizadas com sucesso!')
                         return redirect('accounts:token_config', token_id=token.id)
                     except Exception as e:
                         logger.exception(f"Erro ao salvar TokenAIConfiguration para token {token_id}: {e}")
+                        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                            response = APPResponse(
+                                success=False,
+                                error=f'Erro ao salvar as configurações: {str(e)}'
+                            )
+                            return JsonResponse(response.to_dict(), status=500)
                         messages.error(request, f'Erro ao salvar as configurações TokenAI: {str(e)}')
             else:
                 logger.warning(f"Formulário TokenAI inválido para token {token_id}: {form.errors}")
-                if 'prompt' in form.errors:
-                    messages.error(request, 'O campo Prompt é obrigatório.')
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    errors = {field: str(error) for field, error in form.errors.items()}
+                    response = APPResponse(
+                        success=False,
+                        error='Corrija os erros no formulário',
+                        data={'errors': errors}
+                    )
+                    return JsonResponse(response.to_dict(), status=400)
                 else:
-                    messages.error(request, 'Corrija os erros no formulário TokenAI.')
+                    if 'prompt' in form.errors:
+                        messages.error(request, 'O campo Prompt é obrigatório.')
+                    else:
+                        messages.error(request, 'Corrija os erros no formulário TokenAI.')
         else:
             form = TokenAIConfigurationForm(instance=token_ai_config, user=user)
             logger.debug(f"Exibindo configuração TokenAI para token '{token.name}' (ID: {token_id})")
@@ -78,10 +99,22 @@ def prompt_config(request: HttpRequest, token_id: str) -> HttpResponse:
         return render(request, 'token/prompt_config.html', context)
     except UserToken.DoesNotExist:
         logger.warning(f"Tentativa de acessar configuração TokenAI para token inexistente: {token_id}")
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            response = APPResponse(
+                success=False,
+                error='Token não encontrado'
+            )
+            return JsonResponse(response.to_dict(), status=404)
         messages.error(request, 'Token não encontrado.')
         return redirect('accounts:tokens_manage')
     except Exception as e:
         logger.exception(f"Erro ao acessar configuração TokenAI para token {token_id}: {e}")
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            response = APPResponse(
+                success=False,
+                error='Ocorreu um erro ao processar a requisição'
+            )
+            return JsonResponse(response.to_dict(), status=500)
         messages.error(request, 'Ocorreu um erro ao carregar a configuração. Tente novamente mais tarde.')
         return redirect('accounts:tokens_manage')
 
@@ -122,56 +155,6 @@ def token_ai_link(request: HttpRequest, token_id: str) -> HttpResponse:
             if client_id not in unique_clients:
                 unique_clients[client_id] = client_name
         
-        if request.method == 'POST':
-            # Processar as alterações nas vinculações - com suporte para AJAX single toggle
-            enabled_ais = request.POST.getlist('enabled_ai')
-            disable_ais = request.POST.getlist('disable_ai')
-            is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-            
-            try:
-                
-                with transaction.atomic():
-                    # Para requisições AJAX de um único toggle
-                    if is_ajax:
-                        # Identificar a IA que está sendo manipulada
-                        toggled_ai_id = None
-                        
-                        # Verificar se temos uma IA no ai_configs (caso de ativação)
-                        for enabled_ai in enabled_ais:
-                            # Atualizar ou criar a configuração
-                            AIClientTokenConfig.objects.update_or_create(
-                                token=token,
-                                ai_config_id=enabled_ai,
-                                defaults={'enabled': True}
-                            )
-                            logger.info(f"IA {enabled_ai} ativada para token '{token.name}'")
-
-                        for disable_ai in disable_ais:
-                            # Desativar a configuração
-                            AIClientTokenConfig.objects.update_or_create(
-                                token=token,
-                                ai_config_id=disable_ai,
-                                defaults={'enabled': False}
-                            )
-                            logger.info(f"IA {toggled_ai_id} desativada para token '{token.name}'")
-                    
-                        return JsonResponse({'status': 'success'})
-                    
-            except ValueError as e:
-                logger.error(f"Erro de validação ao atualizar vinculações para token {token_id}: {e}")
-                if not is_ajax:
-                    messages.error(request, 'Formato de dados inválido.')
-                    return redirect('ai_config:token_ai_link', token_id=token.id)
-                else:
-                    return JsonResponse({'status': 'error', 'message': 'Formato de dados inválido'}, status=400)
-            except Exception as e:
-                logger.exception(f"Erro ao atualizar vinculações de IA para token {token_id}: {e}")
-                if not is_ajax:
-                    messages.error(request, 'Ocorreu um erro ao salvar as vinculações de IA.')
-                    return redirect('ai_config:token_ai_link', token_id=token.id)
-                else:
-                    return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
-        
         context = {
             'token': token,
             'ai_configs': user_ai_configs,
@@ -189,3 +172,116 @@ def token_ai_link(request: HttpRequest, token_id: str) -> HttpResponse:
         logger.exception(f"Erro ao acessar vinculação de IA para token {token_id}: {e}")
         messages.error(request, 'Ocorreu um erro ao carregar as configurações de vinculação.')
         return redirect('accounts:tokens_manage')
+
+@login_required
+def token_ai_toggle(request: HttpRequest) -> JsonResponse:
+    """Processa ativação/desativação em massa de IAs para múltiplos tokens.
+    
+    Recebe um payload JSON com a estrutura:
+    {
+        'token_id1': {
+            'ai_id1': True,
+            'ai_id2': False,
+            ...
+        },
+        'token_id2': {
+            'ai_id1': True,
+            'ai_id2': False,
+            ...
+        }
+    }
+    
+    Args:
+        request: Requisição HTTP com payload JSON.
+        
+    Returns:
+        JsonResponse: Resposta com status de sucesso ou erro.
+    """
+    user = request.user
+    
+    if request.method != 'POST':
+        response = APPResponse(
+            success=False,
+            error='Método não permitido'
+        )
+        return JsonResponse(response.to_dict(), status=405)
+    
+    try:
+        data = json.loads(request.body)
+        
+        if not isinstance(data, dict):
+            raise ValueError("Formato de dados inválido. Esperado um objeto JSON.")
+        
+        results = {}
+        errors = []
+        
+        with transaction.atomic():
+            for token_id, ai_configs in data.items():
+                try:
+                    # Verificar se o token pertence ao usuário
+                    token = get_object_or_404(UserToken, id=token_id, user=user)
+                    
+                    # Processar cada configuração de IA para este token
+                    token_results = {}
+                    for ai_id, enable in ai_configs.items():
+                        try:
+                            # Verificar se a configuração de IA pertence ao usuário
+                            ai_config = get_object_or_404(AIClientConfiguration, id=ai_id, user=user)
+                            
+                            # Atualizar ou criar a configuração
+                            config, created = AIClientTokenConfig.objects.update_or_create(
+                                token=token,
+                                ai_config=ai_config,
+                                defaults={'enabled': enable}
+                            )
+                            
+                            action = "ativada" if enable else "desativada"
+                            logger.info(f"IA {ai_id} {action} para token '{token.name}' (ID: {token_id})")
+                            token_results[ai_id] = True
+                            
+                        except Exception as ai_error:
+                            token_results[ai_id] = False
+                            logger.error(f"Erro ao configurar IA {ai_id} para token {token_id}: {ai_error}")
+                            errors.append(f"Erro ao configurar IA {ai_id} para token {token_id}: {str(ai_error)}")
+                    
+                    results[token_id] = token_results
+                    
+                except Exception as token_error:
+                    results[token_id] = False
+                    logger.error(f"Erro ao processar token {token_id}: {token_error}")
+                    errors.append(f"Erro ao processar token {token_id}: {str(token_error)}")
+        
+        response_data = {
+            'results': results
+        }
+        
+        if errors:
+            response = APPResponse(
+                success=len(errors) == 0,
+                data=response_data,
+                error=errors[0] if errors else None,
+                errors=errors
+            )
+            return JsonResponse(response.to_dict(), status=207)  # 207 Multi-Status
+        
+        response = APPResponse(
+            success=True,
+            data=response_data
+        )
+        return JsonResponse(response.to_dict())
+        
+    except json.JSONDecodeError:
+        logger.error("Erro ao decodificar JSON na requisição")
+        response = APPResponse(
+            success=False,
+            error='Formato de dados inválido. JSON malformado.'
+        )
+        return JsonResponse(response.to_dict(), status=400)
+        
+    except Exception as e:
+        logger.exception(f"Erro ao processar configuração em massa: {e}")
+        response = APPResponse(
+            success=False,
+            error=f'Erro ao processar a requisição: {str(e)}'
+        )
+        return JsonResponse(response.to_dict(), status=500)

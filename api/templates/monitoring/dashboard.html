@@ -6,614 +6,638 @@
     <div class="bs-component">
         <!-- Card Principal -->
         <div class="card border-primary mb-3">
-            <!-- Header do Card -->
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                 <h2 class="card-title mb-0">
-                    <i class="bi bi-graph-up me-2"></i>
-                    Painel de Monitoramento da API
+                    <i class="bi bi-graph-up me-2"></i>Dashboard de Monitoramento
                 </h2>
-                <div class="ms-auto">
-                    <span class="badge bg-info" id="autoUpdateBadge">
-                        <i class="bi bi-arrow-repeat me-1"></i>
-                        Atualização: <span id="countdown">30</span>s
-                    </span>
-                    <button id="refreshButton" class="btn btn-outline-secondary btn-sm ms-2">
-                        <i class="bi bi-arrow-clockwise"></i> Atualizar
+                <div>
+                    <button id="refresh-btn" class="btn btn-light">
+                        <i class="bi bi-arrow-repeat me-1"></i>Atualizar
                     </button>
                 </div>
             </div>
 
-            <!-- Corpo do Card -->
             <div class="card-body">
-                <p class="text-muted mb-4">
-                    {% if user.is_staff %}
-                    <span class="badge bg-success">Modo Admin: Visualizando todos os logs</span>
-                    {% else %}
-                    <span class="badge bg-info">Visualizando apenas seus logs</span>
-                    {% endif %}
-                </p>
-
-                <!-- Filtros e Controles -->
-                <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
-                    <!-- Controles à esquerda -->
-                    <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
-                        <button class="btn btn-sm btn-outline-primary toggle-filters" type="button" aria-expanded="true" aria-controls="filterControls">
-                            <i class="bi bi-funnel me-1"></i>Filtros
-                            <i class="bi bi-chevron-down ms-1"></i>
-                        </button>
-                        
-                        <!-- Informação de paginação -->
-                        <div class="text-muted d-none d-sm-block">
-                            Mostrando <span id="paginationFrom">1</span> a <span id="paginationTo">10</span> de <span id="paginationTotal">0</span>
+                <!-- Indicadores principais -->
+                <div class="row mb-4">
+                    <div class="col-md-3 mb-3 mb-md-0">
+                        <div class="card bg-light h-100">
+                            <div class="card-body text-center">
+                                <h3 class="display-4" id="total-requests">0</h3>
+                                <p class="lead mb-0">Requisições Totais</p>
+                            </div>
                         </div>
                     </div>
-                    
-                    <!-- Controles à direita -->
-                    <div class="input-group input-group-sm" style="width: auto; max-width: 200px;">
-                        <span class="input-group-text">Itens por página</span>
-                        <select id="itemsPerPage" class="form-select form-select-sm">
-                            <option value="5">5</option>
-                            <option value="10" selected>10</option>
-                            <option value="25">25</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                        </select>
+                    <div class="col-md-3 mb-3 mb-md-0">
+                        <div class="card bg-success text-white h-100">
+                            <div class="card-body text-center">
+                                <h3 class="display-4" id="success-count">0</h3>
+                                <p class="lead mb-0">Sucesso</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3 mb-md-0">
+                        <div class="card bg-danger text-white h-100">
+                            <div class="card-body text-center">
+                                <h3 class="display-4" id="error-count">0</h3>
+                                <p class="lead mb-0">Erros</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3 mb-md-0">
+                        <div class="card bg-info text-white h-100">
+                            <div class="card-body text-center">
+                                <h3 class="display-4" id="avg-time">0ms</h3>
+                                <p class="lead mb-0">Tempo Médio</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Filtros Expandidos -->
-                <div class="card bg-light mb-3" id="filterControls">
+                <!-- Filtros -->
+                <div class="card bg-light mb-4">
                     <div class="card-body">
-                        <div class="row g-3">
-                            <!-- Filtro por Path -->
-                            <div class="col-12 col-md-4">
-                                <label for="filterPath" class="form-label">Caminho (path)</label>
-                                <input type="text" id="filterPath" class="form-control form-control-sm filter" placeholder="Filtrar por caminho...">
-                            </div>
-                            
-                            <!-- Filtro por Método -->
-                            <div class="col-12 col-md-4">
-                                <label for="filterMethod" class="form-label">Método HTTP</label>
-                                <select id="filterMethod" class="form-select form-select-sm filter">
-                                    <option value="">Todos os métodos</option>
-                                    <option value="GET">GET</option>
-                                    <option value="POST">POST</option>
-                                    <option value="PUT">PUT</option>
-                                    <option value="DELETE">DELETE</option>
-                                    <option value="PATCH">PATCH</option>
+                        <div class="row align-items-end">
+                            <div class="col-md-4 mb-3 mb-md-0">
+                                <label for="filter-token" class="form-label">Token</label>
+                                <select id="filter-token" class="form-select">
+                                    <option value="">Todos os tokens</option>
                                 </select>
                             </div>
-                            
-                            <!-- Filtro por Status -->
-                            <div class="col-12 col-md-4">
-                                <label for="filterStatus" class="form-label">Status HTTP</label>
-                                <input type="text" id="filterStatus" class="form-control form-control-sm filter" placeholder="Ex: 200, 404, 500...">
+                            <div class="col-md-3 mb-3 mb-md-0">
+                                <label for="filter-date-start" class="form-label">Data Inicial</label>
+                                <input type="date" id="filter-date-start" class="form-control">
+                            </div>
+                            <div class="col-md-3 mb-3 mb-md-0">
+                                <label for="filter-date-end" class="form-label">Data Final</label>
+                                <input type="date" id="filter-date-end" class="form-control">
+                            </div>
+                            <div class="col-md-2 text-md-end">
+                                <button id="apply-filters" class="btn btn-primary w-100">
+                                    <i class="bi bi-funnel me-1"></i>Filtrar
+                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Tabela Responsiva -->
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th scope="col" class="sortable" data-sort-key="id">
-                                    ID
-                                    <i class="sort-icon bi bi-sort-numeric-down"></i>
-                                </th>
-                                <th scope="col" class="sortable" data-sort-key="token">
-                                    Token
-                                    <i class="sort-icon bi bi-sort-alpha-down"></i>
-                                </th>
-                                <th scope="col" class="sortable" data-sort-key="path">
-                                    Path
-                                    <i class="sort-icon bi bi-sort-alpha-down"></i>
-                                </th>
-                                <th scope="col" class="sortable" data-sort-key="method">
-                                    Método
-                                    <i class="sort-icon bi bi-sort-alpha-down"></i>
-                                </th>
-                                <th scope="col" class="sortable" data-sort-key="status">
-                                    Status
-                                    <i class="sort-icon bi bi-sort-numeric-down"></i>
-                                </th>
-                                <th scope="col" class="sortable" data-sort-key="time">
-                                    Tempo (s)
-                                    <i class="sort-icon bi bi-sort-numeric-down"></i>
-                                </th>
-                                <th scope="col" class="sortable active-sort" data-sort-key="timestamp">
-                                    Data/Hora
-                                    <i class="sort-icon bi bi-sort-numeric-down-alt"></i>
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody id="logsTable">
-                            <!-- Linhas serão preenchidas dinamicamente via JavaScript -->
-                        </tbody>
-                    </table>
+                <!-- Gráficos -->
+                <div class="row mb-4">
+                    <div class="col-md-6 mb-3 mb-md-0">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">Requisições por Hora</h5>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="requests-chart" height="250"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3 mb-md-0">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">Taxa de Sucesso</h5>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="success-rate-chart" height="250"></canvas>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                
-                <!-- Paginação -->
-                <nav aria-label="Paginação da tabela de logs" class="mt-3">
-                    <ul class="pagination pagination-sm justify-content-center" id="pagination">
-                        <li class="page-item disabled">
-                            <a class="page-link" href="#" id="prevPage" aria-label="Página anterior">
-                                <span aria-hidden="true">&laquo;</span>
-                            </a>
-                        </li>
-                        <li class="page-item">
-                            <a class="page-link" href="#" id="nextPage" aria-label="Próxima página">
-                                <span aria-hidden="true">&raquo;</span>
-                            </a>
-                        </li>
-                    </ul>
-                </nav>
+
+                <!-- Tabela de Últimas Requisições -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Últimas Requisições</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped" id="requests-table">
+                                <thead>
+                                    <tr>
+                                        <th>Data/Hora</th>
+                                        <th>Token</th>
+                                        <th>Endpoint</th>
+                                        <th>Status</th>
+                                        <th>Tempo</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Dados serão carregados via AJAX -->
+                                    <tr class="placeholder-row">
+                                        <td colspan="6" class="text-center">Carregando dados...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="d-flex justify-content-between mt-3">
+                            <div id="table-info">Mostrando 0 de 0 registros</div>
+                            <nav aria-label="Paginação">
+                                <ul class="pagination pagination-sm" id="pagination">
+                                    <li class="page-item disabled">
+                                        <a class="page-link" href="#" aria-label="Anterior" id="prev-page">
+                                            <span aria-hidden="true">&laquo;</span>
+                                        </a>
+                                    </li>
+                                    <li class="page-item disabled">
+                                        <a class="page-link" href="#" aria-label="Próximo" id="next-page">
+                                            <span aria-hidden="true">&raquo;</span>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </nav>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Modal de Detalhes -->
+<div class="modal fade" id="detailsModal" tabindex="-1" aria-labelledby="detailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detailsModalLabel">Detalhes da Requisição</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h6>Informações Gerais</h6>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <strong>ID:</strong> <span id="detail-id"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Data/Hora:</strong> <span id="detail-timestamp"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Token:</strong> <span id="detail-token"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Endpoint:</strong> <span id="detail-endpoint"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Status:</strong> <span id="detail-status"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Tempo:</strong> <span id="detail-time"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <h6>Headers</h6>
+                    <div class="bg-light p-2 rounded">
+                        <pre id="detail-headers" class="mb-0"></pre>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <h6>Request</h6>
+                    <div class="bg-light p-2 rounded">
+                        <pre id="detail-request" class="mb-0"></pre>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <h6>Response</h6>
+                    <div class="bg-light p-2 rounded">
+                        <pre id="detail-response" class="mb-0"></pre>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Variáveis globais
-        let allLogs = [];
-        let filteredLogs = [];
-        let currentPage = 1;
-        let itemsPerPage = parseInt(document.getElementById('itemsPerPage').value) || 10;
-        let sortKey = 'timestamp';
-        let sortDirection = 'desc'; // Começar ordenando por data decrescente
-        let updateTimer = null;
-        let countdownInterval = null;
-        let secondsLeft = 30;
-        
-        // Função para buscar dados da API e atualizar a tabela
-        function fetchData() {
-            // Usar URL nomeada com namespace
-            fetch("{% url 'api:monitoring_data' %}")
-                .then(response => response.json())
-                .then(data => {
-                    allLogs = data.logs.map(log => {
-                        // Adicionar valores para ordenação
-                        return {
-                            ...log,
-                            _timestampSort: new Date(log.timestamp).getTime()
-                        };
-                    });
-                    document.getElementById('paginationTotal').textContent = allLogs.length;
-                    
-                    // Aplicar filtros e ordenação nos dados recém-obtidos
-                    applyFiltersAndSort();
-                })
-                .catch(err => {
-                    console.error("Erro ao carregar dados de monitoramento:", err);
-                    showMessage('danger', 'Erro ao carregar dados do servidor');
-                })
-                .finally(() => {
-                    // Reiniciar contador de atualização
-                    resetCountdown();
-                });
-        }
-        
-        // Função para aplicar filtros e ordenação
-        function applyFiltersAndSort() {
-            const pathFilter = document.getElementById('filterPath')?.value.toLowerCase() || '';
-            const methodFilter = document.getElementById('filterMethod')?.value || '';
-            const statusFilter = document.getElementById('filterStatus')?.value || '';
-            
-            filteredLogs = allLogs.filter(log => {
-                const pathMatch = log.path.toLowerCase().includes(pathFilter);
-                const methodMatch = !methodFilter || log.method === methodFilter;
-                const statusMatch = !statusFilter || log.status_code.toString().includes(statusFilter);
-                
-                return pathMatch && methodMatch && statusMatch;
-            });
-            
-            // Ordenar logs
-            sortLogs();
-            
-            // Atualizar paginação e renderizar tabela
-            updatePagination();
-            renderTable();
-        }
-        
-        // Função para ordenar logs
-        function sortLogs() {
-            filteredLogs.sort((a, b) => {
-                let aValue, bValue;
-                
-                switch (sortKey) {
-                    case 'timestamp':
-                        aValue = a._timestampSort;
-                        bValue = b._timestampSort;
-                        break;
-                    case 'id':
-                        aValue = parseInt(a.id);
-                        bValue = parseInt(b.id);
-                        break;
-                    case 'status':
-                        aValue = parseInt(a.status_code);
-                        bValue = parseInt(b.status_code);
-                        break;
-                    case 'time':
-                        aValue = parseFloat(a.execution_time);
-                        bValue = parseFloat(b.execution_time);
-                        break;
-                    case 'token':
-                        aValue = a.user_token || '';
-                        bValue = a.user_token || '';
-                        break;
-                    default:
-                        aValue = a[sortKey];
-                        bValue = b[sortKey];
+document.addEventListener('DOMContentLoaded', function() {
+    // Estado global
+    let currentPage = 1;
+    let totalPages = 1;
+    let filters = {
+        token: '',
+        startDate: '',
+        endDate: ''
+    };
+    
+    // Charts
+    let requestsChart = null;
+    let successRateChart = null;
+
+    // Inicializar os gráficos
+    function initCharts() {
+        // Configuração para o gráfico de requisições por hora
+        const requestsCtx = document.getElementById('requests-chart').getContext('2d');
+        requestsChart = new Chart(requestsCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Total de Requisições',
+                    data: [],
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    tension: 0.1,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        }
+                    }
                 }
-                
-                // Para ordem ascendente
-                if (sortDirection === 'asc') {
-                    if (aValue < bValue) return -1;
-                    if (aValue > bValue) return 1;
-                    return 0;
-                } 
-                // Para ordem descendente
-                else {
-                    if (aValue > bValue) return -1;
-                    if (aValue < bValue) return 1;
-                    return 0;
+            }
+        });
+
+        // Configuração para o gráfico de taxa de sucesso
+        const successRateCtx = document.getElementById('success-rate-chart').getContext('2d');
+        successRateChart = new Chart(successRateCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Sucesso', 'Erro'],
+                datasets: [{
+                    data: [0, 0],
+                    backgroundColor: [
+                        'rgba(40, 167, 69, 0.8)',
+                        'rgba(220, 53, 69, 0.8)'
+                    ],
+                    borderColor: [
+                        'rgba(40, 167, 69, 1)',
+                        'rgba(220, 53, 69, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
                 }
-            });
-            
-            // Atualizar ícones de ordenação
-            updateSortIcons();
-        }
+            }
+        });
+    }
+
+    // Carregar todos os dados
+    function loadDashboardData() {
+        showLoading();
         
-        // Atualizar ícones das colunas de ordenação
-        function updateSortIcons() {
-            document.querySelectorAll('th.sortable').forEach(th => {
-                const icon = th.querySelector('.sort-icon');
-                if (!icon) return;
-                
-                const key = th.getAttribute('data-sort-key');
-                
-                th.classList.remove('active-sort');
-                icon.classList.remove(
-                    'bi-sort-alpha-down', 
-                    'bi-sort-alpha-up',
-                    'bi-sort-numeric-down', 
-                    'bi-sort-numeric-up',
-                    'bi-sort-alpha-down-alt',
-                    'bi-sort-alpha-up-alt',
-                    'bi-sort-numeric-down-alt',
-                    'bi-sort-numeric-up-alt'
-                );
-                
-                if (key === sortKey) {
-                    th.classList.add('active-sort');
-                    const isNumeric = ['id', 'status', 'time', 'timestamp'].includes(key);
+        // Construir a string de consulta com os filtros
+        const params = new URLSearchParams();
+        if (filters.token) params.append('token', filters.token);
+        if (filters.startDate) params.append('start_date', filters.startDate);
+        if (filters.endDate) params.append('end_date', filters.endDate);
+        
+        const queryString = params.toString() ? `?${params.toString()}` : '';
+        
+        fetch(`/api/monitoring/stats${queryString}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Preencher indicadores
+                    document.getElementById('total-requests').textContent = data.data.total_requests || 0;
+                    document.getElementById('success-count').textContent = data.data.success_count || 0;
+                    document.getElementById('error-count').textContent = data.data.error_count || 0;
+                    document.getElementById('avg-time').textContent = `${data.data.avg_time || 0}ms`;
                     
-                    if (sortDirection === 'asc') {
-                        icon.classList.add(isNumeric ? 'bi-sort-numeric-down' : 'bi-sort-alpha-down');
-                    } else {
-                        icon.classList.add(isNumeric ? 'bi-sort-numeric-down-alt' : 'bi-sort-alpha-down-alt');
+                    // Atualizar gráficos
+                    updateCharts(data.data);
+                    
+                    // Carregar lista de tokens para o filtro se não houver filtro aplicado
+                    if (!filters.token) {
+                        loadTokenOptions(data.data.tokens || []);
                     }
                 } else {
-                    const isNumeric = ['id', 'status', 'time', 'timestamp'].includes(key);
-                    icon.classList.add(isNumeric ? 'bi-sort-numeric-down' : 'bi-sort-alpha-down');
+                    showMessage('error', data.error || 'Erro ao carregar estatísticas');
                 }
+            })
+            .catch(error => {
+                console.error('Erro ao carregar dados:', error);
+                showMessage('error', 'Erro ao carregar dados do dashboard');
+            })
+            .finally(() => {
+                loadRequestsTable(1);
             });
+    }
+
+    // Atualizar os gráficos com novos dados
+    function updateCharts(data) {
+        // Atualizar gráfico de requisições
+        if (requestsChart) {
+            const timeData = data.requests_by_hour || { labels: [], values: [] };
+            requestsChart.data.labels = timeData.labels;
+            requestsChart.data.datasets[0].data = timeData.values;
+            requestsChart.update();
         }
         
-        // Renderizar a tabela com os dados filtrados e ordenados
-        function renderTable() {
-            const startIndex = (currentPage - 1) * itemsPerPage;
-            const endIndex = Math.min(startIndex + itemsPerPage, filteredLogs.length);
-            const displayedLogs = filteredLogs.slice(startIndex, endIndex);
-            
-            const tbody = document.getElementById('logsTable');
-            tbody.innerHTML = '';
-            
-            if (displayedLogs.length === 0) {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td colspan="7" class="text-center py-3">Nenhum registro encontrado</td>`;
-                tbody.appendChild(tr);
-            } else {
-                displayedLogs.forEach(log => {
-                    const tr = document.createElement('tr');
-                    
-                    // Determinar classe de status para colorir
-                    let statusClass = '';
-                    if (log.status_code < 300) statusClass = 'text-success';
-                    else if (log.status_code < 400) statusClass = 'text-info';
-                    else if (log.status_code < 500) statusClass = 'text-warning';
-                    else statusClass = 'text-danger';
-                    
-                    tr.innerHTML = `
-                        <td>${log.id}</td>
-                        <td>${log.user_token || '<span class="text-muted">N/A</span>'}</td>
-                        <td><code>${log.path}</code></td>
-                        <td><span class="badge bg-secondary">${log.method}</span></td>
-                        <td><span class="badge ${statusClass}">${log.status_code}</span></td>
-                        <td>${log.execution_time}</td>
-                        <td>${log.timestamp}</td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            }
-            
-            // Atualizar indicadores de paginação
-            const fromCounter = document.getElementById('paginationFrom');
-            const toCounter = document.getElementById('paginationTo');
-            
-            if (fromCounter) fromCounter.textContent = filteredLogs.length === 0 ? 0 : startIndex + 1;
-            if (toCounter) toCounter.textContent = endIndex;
+        // Atualizar gráfico de taxa de sucesso
+        if (successRateChart) {
+            const successCount = data.success_count || 0;
+            const errorCount = data.error_count || 0;
+            successRateChart.data.datasets[0].data = [successCount, errorCount];
+            successRateChart.update();
         }
+    }
+
+    // Carregar lista de tokens para o filtro
+    function loadTokenOptions(tokens) {
+        const tokenSelect = document.getElementById('filter-token');
+        tokenSelect.innerHTML = '<option value="">Todos os tokens</option>';
+        
+        tokens.forEach(token => {
+            const option = document.createElement('option');
+            option.value = token.id;
+            option.textContent = token.name;
+            tokenSelect.appendChild(option);
+        });
+    }
+
+    // Carregar tabela de requisições
+    function loadRequestsTable(page = 1) {
+        currentPage = page;
+        
+        // Construir a string de consulta com os filtros e paginação
+        const params = new URLSearchParams();
+        params.append('page', page);
+        if (filters.token) params.append('token', filters.token);
+        if (filters.startDate) params.append('start_date', filters.startDate);
+        if (filters.endDate) params.append('end_date', filters.endDate);
+        
+        const queryString = `?${params.toString()}`;
+        
+        fetch(`/api/monitoring/requests${queryString}`)
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.success) {
+                    renderRequestsTable(data.data);
+                } else {
+                    showMessage('error', data.error || 'Erro ao carregar requisições');
+                    document.querySelector('#requests-table tbody').innerHTML = `
+                        <tr>
+                            <td colspan="6" class="text-center">Erro ao carregar dados</td>
+                        </tr>
+                    `;
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                console.error('Erro ao carregar requisições:', error);
+                showMessage('error', 'Erro ao carregar tabela de requisições');
+                document.querySelector('#requests-table tbody').innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center">Erro ao carregar dados</td>
+                    </tr>
+                `;
+            });
+    }
+
+    // Renderizar tabela de requisições
+    function renderRequestsTable(data) {
+        const tableBody = document.querySelector('#requests-table tbody');
+        const requests = data.requests || [];
+        totalPages = data.pagination?.total_pages || 1;
+        
+        // Atualizar informação de paginação
+        document.getElementById('table-info').textContent = `Mostrando ${data.pagination?.from || 0} a ${data.pagination?.to || 0} de ${data.pagination?.total || 0} registros`;
         
         // Atualizar controles de paginação
-        function updatePagination() {
-            const totalItems = filteredLogs.length;
-            const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
-            
-            if (currentPage > totalPages) {
-                currentPage = totalPages;
-            }
-            
-            const pagination = document.getElementById('pagination');
-            const prevPageBtn = pagination.querySelector('#prevPage').parentElement;
-            const nextPageBtn = pagination.querySelector('#nextPage').parentElement;
-            
-            prevPageBtn.classList.toggle('disabled', currentPage <= 1);
-            nextPageBtn.classList.toggle('disabled', currentPage >= totalPages);
-            
-            // Limpar páginas existentes
-            Array.from(pagination.querySelectorAll('li:not(:first-child):not(:last-child)')).forEach(li => li.remove());
-            
-            let pagesToShow = [];
-            if (totalPages <= 5) {
-                pagesToShow = Array.from({length: totalPages}, (_, i) => i + 1);
-            } else {
-                pagesToShow = [1];
-                
-                if (currentPage > 3) {
-                    pagesToShow.push('...');
-                }
-                
-                for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
-                    pagesToShow.push(i);
-                }
-                
-                if (currentPage < totalPages - 2) {
-                    pagesToShow.push('...');
-                }
-                
-                if (totalPages > 1) {
-                    pagesToShow.push(totalPages);
-                }
-            }
-            
-            const nextPageElement = pagination.querySelector('li:last-child');
-            
-            pagesToShow.forEach(pageNum => {
-                const li = document.createElement('li');
-                
-                if (pageNum === '...') {
-                    li.className = 'page-item disabled';
-                    li.innerHTML = '<span class="page-link">...</span>';
-                } else {
-                    li.className = `page-item ${currentPage === pageNum ? 'active' : ''}`;
-                    li.innerHTML = `<a class="page-link" href="#" data-page="${pageNum}">${pageNum}</a>`;
-                    
-                    if (currentPage !== pageNum) {
-                        li.querySelector('a').addEventListener('click', function(e) {
-                            e.preventDefault();
-                            currentPage = parseInt(this.dataset.page);
-                            renderTable();
-                            updatePagination();
-                        });
-                    }
-                }
-                
-                pagination.insertBefore(li, nextPageElement);
-            });
+        updatePagination();
+        
+        if (requests.length === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center">Nenhuma requisição encontrada</td>
+                </tr>
+            `;
+            return;
         }
         
-        // Reiniciar contador de atualização automática
-        function resetCountdown() {
-            clearInterval(countdownInterval);
-            secondsLeft = 30;
-            updateCountdown();
+        tableBody.innerHTML = '';
+        
+        requests.forEach(req => {
+            const row = document.createElement('tr');
             
-            countdownInterval = setInterval(() => {
-                secondsLeft--;
-                updateCountdown();
-                
-                if (secondsLeft <= 0) {
-                    fetchData();
-                }
-            }, 1000);
-        }
-        
-        function updateCountdown() {
-            document.getElementById('countdown').textContent = secondsLeft;
-        }
-        
-        // Exibir mensagem de alerta
-        function showMessage(type, text) {
-            // Criar elemento de alerta
-            const alertDiv = document.createElement('div');
-            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-            alertDiv.innerHTML = `
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                <i class="bi bi-info-circle me-2"></i>${text}
+            // Status com cor apropriada
+            const statusClass = req.status_code < 400 ? 'text-success' : 'text-danger';
+            
+            row.innerHTML = `
+                <td>${formatDateTime(req.timestamp)}</td>
+                <td>${req.token_name}</td>
+                <td>${req.endpoint || '-'}</td>
+                <td><span class="${statusClass}">${req.status_code}</span></td>
+                <td>${req.response_time}ms</td>
+                <td>
+                    <button class="btn btn-sm btn-info view-details" data-id="${req.id}">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                </td>
             `;
             
-            // Inserir no topo do corpo do card
-            const cardBody = document.querySelector('.card-body');
-            cardBody.insertBefore(alertDiv, cardBody.firstChild);
-            
-            // Auto-remover após 5 segundos
-            setTimeout(() => {
-                if (alertDiv.parentElement) {
-                    alertDiv.classList.remove('show');
-                    setTimeout(() => alertDiv.remove(), 300);
-                }
-            }, 5000);
-        }
+            tableBody.appendChild(row);
+        });
         
-        // Event listeners
-        
-        // Ordenação nas colunas da tabela
-        document.querySelectorAll('th.sortable').forEach(header => {
-            header.addEventListener('click', function() {
-                const key = this.dataset.sortKey;
-                if (key === sortKey) {
-                    sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-                } else {
-                    sortKey = key;
-                    // Para timestamp, a ordenação padrão é desc (mais novo primeiro)
-                    sortDirection = key === 'timestamp' ? 'desc' : 'asc';
-                }
-                
-                sessionStorage.setItem('logsTableSortKey', sortKey);
-                sessionStorage.setItem('logsTableSortDirection', sortDirection);
-                
-                sortLogs();
-                renderTable();
+        // Adicionar listeners para os botões de detalhes
+        document.querySelectorAll('.view-details').forEach(button => {
+            button.addEventListener('click', function() {
+                const requestId = this.getAttribute('data-id');
+                showRequestDetails(requestId);
             });
         });
-        
-        // Controle de itens por página
-        document.getElementById('itemsPerPage').addEventListener('change', function() {
-            itemsPerPage = parseInt(this.value);
-            currentPage = 1;
-            sessionStorage.setItem('logsTableItemsPerPage', itemsPerPage);
-            renderTable();
-            updatePagination();
-        });
-        
-        // Navegação de página anterior e próxima
-        document.getElementById('prevPage').addEventListener('click', function(e) {
-            e.preventDefault();
-            if (currentPage > 1) {
-                currentPage--;
-                renderTable();
-                updatePagination();
-            }
-        });
-        
-        document.getElementById('nextPage').addEventListener('click', function(e) {
-            e.preventDefault();
-            const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
-            if (currentPage < totalPages) {
-                currentPage++;
-                renderTable();
-                updatePagination();
-            }
-        });
-        
-        // Botão de atualização manual
-        document.getElementById('refreshButton').addEventListener('click', function() {
-            fetchData();
-            showMessage('info', 'Dados atualizados manualmente');
-        });
-        
-        // Toggle de filtros
-        document.querySelector('.toggle-filters').addEventListener('click', function() {
-            const filterControls = document.querySelector('#filterControls');
-            const icon = this.querySelector('i:last-child');
-            
-            if (filterControls.style.display === 'none') {
-                filterControls.style.display = 'block';
-                icon.classList.replace('bi-chevron-up', 'bi-chevron-down');
-            } else {
-                filterControls.style.display = 'none';
-                icon.classList.replace('bi-chevron-down', 'bi-chevron-up');
-            }
-            
-            sessionStorage.setItem('logsTableFiltersVisible', filterControls.style.display !== 'none');
-        });
-        
-        // Aplicar filtros em tempo real
-        document.querySelectorAll('.filter').forEach(filter => {
-            filter.addEventListener('input', function() {
-                this.classList.toggle('is-valid', this.value !== '');
-                currentPage = 1;
-                applyFiltersAndSort();
-            });
-        });
-        
-        // Restaurar preferências do usuário
-        function restoreUserPreferences() {
-            // Restaurar itens por página
-            const savedItemsPerPage = sessionStorage.getItem('logsTableItemsPerPage');
-            if (savedItemsPerPage) {
-                itemsPerPage = parseInt(savedItemsPerPage);
-                const itemsPerPageSelect = document.getElementById('itemsPerPage');
-                if (itemsPerPageSelect.querySelector(`option[value="${itemsPerPage}"]`)) {
-                    itemsPerPageSelect.value = itemsPerPage;
-                }
-            }
-            
-            // Restaurar visibilidade dos filtros
-            const filtersVisible = sessionStorage.getItem('logsTableFiltersVisible');
-            const filterControls = document.querySelector('#filterControls');
-            const toggleFiltersIcon = document.querySelector('.toggle-filters i:last-child');
-            
-            if (filtersVisible === 'false' && filterControls && toggleFiltersIcon) {
-                filterControls.style.display = 'none';
-                toggleFiltersIcon.classList.replace('bi-chevron-down', 'bi-chevron-up');
-            }
-            
-            // Restaurar ordenação
-            const savedSortKey = sessionStorage.getItem('logsTableSortKey');
-            const savedSortDirection = sessionStorage.getItem('logsTableSortDirection');
-            
-            if (savedSortKey && savedSortDirection) {
-                sortKey = savedSortKey;
-                sortDirection = savedSortDirection;
-            }
-        }
-        
-        // Inicialização
-        restoreUserPreferences();
-        fetchData(); // Buscar dados iniciais
-    });
-</script>
+    }
 
+    // Atualizar controles de paginação
+    function updatePagination() {
+        const pagination = document.getElementById('pagination');
+        const prevPageBtn = document.getElementById('prev-page').parentElement;
+        const nextPageBtn = document.getElementById('next-page').parentElement;
+        
+        // Atualizar estado dos botões de navegação
+        prevPageBtn.classList.toggle('disabled', currentPage <= 1);
+        nextPageBtn.classList.toggle('disabled', currentPage >= totalPages);
+        
+        // Remover páginas existentes
+        Array.from(pagination.querySelectorAll('li:not(:first-child):not(:last-child)')).forEach(li => li.remove());
+        
+        // Gerar números de página
+        let pagesToShow = [];
+        if (totalPages <= 5) {
+            pagesToShow = Array.from({length: totalPages}, (_, i) => i + 1);
+        } else {
+            pagesToShow = [1];
+            
+            if (currentPage > 3) {
+                pagesToShow.push('...');
+            }
+            
+            for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+                pagesToShow.push(i);
+            }
+            
+            if (currentPage < totalPages - 2) {
+                pagesToShow.push('...');
+            }
+            
+            if (totalPages > 1) {
+                pagesToShow.push(totalPages);
+            }
+        }
+        
+        // Inserir links de página no DOM
+        const nextPageElement = pagination.querySelector('li:last-child');
+        if (!nextPageElement) return;
+        
+        pagesToShow.forEach(pageNum => {
+            const li = document.createElement('li');
+            
+            if (pageNum === '...') {
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">...</span>';
+            } else {
+                li.className = `page-item ${currentPage === pageNum ? 'active' : ''}`;
+                li.innerHTML = `<a class="page-link" href="#" data-page="${pageNum}">${pageNum}</a>`;
+                
+                if (currentPage !== pageNum) {
+                    li.querySelector('a').addEventListener('click', function(e) {
+                        e.preventDefault();
+                        loadRequestsTable(parseInt(this.dataset.page));
+                    });
+                }
+            }
+            
+            pagination.insertBefore(li, nextPageElement);
+        });
+    }
+
+    // Mostrar detalhes da requisição
+    function showRequestDetails(requestId) {
+        fetch(`/api/monitoring/requests/${requestId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const request = data.data;
+                    
+                    // Preencher o modal com os detalhes
+                    document.getElementById('detail-id').textContent = request.id;
+                    document.getElementById('detail-timestamp').textContent = formatDateTime(request.timestamp);
+                    document.getElementById('detail-token').textContent = request.token_name;
+                    document.getElementById('detail-endpoint').textContent = request.endpoint || '-';
+                    
+                    const statusElement = document.getElementById('detail-status');
+                    statusElement.textContent = request.status_code;
+                    statusElement.className = request.status_code < 400 ? 'text-success' : 'text-danger';
+                    
+                    document.getElementById('detail-time').textContent = `${request.response_time}ms`;
+                    
+                    // Formatar os dados JSON para exibição
+                    document.getElementById('detail-headers').textContent = formatJSON(request.headers);
+                    document.getElementById('detail-request').textContent = formatJSON(request.request_body);
+                    document.getElementById('detail-response').textContent = formatJSON(request.response_body);
+                    
+                    // Exibir o modal
+                    const detailsModal = new bootstrap.Modal(document.getElementById('detailsModal'));
+                    detailsModal.show();
+                } else {
+                    showMessage('error', data.error || 'Erro ao carregar detalhes da requisição');
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao carregar detalhes:', error);
+                showMessage('error', 'Erro ao carregar detalhes da requisição');
+            });
+    }
+
+    // Funções auxiliares
+    function formatDateTime(timestamp) {
+        if (!timestamp) return '-';
+        const date = new Date(timestamp);
+        return date.toLocaleString();
+    }
+    
+    function formatJSON(jsonData) {
+        try {
+            if (typeof jsonData === 'string') {
+                jsonData = JSON.parse(jsonData);
+            }
+            return JSON.stringify(jsonData, null, 2);
+        } catch (e) {
+            return jsonData || '-';
+        }
+    }
+    
+    // Event listeners
+    document.getElementById('refresh-btn').addEventListener('click', function() {
+        loadDashboardData();
+    });
+    
+    document.getElementById('apply-filters').addEventListener('click', function() {
+        filters = {
+            token: document.getElementById('filter-token').value,
+            startDate: document.getElementById('filter-date-start').value,
+            endDate: document.getElementById('filter-date-end').value
+        };
+        loadDashboardData();
+    });
+    
+    document.getElementById('prev-page').addEventListener('click', function(e) {
+        e.preventDefault();
+        if (currentPage > 1) {
+            loadRequestsTable(currentPage - 1);
+        }
+    });
+    
+    document.getElementById('next-page').addEventListener('click', function(e) {
+        e.preventDefault();
+        if (currentPage < totalPages) {
+            loadRequestsTable(currentPage + 1);
+        }
+    });
+
+    // Inicialização
+    initCharts();
+    loadDashboardData();
+});
+</script>
+{% endblock %}
+
+{% block extra_styles %}
 <style>
-    /* Estilos para ordenação de tabela */
-    th.sortable {
-        cursor: pointer;
+    .chart-container {
         position: relative;
-        user-select: none;
-    }
-    th.sortable:hover {
-        background-color: rgba(0,0,0,0.05);
-    }
-    th.sortable .sort-icon {
-        font-size: 0.8rem;
-        margin-left: 5px;
-    }
-    th.active-sort {
-        background-color: rgba(0,0,0,0.075);
+        height: 250px;
+        width: 100%;
     }
     
-    /* Estilo para o badge de atualização */
-    #autoUpdateBadge {
-        font-weight: normal;
+    pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-size: 0.85rem;
+        max-height: 200px;
+        overflow-y: auto;
     }
     
-    /* Estilo para as células da tabela */
-    .table td, .table th {
-        vertical-align: middle;
+    .placeholder-row td {
+        padding: 2rem 0;
+        text-align: center;
+        color: #666;
     }
     
-    /* Animação para o botão de atualização */
-    #refreshButton:active i {
-        animation: spin 0.5s linear;
-    }
-    
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+    .view-details {
+        padding: 0.25rem 0.5rem;
     }
 </style>
 {% endblock %}

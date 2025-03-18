@@ -14,8 +14,9 @@ from django.views.decorators.http import require_POST
 from django.db import transaction
 
 from accounts.models import UserToken
-from ai_config.models import AIClientConfiguration, TrainingCapture, AIClientTokenConfig
-from core.types import AITrainingExample, AITrainingCaptureConfig
+from ai_config.models import AIClientConfiguration, TrainingCapture
+from core.types.api_response import APPResponse
+from core.types.training import AITrainingCaptureConfig, AITrainingExampleCollection
 
 logger = logging.getLogger(__name__)
 
@@ -28,70 +29,120 @@ def capture_toggle(request: HttpRequest) -> JsonResponse:
     das interações feitas através de um token específico.
     
     Args:
-        request: Requisição HTTP com token_id e ai_id
+        request: Requisição HTTP com token e ai_client_config
     
     Returns:
         JsonResponse: Status da operação com mensagem e código HTTP apropriado.
     """
     if request.method != 'POST':
-        return JsonResponse({'error': 'Método não permitido'}, status=405)
+        response = APPResponse(
+            success=False,
+            error='Método não permitido'
+        )
+        return JsonResponse(response.to_dict(), status=405)
         
     data = request.POST
-    token_id = data.get('token_id')
-    ai_config_id = data.get('ai_config_id')
+    action = data.get('action', '')
     
-    # Verificar se o token existe antes de tentar buscá-lo
-    try:
-        token = UserToken.objects.get(id=token_id, user=request.user)
-    except UserToken.DoesNotExist:
-        logger.error(f"Token {token_id} não encontrado para o usuário {request.user.email}")
-        return JsonResponse({'error': 'Token não encontrado'}, status=404)
+    # Determinar se está ativando ou desativando com base na ação
+    is_active = action == 'activate'
+    
+    if is_active:
+        # Se estamos ativando, precisamos de token e ai_client_config
+        token_id = data.get('token')
+        ai_config_id = data.get('ai_client_config')
+        
+        if not token_id or not ai_config_id:
+            response = APPResponse(
+                success=False,
+                error='Token e configuração de IA são obrigatórios para ativação'
+            )
+            return JsonResponse(response.to_dict(), status=400)
+    else:
+        # Se estamos desativando, não precisamos dos IDs específicos
+        # pois o frontend já sabe qual é a captura ativa
+        token_id = None
+        ai_config_id = None
     
     try:
-        ai_id = request.POST.get('ai_id')
-        is_active = request.POST.get('is_active') == 'true'
-        
-        ai_config = get_object_or_404(AIClientConfiguration, id=ai_id, user=request.user)
-        
         with transaction.atomic():
-            # Desativa qualquer captura ativa existente
             if is_active:
-                TrainingCapture.objects.filter(token=token).update(is_active=False)
+                # Verificar se o token existe antes de tentar buscá-lo
+                try:
+                    token = UserToken.objects.get(id=token_id, user=request.user)
+                except UserToken.DoesNotExist:
+                    logger.error(f"Token {token_id} não encontrado para o usuário {request.user.email}")
+                    response = APPResponse(
+                        success=False,
+                        error='Token não encontrado'
+                    )
+                    return JsonResponse(response.to_dict(), status=404)
+                
+                try:
+                    ai_config = AIClientConfiguration.objects.get(id=ai_config_id, user=request.user)
+                except AIClientConfiguration.DoesNotExist:
+                    response = APPResponse(
+                        success=False,
+                        error='Configuração de IA não encontrada.'
+                    )
+                    return JsonResponse(response.to_dict(), status=404)
+                
+                # Desativa qualquer captura ativa existente para este usuário
+                TrainingCapture.objects.filter(token__user=request.user).update(is_active=False)
+                
+                # Obtém ou cria o objeto de captura
+                capture, created = TrainingCapture.objects.get_or_create(
+                    token=token,
+                    ai_client_config=ai_config,
+                    defaults={'is_active': True}
+                )
+                
+                capture.is_active = True
+                capture.save()
+                
+                status = "ativada"
+                logger.info(f"Captura {status} para token {token.name} com IA {ai_config.name}")
+            else:
+                # Desativa todas as capturas do usuário
+                captures = TrainingCapture.objects.filter(token__user=request.user, is_active=True)
+                for capture in captures:
+                    capture.delete()
+                    
+                status = "desativada"
+                logger.info(f"Todas as capturas foram desativadas para o usuário {request.user.email}")
+                
+                # Usa a primeira captura desativada (se houver) para retornar informações
+                capture = captures.first()
             
-            # Obtém ou cria o objeto de captura
-            capture, created = TrainingCapture.objects.get_or_create(
-                token=token,
-                ai_client_config=ai_config,
-                defaults={'is_active': False}
+            # Prepara resposta, verificando se temos uma captura para retornar dados
+            if 'capture' in locals() and capture:
+                
+                capture_data = capture.to_data()
+                
+                response_data = {
+                    'active': capture.is_active,
+                    'config': capture_data.to_dict(),
+                }
+            else:
+                response_data = {
+                    'active': False,
+                }
+            
+            response_data['message'] = f"Captura {status} com sucesso"
+            
+            response = APPResponse(
+                success=True,
+                data=response_data
             )
+            return JsonResponse(response.to_dict())
             
-            capture.is_active = is_active
-            capture.save()
-            
-            # Converte para tipo estruturado
-            capture_data = AITrainingCaptureConfig(
-                id=capture.id,
-                token_id=token.id,
-                ai_client_config_id=ai_config.id,
-                is_active=capture.is_active,
-                temp_file=capture.temp_file.name if capture.temp_file else None,
-                create_at=capture.create_at,
-                last_activity=capture.last_activity
-            )
-            
-            status = "ativada" if is_active else "desativada"
-            logger.info(f"Captura {status} para token {token.name} com IA {ai_config.name}")
-            
-            return JsonResponse({
-                'success': True,
-                'active': is_active,
-                'message': f"Captura {status} para {token.name}"
-            })
-    except AIClientConfiguration.DoesNotExist:
-        return JsonResponse({'error': 'Configuração de IA não encontrada.'}, status=404)
     except Exception as e:
         logger.exception(f"Erro ao alternar captura: {e}")
-        return JsonResponse({'error': str(e)}, status=500)
+        response = APPResponse(
+            success=False,
+            error=str(e)
+        )
+        return JsonResponse(response.to_dict(), status=500)
 
 @login_required
 def capture_get_examples(request: HttpRequest, token_id: str, ai_id: int) -> JsonResponse:
@@ -116,60 +167,50 @@ def capture_get_examples(request: HttpRequest, token_id: str, ai_id: int) -> Jso
             # Verifica se existe uma captura para o token
             capture = TrainingCapture.objects.get(token=token, ai_client_config=ai_config)
             
-            # Lê o arquivo temporário
-            if capture.temp_file and capture.temp_file.storage.exists(capture.temp_file.name):
-                with open(capture.temp_file.path, 'r') as file:
-                    examples_json = json.load(file)
+            # Obter a coleção de exemplos
+            collection = capture.file_data
+
+            # Limpa a coleção após leitura
+            capture.file_data =  AITrainingExampleCollection()
+            capture.save()
                 
-                # Converte para tipo estruturado
-                examples = [
-                    AITrainingExample(
-                        system_message=example.get('system_message', ''),
-                        user_message=example['user_message'],
-                        response=example['response']
-                    )
-                    for example in examples_json
-                ]
-                
-                # Limpa o arquivo após leitura
-                with open(capture.temp_file.path, 'w') as file:
-                    json.dump([], file)
-                
-                # Converte para formato de resposta JSON
-                examples_data = [
-                    {
-                        'system_message': ex.system_message,
-                        'user_message': ex.user_message,
-                        'response': ex.response
-                    }
-                    for ex in examples
-                ]
-                
-                logger.info(f"Retornados {len(examples)} exemplos para token {token.name}")
-                return JsonResponse({
-                    'success': True,
-                    'examples': examples_data,
-                    'count': len(examples)
-                })
-            else:
-                return JsonResponse({
-                    'success': True, 
+            logger.info(f"Retornados {len(collection.examples)} exemplos para token {token.name}")
+            response = APPResponse(
+                success=True,
+                data={
+                    'examples': collection.to_dict(),
+                    'count': len(collection.examples),
+                }
+            )
+            return JsonResponse(response.to_dict())
+            
+        except TrainingCapture.DoesNotExist:
+            response = APPResponse(
+                success=True, 
+                data={
                     'examples': [], 
                     'count': 0,
-                    'message': 'Nenhum exemplo capturado ainda.'
-                })
-        except TrainingCapture.DoesNotExist:
-            return JsonResponse({
-                'success': True, 
-                'examples': [], 
-                'count': 0,
-                'message': 'Não há captura configurada para este token.'
-            })
+                    'message': 'Não há captura configurada para este token.'
+                }
+            )
+            return JsonResponse(response.to_dict())
             
     except UserToken.DoesNotExist:
-        return JsonResponse({'error': 'Token não encontrado.'}, status=404)
+        response = APPResponse(
+            success=False,
+            error='Token não encontrado.'
+        )
+        return JsonResponse(response.to_dict(), status=404)
     except AIClientConfiguration.DoesNotExist:
-        return JsonResponse({'error': 'Configuração de IA não encontrada.'}, status=404)
+        response = APPResponse(
+            success=False,
+            error='Configuração de IA não encontrada.'
+        )
+        return JsonResponse(response.to_dict(), status=404)
     except Exception as e:
         logger.exception(f"Erro ao obter exemplos: {e}")
-        return JsonResponse({'error': str(e)}, status=500)
+        response = APPResponse(
+            success=False,
+            error=str(e)
+        )
+        return JsonResponse(response.to_dict(), status=500)

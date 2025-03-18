@@ -1,5 +1,6 @@
 """Clientes para diferentes APIs de IA."""
 from datetime import datetime, time
+import io
 from typing import Any, Dict, TypeVar, Tuple
 
 import uuid
@@ -11,7 +12,7 @@ import requests
 from azure.ai.inference import ChatCompletionsClient
 from azure.core.credentials import AzureKeyCredential
 from llamaapi import LlamaAPI
-from openai import AzureOpenAI, OpenAI
+from openai import AsyncOpenAI, AzureOpenAI, OpenAI
 import html
 import json
 import logging
@@ -43,6 +44,7 @@ from api.utils.circuit_breaker import (
     record_failure,
     record_success,
 )
+from core.types.api import APIFile
 
 # Configuração
 logger = logging.getLogger(__name__)
@@ -102,8 +104,8 @@ class APIClient:
 
         # Configura dados de prompt se disponíveis
         if config.prompt_config:
-            self.base_instruction = config.prompt_config.base_instruction
-            self.prompt = config.prompt_config.prompt
+            self.base_instruction = config.prompt_config.system_message
+            self.prompt = config.prompt_config.user_message
             self.responses = config.prompt_config.response
         else:
             self.base_instruction = ''
@@ -230,17 +232,8 @@ class APIClient:
             raise NotImplementedError(f"[{self.name}] Este cliente não suporta treinamento.")
 
         prepared_file_data = self._prepare_train(file)
-        try:
-            return self._start_training(prepared_file_data)
-        finally:
-            # Verifique se prepared_file_data é um caminho de string antes de tentar excluir
-            if (isinstance(prepared_file_data, str) and 
-            prepared_file_data != file.file_path and 
-            os.path.exists(prepared_file_data)):
-                try:
-                    os.remove(prepared_file_data)
-                except Exception as e:
-                    logger.warning(f"[{self.name}] Erro ao remover arquivo temporário {prepared_file_data}: {e}")
+
+        return self._start_training(prepared_file_data)
 
     def _start_training(self, training_data: Any) -> AITrainingResponse:
         """Método abstrato para iniciar treinamento.
@@ -368,6 +361,7 @@ class OpenAiClient(APIClient):
         if self.api_url is not None:
             args['base_url'] = self.api_url
         self.client = OpenAI(**args)
+        self.async_client = AsyncOpenAI(**args)
 
     def _call_api(self, message: AIMessage) -> AIComparisonResponse:
         logger.debug(f"[{self.name}] Iniciando chamada para OpenAI")
@@ -426,51 +420,63 @@ class OpenAiClient(APIClient):
                 error=f"Erro ao comunicar com a API: {e}"
             )
 
-    def _prepare_train(self, file: AITrainingFileData) -> str:
+    def _prepare_train(self, file: AITrainingFileData) -> Any:
+        """Prepara os dados de treinamento no formato JSONL em memória."""
         try:
-            with open(file.file_path, 'r') as f:
-                training_data = json.load(f)
-            temp_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.jsonl')
+            training_data = file.file.examples
+            # Lista para armazenar as linhas JSONL
+            jsonl_data = []
+            
             for example in training_data:
                 messages = []
-                if example.get('system_message'):
+                if example.system_message:
                     messages.append({
                         "role": "system",
-                        "content": example['system_message']
+                        "content": example.system_message.strip()
                     })
                 messages.append({
                     "role": "user",
-                    "content": example['user_message']
+                    "content": example.user_message.strip()
                 })
                 messages.append({
                     "role": "assistant",
-                    "content": example['response']
+                    "content": example.response.strip()
                 })
                 conversation = {"messages": messages}
-                temp_file.write(json.dumps(conversation) + '\n')
-            temp_file.close()
-            return temp_file.name
+                jsonl_data.append(json.dumps(conversation))
+            
+            # Junta todas as linhas com quebra de linha
+            return "\n".join(jsonl_data)
+            
         except Exception as e:
-            logger.error(f"Erro ao preparar arquivo de treinamento: {e}")
-            raise APICommunicationError(f"Erro ao preparar arquivo: {e}")
+            logger.error(f"Erro ao preparar dados de treinamento: {e}")
+            raise APICommunicationError(f"Erro ao preparar dados: {e}")
 
-    def _start_training(self, training_data: Any) -> AITrainingResponse:
+    def _start_training(self, training_data: str) -> AITrainingResponse:
         attempt_call(self.name)
         try:
-            file_obj: FileObject
-            with open(training_data, 'rb') as f:
-                file_obj = self.client.files.create(file=f, purpose='fine-tune')
+            # Cria um objeto BytesIO com os dados
+            bytes_data = io.BytesIO(training_data.encode('utf-8'))
+            bytes_data.name = 'training.jsonl'  # Nome necessário para o content-type
+            
+            file_obj: FileObject = self.client.files.create(
+                file=bytes_data,
+                purpose='fine-tune'
+            )
+            
             training_type = "supervised"
             training_params = {}
             if self.training_configurations:
                 if 'type' in self.training_configurations:
                     training_type = self.training_configurations.pop('type')
                 training_params = self.training_configurations
+                
             job: FineTuningJob = self.client.fine_tuning.jobs.create(
                 training_file=file_obj.id,
                 model=self.model_name,
                 hyperparameters=training_params
             )
+            
             record_success(self.name)
             return AITrainingResponse(
                 job_id=job.id,
@@ -555,6 +561,145 @@ class OpenAiClient(APIClient):
             logger.error(f"OpenAiClient get_training_status: {e}")
             raise APICommunicationError(f"Erro ao verificar status: {e}")
 
+    def delete_trained_model(self, model_name: str) -> AISuccess:
+        """
+        Remove um modelo treinado (fine-tuned) da OpenAI.
+        
+        Args:
+            model_name (str): Nome/ID do modelo a ser removido.
+            
+        Returns:
+            AISuccess: Objeto indicando sucesso ou falha da operação.
+        """
+        attempt_call(self.name)
+        try:
+            logger.debug(f"[{self.name}] Iniciando remoção do modelo treinado: {model_name}")
+            
+            # Chama a API para excluir o modelo
+            self.client.models.delete(model_name)
+            
+            record_success(self.name)
+            logger.debug(f"[{self.name}] Modelo {model_name} removido com sucesso")
+            
+            return AISuccess(success=True)
+            
+        except Exception as e:
+            record_failure(self.name)
+            logger.error(f"[{self.name}] delete_trained_model: Erro ao remover modelo {model_name}: {e}")
+            return AISuccess(success=False, error=str(e))
+
+    def api_list_models(self, list_trained_models: bool = True, list_base_models: bool = True) -> APIModelCollection:
+        """
+        Lista os modelos disponíveis na API da OpenAI.
+        
+        Args:
+            list_trained_models: Se True, inclui modelos fine-tuned.
+            list_base_models: Se True, inclui modelos base.
+            
+        Returns:
+            APIModelCollection: Lista de objetos APIModel.
+            
+        Raises:
+            APICommunicationError: Se ocorrer um erro de comunicação com a API.
+        """
+        attempt_call(self.name)
+        try:
+            logger.debug(f"[{self.name}] Iniciando listagem de modelos")
+            
+            # Obtém a lista de modelos da API
+            models_response = self.client.models.list()
+            
+            # Converte para o formato esperado
+            models_collection = []
+            for model in models_response:
+                # Determina se é um modelo fine-tuned (normalmente começa com "ft:" ou tem o ID do usuário)
+                is_fine_tuned = model.id.startswith('ft:') or ':' in model.id
+                
+                # Inclui o modelo apenas se corresponder aos filtros solicitados
+                if (is_fine_tuned and list_trained_models) or (not is_fine_tuned and list_base_models):
+                    models_collection.append(APIModel(
+                        id=model.id,
+                        name=model.id,  # Usando id como nome, pois é o identificador comum
+                        is_fine_tuned=is_fine_tuned
+                    ))
+            
+            record_success(self.name)
+            logger.debug(f"[{self.name}] Listagem de modelos concluída com sucesso: {len(models_collection)} modelos encontrados")
+            
+            return models_collection
+            
+        except Exception as e:
+            record_failure(self.name)
+            logger.error(f"[{self.name}] api_list_models: Erro ao listar modelos: {e}")
+            raise APICommunicationError(f"Erro ao listar modelos: {e}")
+
+    def api_list_files(self) -> APIFileCollection:
+        """
+        Lista todos os arquivos disponíveis na API da OpenAI.
+        
+        Returns:
+            APIFileCollection: Lista de objetos APIFile.
+            
+        Raises:
+            APICommunicationError: Se ocorrer um erro de comunicação com a API.
+        """
+        attempt_call(self.name)
+        try:
+            logger.debug(f"[{self.name}] Iniciando listagem de arquivos")
+            
+            # Obtém a lista de arquivos da API
+            files_response = self.client.files.list()
+            
+            # Converte para o formato esperado (APIFile)
+            files_collection = []
+            for file in files_response.data:
+                # Converte timestamp unix para objeto datetime
+                created_at = datetime.fromtimestamp(file.created_at)
+                
+                files_collection.append(APIFile(
+                    id=file.id,
+                    filename=file.filename,
+                    bytes=file.bytes,
+                    created_at=created_at
+                ))
+            
+            record_success(self.name)
+            logger.debug(f"[{self.name}] Listagem de arquivos concluída com sucesso: {len(files_collection)} arquivos encontrados")
+            
+            return files_collection
+            
+        except Exception as e:
+            record_failure(self.name)
+            logger.error(f"[{self.name}] api_list_files: Erro ao listar arquivos: {e}")
+            raise APICommunicationError(f"Erro ao listar arquivos: {e}")
+
+    def delete_file(self, file_id: str) -> AISuccess:
+        """
+        Remove um arquivo da API da OpenAI.
+        
+        Args:
+            file_id (str): ID do arquivo a ser removido.
+            
+        Returns:
+            AISuccess: Objeto indicando sucesso ou falha da operação.
+        """
+        attempt_call(self.name)
+        try:
+            logger.debug(f"[{self.name}] Iniciando remoção do arquivo: {file_id}")
+            
+            # Chama a API para excluir o arquivo
+            self.client.files.delete(file_id=file_id)
+            
+            record_success(self.name)
+            logger.debug(f"[{self.name}] Arquivo {file_id} removido com sucesso")
+            
+            return AISuccess(success=True)
+            
+        except Exception as e:
+            record_failure(self.name)
+            logger.error(f"[{self.name}] delete_file: Erro ao remover arquivo {file_id}: {e}")
+            return AISuccess(success=False, error=str(e))
+
 @register_ai_client
 class GeminiClient(APIClient):
     """Cliente para interação com a API do Google Gemini."""
@@ -622,17 +767,18 @@ class GeminiClient(APIClient):
 
     def _prepare_train(self, file: AITrainingFileData) -> google_types.TuningDataset:
         try:
-            with open(file.file_path, 'r') as f:
-                training_data = json.load(f)
+
+            training_data = file.file.examples
+            
             examples = []
             for item in training_data:
-                text_input = item['user_message']
-                if item.get('system_message'):
-                    text_input = f"{item['system_message']}\n {text_input}"
+                text_input = item.user_message
+                if item.system_message:
+                    text_input = f"{item.system_message}\n {text_input}"
                 examples.append(
                     google_types.TuningExample(
                         text_input=text_input,
-                        output=item['response']
+                        output=item.response
                     )
                 )
             return google_types.TuningDataset(examples=examples)
@@ -744,23 +890,68 @@ class GeminiClient(APIClient):
             if not (list_trained_models or list_base_models):
                 return models
             
-            # Modelos de consulta da API com base em parâmetros
-            config_obj = google_types.ListModelsConfig(
-                page_size=100,
-                query_base=list_base_models,
-            )
-            
-            pager = self.client.models.list(config=config_obj)
-            
-            for page in pager:
-                for model in page:
-                    # Determinar se o modelo é básico ou ajustado
-                    is_base_model = not hasattr(model, 'tune_job') or not model.tune_job
+            # Método auxiliar para processar resultados do paginador
+            def _process_model_pages(models_list, query_base):
+
+                config_obj = google_types.ListModelsConfig(page_size=100, query_base=query_base)
+                pager = self.client.models.list(config=config_obj) 
+
+                for page in pager:
                     
+                    models_list.append(APIModel(
+                        id=page.name,
+                        name=page.display_name or page.name,
+                        is_fine_tuned=not query_base
+                    ))
+                return models_list
+            
+            # query_base=True lista modelos base, query_base=False lista modelos treinados
+            if list_base_models :
+                # Listar apenas modelos base
+                models = _process_model_pages(models, True)
+            
+            if list_trained_models:
+                # Listar apenas modelos treinados
+                models = _process_model_pages(models, False)
+            
+            record_success(self.name)
+            return models
+            
         except Exception as e:
             record_failure(self.name)
-            logger.error(f"GeminiClient delete_file: {e}")
-            raise APICommunicationError(f"Erro ao remover arquivo: {e}")
+            logger.error(f"GeminiClient list_trained_models: {e}")
+            raise APICommunicationError(f"Erro ao listar modelos: {e}")
+
+    def delete_trained_model(self, model_name: str) -> AISuccess:
+        """
+        Remove um modelo treinado.
+        
+        Args:
+            model_name (str): Nome/ID completo do modelo a ser removido.
+            
+        Returns:
+            AISuccess: Objeto indicando sucesso ou falha da operação.
+        """
+        attempt_call(self.name)
+        try:
+            logger.debug(f"[{self.name}] Iniciando remoção do modelo treinado: {model_name}")
+            
+            # Verifica se o modelo_name já está no formato correto (contém o caminho completo)
+            if not model_name.startswith('tunedModels/'):
+                model_name = f'tunedModels/{model_name}'
+                
+            # Chama a API para excluir o modelo
+            self.client.models.delete(model=model_name)
+            
+            record_success(self.name)
+            logger.debug(f"[{self.name}] Modelo {model_name} removido com sucesso")
+            
+            return AISuccess(success=True)
+            
+        except Exception as e:
+            record_failure(self.name)
+            logger.error(f"[{self.name}] delete_trained_model: Erro ao remover modelo {model_name}: {e}")
+            return AISuccess(success=False, error=str(e))
 
     def cancel_training(self, id: str) -> AISuccess:
         attempt_call(self.name)
@@ -771,6 +962,84 @@ class GeminiClient(APIClient):
         except Exception as e:
             record_failure(self.name)
             logger.error(f"GeminiClient cancel_training: {e}")
+            return AISuccess(success=False, error=str(e))
+        
+    def api_list_files(self) -> APIFileCollection:
+        """
+        Lista todos os arquivos disponíveis na API do Gemini.
+        
+        Returns:
+            APIFileCollection: Lista de objetos APIFile.
+            
+        Raises:
+            APICommunicationError: Se ocorrer um erro de comunicação com a API.
+        """
+        attempt_call(self.name)
+        try:
+            logger.debug(f"[{self.name}] Iniciando listagem de arquivos")
+            
+            # Configuração para a listagem de arquivos
+            config = google_types.ListFilesConfig(
+                page_size=100  # Número máximo de arquivos a serem retornados por página
+            )
+            
+            # Obtém o paginador para iterar sobre os resultados
+            files_collection = []
+            pager = self.client.files.list(config=config)
+            
+            # Itera sobre cada página de resultados
+            for page in pager:
+                # Itera sobre cada arquivo na página
+                for file in page:
+                    # Converte para o formato APIFile
+                    files_collection.append(APIFile(
+                        id=file.name.split('/')[-1] if file.name else str(uuid.uuid4()),
+                        filename=file.display_name or os.path.basename(file.name) if file.name else "unknown",
+                        bytes=file.size_bytes or 0,
+                        created_at=datetime.fromisoformat(file.create_time.replace('Z', '+00:00')) if file.create_time else datetime.now()
+                    ))
+            
+            record_success(self.name)
+            logger.debug(f"[{self.name}] Listagem de arquivos concluída com sucesso: {len(files_collection)} arquivos encontrados")
+            
+            return files_collection
+            
+        except Exception as e:
+            record_failure(self.name)
+            logger.error(f"[{self.name}] api_list_files: Erro ao listar arquivos: {e}")
+            raise APICommunicationError(f"Erro ao listar arquivos: {e}")
+
+    def delete_file(self, file_id: str) -> AISuccess:
+        """
+        Remove um arquivo da API do Gemini.
+        
+        Args:
+            file_id (str): ID do arquivo a ser removido.
+            
+        Returns:
+            AISuccess: Objeto indicando sucesso ou falha da operação.
+        """
+        attempt_call(self.name)
+        try:
+            logger.debug(f"[{self.name}] Iniciando remoção do arquivo: {file_id}")
+            
+            # Verifica se o file_id já está no formato correto (contém o caminho completo)
+            if not file_id.startswith('files/'):
+                file_name = f'files/{file_id}'
+            else:
+                file_name = file_id
+                
+            # Chama a API para excluir o arquivo
+            self.client.files.delete(name=file_name)
+            
+            record_success(self.name)
+            logger.debug(f"[{self.name}] Arquivo {file_id} removido com sucesso")
+            
+            return AISuccess(success=True)
+            
+        except Exception as e:
+            record_failure(self.name)
+            logger.error(f"[{self.name}] delete_file: Erro ao remover arquivo {file_id}: {e}")
             return AISuccess(success=False, error=str(e))
 
 @register_ai_client
@@ -840,6 +1109,50 @@ class AnthropicClient(APIClient):
                 processing_time=processing_time,
                 error=f"Erro ao comunicar com Anthropic: {e}"
             )
+
+    def api_list_models(self, list_trained_models: bool = True, list_base_models: bool = True) -> APIModelCollection:
+        """
+        Lista os modelos disponíveis na API do Anthropic.
+        
+        Args:
+            list_trained_models: Se True, inclui modelos fine-tuned (não aplicável para Anthropic).
+            list_base_models: Se True, inclui modelos base.
+            
+        Returns:
+            APIModelCollection: Lista de objetos APIModel.
+            
+        Raises:
+            APICommunicationError: Se ocorrer um erro de comunicação com a API.
+        """
+        attempt_call(self.name)
+        try:
+            logger.debug(f"[{self.name}] Iniciando listagem de modelos")
+            
+            # O Anthropic não suporta modelos fine-tuned, apenas base
+            if not list_base_models:
+                return []
+            
+            # Obtendo a lista de modelos disponíveis utilizando a API
+            models_list_response = self.client.models.list()
+            
+            # Convertendo para o formato esperado
+            models_collection = []
+            for model in models_list_response.data:
+                models_collection.append(APIModel(
+                    id=model.id,
+                    name=model.display_name,
+                    is_fine_tuned=False,
+                ))
+            
+            record_success(self.name)
+            logger.debug(f"[{self.name}] Listagem de modelos concluída com sucesso: {len(models_collection)} modelos encontrados")
+            
+            return models_collection
+            
+        except Exception as e:
+            record_failure(self.name)
+            logger.error(f"[{self.name}] api_list_models: Erro ao listar modelos: {e}")
+            raise APICommunicationError(f"Erro ao listar modelos: {e}")
 
 @register_ai_client
 class PerplexityClient(APIClient):

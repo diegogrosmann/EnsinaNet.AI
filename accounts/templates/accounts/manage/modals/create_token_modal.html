@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Manipular envio do formulário via AJAX - melhorado
+    // Manipular envio do formulário via AJAX - adaptado para APPResponse
     createTokenForm.addEventListener('submit', function(e) {
         e.preventDefault();
         
@@ -146,44 +146,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 return response.json()
                     .catch(() => {
                         return response.text().then(text => {
-                            return { success: false, errors: { __all__: ['Erro no servidor'] } };
+                            return { success: false, error: 'Erro no servidor' };
                         });
-                    })
-                    .then(data => {
-                        data._errorStatus = response.status;
-                        return data;
                     });
             }
-            return response.json().catch(() => response.text());
+            return response.json();
         })
         .then(data => {
-            if (data._errorStatus) {
-                showFormErrors(data.errors || "Erro no servidor");
-                throw new Error(`Erro ${data._errorStatus}`);
-            }
-            
-            if (data && data.errors) {
-                showFormErrors(data.errors);
-                throw new Error('Erro de validação');
-            } else if (data && data.success === false) {
-                showFormErrors(data.message || 'Erro ao criar token');
-                throw new Error('Erro ao criar token');
-            } else if (typeof data === 'string') {
-                if (data.includes('invalid-feedback')) {
-                    const tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = data;
-                    const errors = tempDiv.querySelectorAll('.invalid-feedback');
-                    if (errors.length > 0) {
-                        const errorMessages = Array.from(errors).map(el => el.textContent);
-                        showFormErrors(errorMessages.join(', '));
-                        throw new Error('Erro de validação');
-                    }
+            if (!data.success) {
+                // Processamento de erro padronizado usando APPResponse
+                if (data.data && data.data.errors) {
+                    showFormErrors(data.data.errors);
+                } else {
+                    showFormErrors(data.error || 'Erro ao criar token');
                 }
+                throw new Error(data.error || 'Erro ao criar token');
             }
             
+            // Sucesso - APPResponse contém success=true
             const modal = bootstrap.Modal.getInstance(document.getElementById('createTokenModal'));
             modal.hide();
             window.location.reload();
+        })
+        .catch(error => {
+            console.error('Erro durante processo:', error);
+            // Os erros já são exibidos no bloco then
         })
         .finally(() => {
             createTokenButton.disabled = false;

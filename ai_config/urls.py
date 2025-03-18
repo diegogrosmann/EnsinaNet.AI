@@ -22,18 +22,19 @@ ai_patterns = [
         path('edit/', views.edit_ai, name='ai_edit'),
         path('delete/', views.delete_ai, name='ai_delete'),
         path('available-tokens/', views.ai_available_tokens, name='ai_available_tokens'),
-        path('link-token/<uuid:token_id>/', views.ai_link_token, name='ai_link_token'),
     ])),
+    # Nova URL para listar modelos de um cliente IA
+    path('client/<int:ai_client_id>/models/', views.get_ai_models, name='ai_client_models'),
 ]
 
 # Padrões para treinamento e captura
 training_patterns = [
     path('', views.training_center, name='training_center'),
     path('files/', include([
-        path('', views.training_file_create, name='training_file_create'),
+        path('', views.training_file_form, name='training_file_create'),
         path('upload/', views.training_file_upload, name='training_file_upload'),
         path('<int:file_id>/', include([
-            path('', views.training_file_create, name='training_file_edit'),
+            path('', views.training_file_form, name='training_file_edit'),
             path('download/', views.training_file_download, name='training_file_download'),
             path('delete/', views.training_file_delete, name='training_file_delete'),
         ])),
@@ -53,15 +54,18 @@ training_patterns = [
 
 # Padrões para configuração de tokens
 token_patterns = [
-    path('prompt', views.prompt_config, name='token_prompt_config'),
-    path('ai_link', views.token_ai_link, name='token_ai_link'),
+    path('<uuid:token_id>/', include([
+        path('prompt', views.prompt_config, name='token_prompt_config'),
+        path('ai_link', views.token_ai_link, name='token_ai_link'),
+    ])),
+    path('bulk_toggle/', views.token_ai_toggle, name='token_ai_toggle'),
 ]
 
 # URLs principais do aplicativo
 urlpatterns = [ 
     path('ai/', include(ai_patterns)),
     path('training/', include(training_patterns)),
-    path('token/<uuid:token_id>/', include(token_patterns)),
+    path('token/', include(token_patterns)),
 ]
 
 logger.debug("URLs do aplicativo ai_config carregadas")

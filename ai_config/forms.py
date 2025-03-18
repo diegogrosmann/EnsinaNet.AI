@@ -431,7 +431,7 @@ class AITrainingFileForm(forms.ModelForm):
     """Formulário para upload de arquivo de treinamento."""
     class Meta:
         model = AITrainingFile
-        fields = ['name', 'file']
+        fields = ['name']
         widgets = {
             'file': forms.ClearableFileInput(attrs={'class': 'form-control'}),
         }
@@ -449,7 +449,7 @@ class UserAITrainingFileForm(forms.ModelForm):
     """Formulário para upload de arquivo de treinamento vinculado ao usuário."""
     class Meta:
         model = AITrainingFile
-        fields = ['file']
+        fields = []
         widgets = {
             'file': forms.ClearableFileInput(attrs={'class': 'form-control'}),
         }

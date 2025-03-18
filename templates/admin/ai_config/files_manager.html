@@ -1,0 +1,186 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_list %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" type="text/css" href="{% static "admin/css/changelists.css" %}">
+  <style>
+    .ai-selection-form {
+      margin-bottom: 20px;
+      padding: 15px;
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .ai-selection-form select {
+      min-width: 300px;
+      padding: 5px;
+    }
+    .ai-selection-form button {
+      margin-left: 10px;
+    }
+    .file-list {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .file-list th, .file-list td {
+      padding: 8px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    .file-list th {
+      background-color: #f2f2f2;
+    }
+    .checkbox-column {
+      width: 20px;
+    }
+    .actions {
+      margin-top: 15px;
+    }
+    .select-all {
+      margin-right: 5px;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div id="content-main">
+    <div class="module filtered">
+      <div class="ai-selection-form">
+        <h2>Selecione uma IA para visualizar seus arquivos</h2>
+        <form method="get">
+          <select name="ai_config" id="ai_config">
+            <option value="">Selecione uma IA</option>
+            {% for config in global_configs %}
+              <option value="{{ config.id }}" {% if selected_config == config.id|stringformat:"s" %}selected{% endif %}>
+                {{ config.name }} ({{ config.api_client_class }})
+              </option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="default">Visualizar Arquivos</button>
+        </form>
+      </div>
+
+      {% if files %}
+        <h2>Arquivos disponíveis na IA</h2>
+        <form id="file-action-form">
+          <table class="file-list">
+            <thead>
+              <tr>
+                <th class="checkbox-column">
+                  <input type="checkbox" id="select-all" class="select-all">
+                </th>
+                <th>ID</th>
+                <th>Nome do Arquivo</th>
+                <th>Tamanho (bytes)</th>
+                <th>Data de Criação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for file in files %}
+                <tr>
+                  <td class="checkbox-column">
+                    <input type="checkbox" name="file_ids" value="{{ file.id }}" class="file-checkbox">
+                  </td>
+                  <td>{{ file.id }}</td>
+                  <td>{{ file.filename }}</td>
+                  <td>{{ file.bytes }}</td>
+                  <td>{{ file.created_at }}</td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="5">Nenhum arquivo encontrado.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+
+          {% if files %}
+            <div class="actions">
+              <input type="hidden" name="ai_config" value="{{ selected_config }}">
+              <button type="button" id="delete-selected" class="default">Excluir Selecionados</button>
+            </div>
+          {% endif %}
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Selecionar todos os checkboxes
+      const selectAll = document.getElementById('select-all');
+      if (selectAll) {
+        selectAll.addEventListener('change', function() {
+          const checkboxes = document.querySelectorAll('.file-checkbox');
+          checkboxes.forEach(checkbox => {
+            checkbox.checked = this.checked;
+          });
+        });
+      }
+
+      // Botão para excluir selecionados
+      const deleteButton = document.getElementById('delete-selected');
+      if (deleteButton) {
+        deleteButton.addEventListener('click', function() {
+          const checkboxes = document.querySelectorAll('.file-checkbox:checked');
+          if (checkboxes.length === 0) {
+            alert('Selecione pelo menos um arquivo para excluir');
+            return;
+          }
+
+          if (confirm('Tem certeza que deseja excluir os arquivos selecionados?')) {
+            const form = document.getElementById('file-action-form');
+            const formData = new FormData();
+            const aiConfig = document.querySelector('select[name="ai_config"]').value;
+            
+            formData.append('ai_config', aiConfig);
+            checkboxes.forEach(checkbox => {
+              formData.append('file_ids[]', checkbox.value);
+            });
+
+            fetch('{% url "admin:delete_files" %}', {
+              method: 'POST',
+              body: formData,
+              headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+              }
+            })
+            .then(response => response.json())
+            .then(data => {
+              if (data.success) {
+                alert(`${data.deleted} arquivo(s) excluído(s) com sucesso.`);
+                if (data.errors && data.errors.length > 0) {
+                  alert(`Erros: ${data.errors.join(', ')}`);
+                }
+                // Recarrega a página
+                window.location.reload();
+              } else {
+                alert(`Erro: ${data.error}`);
+              }
+            })
+            .catch(error => {
+              alert(`Erro: ${error}`);
+            });
+          }
+        });
+      }
+
+      // Função para obter cookie CSRF
+      function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+          const cookies = document.cookie.split(';');
+          for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+              cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+              break;
+            }
+          }
+        }
+        return cookieValue;
+      }
+    });
+  </script>
+{% endblock %}

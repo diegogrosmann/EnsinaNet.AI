@@ -705,14 +705,14 @@ function handleDeleteConfirm() {
     })
     .then(response => response.json())
     .then(data => {
-        if (data.status === 'success') {
+        if (data.success) {
             if (typeof showMessage === 'function') {
                 showMessage('success', `IA excluída com sucesso.`);
             }
             window.location.reload();
         } else {
             if (typeof showMessage === 'function') {
-                showMessage('error', data.message || 'Erro ao excluir IA');
+                showMessage('error', data.error || 'Erro ao excluir IA');
             }
             hideButtonLoading(btnDelete);
         }
@@ -784,9 +784,10 @@ async function loadTokensForAi(aiId) {
         // Processar a resposta
         const tokenList = document.querySelector('.token-list');
         
-        if (tokenList && data.tokens && data.tokens.length > 0) {
+        // Correção: Acessar tokens através de data.data.tokens em vez de data.tokens
+        if (tokenList && data.data && data.data.tokens && data.data.tokens.length > 0) {
             let tokensHtml = '';
-            data.tokens.forEach(token => {
+            data.data.tokens.forEach(token => {
                 tokensHtml += `
                 <div class="list-group-item d-flex align-items-center justify-content-between">
                     <div>
@@ -848,24 +849,20 @@ async function toggleTokenForAi(tokenId, aiId, isEnabled) {
     `;
     
     try {
-        // Enviar atualização para o servidor
-        const response = await fetch(
-        buildUrl(    
-            buildUrl(
-                `{% url 'ai_config:ai_link_token' '9999999999' 'ffffffff-ffff-ffff-ffff-ffffffffffff' %}`,
-                '9999999999',
-                aiId,
-            ),
-            'ffffffff-ffff-ffff-ffff-ffffffffffff',
-            tokenId
-        ), {
+        // Preparar dados no formato esperado pela nova API
+        const payload = {};
+        payload[tokenId] = {};
+        payload[tokenId][aiId] = isEnabled;
+        
+        // Enviar atualização para a nova URL do servidor
+        const response = await fetch("{% url 'ai_config:token_ai_toggle' %}", {
             method: 'POST',
             headers: {
                 'X-CSRFToken': getCookie('csrftoken'),
                 'X-Requested-With': 'XMLHttpRequest',
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ enabled: isEnabled })
+            body: JSON.stringify(payload)
         });
         
         const data = await response.json();
@@ -873,7 +870,7 @@ async function toggleTokenForAi(tokenId, aiId, isEnabled) {
         // Restaurar o switch e atualizar a interface
         toggle.disabled = false;
         
-        if (data.status === 'success') {
+        if (data.success) {
             // Atualizar o badge de status
             statusBadge.className = isEnabled ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
             statusBadge.textContent = isEnabled ? 'Ativo' : 'Inativo';
@@ -890,7 +887,7 @@ async function toggleTokenForAi(tokenId, aiId, isEnabled) {
             
             // Mostrar mensagem de erro
             if (typeof showMessage === 'function') {
-                showMessage('error', data.message || 'Ocorreu um erro ao processar sua solicitação.');
+                showMessage('error', data.error || 'Ocorreu um erro ao processar sua solicitação.');
             }
         }
     } catch (error) {

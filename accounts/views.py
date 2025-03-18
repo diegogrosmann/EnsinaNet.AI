@@ -37,6 +37,7 @@ from .forms import (
 from .models import UserToken, Profile
 
 from ai_config.models import AIClientGlobalConfiguration
+from core.types import APPResponse
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -466,10 +467,12 @@ def token_create(request: HttpRequest) -> HttpResponse:
             
             logger.debug(f"Erros de validação do token (AJAX): {errors}")
             
-            return JsonResponse({
-                'success': False, 
-                'errors': errors
-            }, status=400)
+            response = APPResponse(
+                success=False,
+                error='Formulário inválido',
+                data={'errors': form.errors}
+            )
+            return JsonResponse(response.to_dict(), status=400)
         
         logger.warning(f"Validação falhou na criação do token: {form.errors}")
         messages.error(request, 'Formulário inválido.')
@@ -496,11 +499,14 @@ def token_create(request: HttpRequest) -> HttpResponse:
         logger.info(f"Token criado com sucesso: {token.name} ({token.id}) para {user.email}")
         
         if is_ajax:
-            return JsonResponse({
-                'success': True, 
-                'message': 'Token criado com sucesso!',
-                'token_id': str(token.id)
-            })
+            response = APPResponse(
+                success=True,
+                data={
+                    'message': 'Token criado com sucesso!',
+                    'token_id': str(token.id)
+                }
+            )
+            return JsonResponse(response.to_dict())
             
         messages.success(request, 'Token criado com sucesso!')
         return redirect('accounts:token_config', token_id=token.id)
@@ -543,7 +549,11 @@ def token_delete(request: HttpRequest, token_id: str) -> HttpResponse:
                 messages.success(request, 'Token excluído com sucesso!')
 
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return JsonResponse({'success': True, 'message': 'Token excluído com sucesso!'})
+                    response = APPResponse(
+                        success=True,
+                        data={'message': 'Token excluído com sucesso!'}
+                    )
+                    return JsonResponse(response.to_dict())
                 
                 return redirect('accounts:tokens_manage')
             except Exception as e:

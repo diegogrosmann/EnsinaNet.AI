@@ -55,7 +55,7 @@
             <div class="col-12">
                 <div class="card border-primary">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h4 class="mb-0">
+                        <h4 class="card-title mb-0">
                             <i class="bi bi-file-earmark-text"></i> Arquivos de Treinamento
                         </h4>
                         <div class="btn-group">
@@ -73,125 +73,168 @@
                         </div>
                     </div>
 
-                    {% if training_files %}
-                    <div class="card-body bg-light">
-                        <!-- Filtros e Paginação -->
-                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
-                            <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
-                                <button class="btn btn-sm btn-outline-primary toggle-filters" type="button" aria-expanded="true" aria-controls="filterControlsFiles">
-                                    <i class="bi bi-funnel me-1"></i>Filtros
-                                    <i class="bi bi-chevron-down ms-1"></i>
-                                </button>
-                                <div class="text-muted d-none d-sm-block">
-                                    Mostrando <span id="paginationFromFiles">1</span> a <span id="paginationToFiles">10</span> de <span id="paginationTotalFiles">{{ training_files|length }}</span>
+                    <!-- Corpo do Card -->
+                    <div class="card-body">
+                        {% if training_files %}
+                        <div class="mb-3">
+                            <!-- Filtros e Controles com componentes Bootswatch -->
+                            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
+                                <!-- Controles à esquerda -->
+                                <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
+                                    <button class="btn btn-sm btn-outline-primary toggle-filters" type="button" aria-expanded="true" aria-controls="filterControlsFiles">
+                                        <i class="bi bi-funnel me-1"></i>Filtros
+                                        <i class="bi bi-chevron-down ms-1"></i>
+                                    </button>
+                                    
+                                    <!-- Informação de paginação -->
+                                    <div class="text-muted d-none d-sm-block">
+                                        Mostrando <span id="paginationFromFiles">1</span> a <span id="paginationToFiles">10</span> de <span id="paginationTotalFiles">{{ training_files|length }}</span>
+                                    </div>
+                                </div>
+                                
+                                <!-- Controles à direita -->
+                                <div class="input-group input-group-sm" style="width: auto; min-width: 120px; max-width: 250px;">
+                                    <span class="input-group-text">Por página</span>
+                                    <select id="itemsPerPageFiles" class="form-select form-select-sm" style="min-width: 70px;">
+                                        <option value="5">5</option>
+                                        <option value="10" selected>10</option>
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
                                 </div>
                             </div>
-                            <!-- Aumentamos a largura para evitar corte do número "100" -->
-                            <div class="input-group input-group-sm" style="width:auto;">
-                                <span class="input-group-text">Itens por página</span>
-                                <select id="itemsPerPageFiles" class="form-select form-select-sm">
-                                    <option value="5">5</option>
-                                    <option value="10" selected>10</option>
-                                    <option value="25">25</option>
-                                    <option value="50">50</option>
-                                    <option value="100">100</option>
-                                </select>
-                            </div>
-                        </div>
 
-                        <div class="card mb-3" id="filterControlsFiles">
-                            <div class="card-body">
-                                <div class="row g-3">
-                                    <div class="col-12 col-md-6 col-lg-4">
-                                        <label for="filterNameFiles" class="form-label">Nome do Arquivo</label>
-                                        <input type="text" id="filterNameFiles" class="form-control form-control-sm filter-files" placeholder="Filtrar por nome...">
+                            <!-- Filtros Expandidos -->
+                            <div class="card bg-light mb-3" id="filterControlsFiles">
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        <div class="col-12 col-md-6">
+                                            <label for="filterNameFiles" class="form-label">Nome do Arquivo</label>
+                                            <input type="text" id="filterNameFiles" class="form-control form-control-sm filter-files" placeholder="Filtrar por nome...">
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- Tabela Responsiva no estilo Bootswatch -->
+                            <div class="table-responsive" id="tableContainer">
+                                <table class="table table-hover" id="trainingFiles">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" class="sortable" data-sort-key="name">
+                                                Nome do Arquivo
+                                                <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                            </th>
+                                            <th scope="col" class="sortable" data-sort-key="uploaded_at">
+                                                Data de Upload
+                                                <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                            </th>
+                                            <th scope="col" class="sortable" data-sort-key="file_size">
+                                                Tamanho
+                                                <i class="sort-icon bi bi-sort-numeric-down"></i>
+                                            </th>
+                                            <th scope="col" class="text-end">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="trainingFilesBody">
+                                        {% if training_files %}
+                                            {% for file in training_files %}
+                                            <tr>
+                                                <td data-value="{{ file.name|lower }}">
+                                                    <a href="{% url 'ai_config:training_file_edit' file.id %}" class="text-decoration-none fw-bold">
+                                                        {{ file.name }}
+                                                    </a>
+                                                </td>
+                                                <td data-value="{{ file.uploaded_at|date:'Y-m-d H:i:s' }}">
+                                                    <small class="text-muted">
+                                                        <i class="bi bi-calendar3"></i> {{ file.uploaded_at|date:"d/m/Y H:i" }}
+                                                    </small>
+                                                </td>
+                                                <td data-value="{{ file.file_size|default:0 }}" class="file-size">
+                                                    {% if file.file_size and file.file_size > 0 %}
+                                                        <span class="text-nowrap">{{ file.file_size|filesizeformat }}</span>
+                                                        {% if file.example_count %}
+                                                        <br>
+                                                        <small class="text-muted">{{ file.example_count }} exemplo{{ file.example_count|pluralize }}</small>
+                                                        {% endif %}
+                                                    {% else %}
+                                                        <span class="text-danger">Vazio</span>
+                                                        <br>
+                                                        <small class="text-danger">Sem exemplos</small>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="text-end">
+                                                    <div class="btn-group">
+                                                        <button class="btn btn-sm btn-primary" 
+                                                                onclick="downloadFile({{ file.id }})"
+                                                                title="Download">
+                                                            <i class="bi bi-download"></i>
+                                                        </button>
+                                                        <button class="btn btn-sm btn-success" 
+                                                                onclick="startTraining({{ file.id }})"
+                                                                {% if file.file_size == 0 or file.file_size == None %}
+                                                                disabled 
+                                                                title="Arquivo sem exemplos não pode ser usado para treinamento"
+                                                                {% elif file.example_count == 0 %}
+                                                                disabled 
+                                                                title="Arquivo sem exemplos não pode ser usado para treinamento"
+                                                                {% else %}
+                                                                title="Iniciar Treinamento"
+                                                                {% endif %}>
+                                                            <i class="bi bi-play-circle"></i>
+                                                        </button>
+                                                        <button class="btn btn-sm btn-danger" 
+                                                                onclick="openDeleteFileModal('{{ file.id }}', '{{ file.name }}')"
+                                                                title="Excluir">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        {% else %}
+                                            <tr>
+                                                <td colspan="4" class="text-center py-4">
+                                                    <i class="bi bi-file-earmark-x fs-2 text-muted"></i>
+                                                    <p class="mt-2 mb-0 text-muted">Nenhum arquivo encontrado</p>
+                                                </td>
+                                            </tr>
+                                        {% endif %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <!-- Paginação no estilo Bootswatch -->
+                            <nav aria-label="Paginação da tabela de arquivos" class="mt-3">
+                                <ul class="pagination pagination-sm justify-content-center" id="paginationFiles">
+                                    <li class="page-item disabled">
+                                        <a class="page-link" href="#" id="prevPageFiles" aria-label="Página anterior">
+                                            <span aria-hidden="true">&laquo;</span>
+                                        </a>
+                                    </li>
+                                    <!-- Páginas serão inseridas aqui via JavaScript -->
+                                    <li class="page-item">
+                                        <a class="page-link" href="#" id="nextPageFiles" aria-label="Próxima página">
+                                            <span aria-hidden="true">&raquo;</span>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </nav>
                         </div>
+                        {% else %}
+                        <!-- Feedback quando não há arquivos usando alerta do Bootswatch -->
+                        <div class="alert alert-info" role="alert">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-info-circle-fill me-2"></i>
+                                <div>
+                                    <h5 class="alert-heading mb-1">Nenhum arquivo</h5>
+                                    <p class="mb-0">Não há arquivos de treinamento disponíveis. Clique em "Criar" ou "Upload" para adicionar arquivos.</p>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
                     </div>
-                    {% endif %}
-
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0" id="trainingFiles">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" data-sort-key="name">
-                                        Nome do Arquivo
-                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
-                                    </th>
-                                    <th class="sortable" data-sort-key="uploaded_at">
-                                        Data de Upload
-                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
-                                    </th>
-                                    <th class="text-end">Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody id="trainingFilesBody">
-                                {% if training_files %}
-                                    {% for file in training_files %}
-                                    <tr>
-                                        <td data-value="{{ file.name|lower }}">
-                                            <a href="{% url 'ai_config:training_file_edit' file.id %}" class="text-decoration-none fw-bold">
-                                                {{ file.name }}
-                                            </a>
-                                        </td>
-                                        <td data-value="{{ file.uploaded_at|date:'Y-m-d H:i:s' }}">
-                                            <small class="text-muted">
-                                                <i class="bi bi-calendar3"></i> {{ file.uploaded_at|date:"d/m/Y H:i" }}
-                                            </small>
-                                        </td>
-                                        <td class="text-end">
-                                            <div class="btn-group">
-                                                <button class="btn btn-sm btn-primary" 
-                                                        onclick="downloadFile({{ file.id }})"
-                                                        title="Download">
-                                                    <i class="bi bi-download"></i>
-                                                </button>
-                                                <button class="btn btn-sm btn-success" 
-                                                        onclick="startTraining({{ file.id }})"
-                                                        title="Iniciar Treinamento">
-                                                    <i class="bi bi-play-circle"></i>
-                                                </button>
-                                                <button class="btn btn-sm btn-danger" 
-                                                        onclick="openDeleteFileModal('{{ file.id }}', '{{ file.name }}')"
-                                                        title="Excluir">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                {% else %}
-                                    <tr>
-                                        <td colspan="3" class="text-center py-4">
-                                            <i class="bi bi-file-earmark-x fs-2 text-muted"></i>
-                                            <p class="mt-2 mb-0 text-muted">Nenhum arquivo encontrado</p>
-                                        </td>
-                                    </tr>
-                                {% endif %}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {% if training_files %}
-                    <div class="card-footer bg-light">
-                        <nav aria-label="Paginação dos Arquivos de Treinamento" class="mt-3">
-                            <ul class="pagination pagination-sm justify-content-center" id="paginationFiles">
-                                <li class="page-item disabled">
-                                    <a class="page-link" href="#" id="prevPageFiles" aria-label="Página anterior">
-                                        <span aria-hidden="true">&laquo;</span>
-                                    </a>
-                                </li>
-                                <li class="page-item">
-                                    <a class="page-link" href="#" id="nextPageFiles" aria-label="Próxima página">
-                                        <span aria-hidden="true">&raquo;</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </nav>
-                    </div>
-                    {% endif %}
                 </div>
             </div>
         </div>
@@ -200,99 +243,108 @@
         <div class="row">
             <div class="col-12">
                 <div class="card border-primary">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h4 class="mb-0">
+                    <div class="card-header">
+                        <h4 class="card-title mb-0">
                             <i class="bi bi-activity"></i> Status dos Treinamentos
                         </h4>
                     </div>
 
-                    <div class="card-body bg-light">
-                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
-                            <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
-                                <button class="btn btn-sm btn-outline-primary toggle-filters-status" type="button" aria-expanded="true" aria-controls="filterControlsStatus">
-                                    <i class="bi bi-funnel me-1"></i>Filtros
-                                    <i class="bi bi-chevron-down ms-1"></i>
-                                </button>
-                                <div class="text-muted d-none d-sm-block">
-                                    Mostrando <span id="paginationFromStatus">1</span> a <span id="paginationToStatus">10</span> de <span id="paginationTotalStatus">0</span>
-                                </div>
-                            </div>
-                            <!-- Sem max-width para não cortar "100" -->
-                            <div class="input-group input-group-sm" style="width:auto;">
-                                <span class="input-group-text">Itens por página</span>
-                                <select id="itemsPerPageStatus" class="form-select form-select-sm">
-                                    <option value="5">5</option>
-                                    <option value="10" selected>10</option>
-                                    <option value="25">25</option>
-                                    <option value="50">50</option>
-                                    <option value="100">100</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="card mb-3" id="filterControlsStatus">
-                            <div class="card-body">
-                                <div class="row g-3">
-                                    <div class="col-12 col-md-6 col-lg-4">
-                                        <label for="filterNameStatus" class="form-label">Nome da IA</label>
-                                        <input type="text" id="filterNameStatus" class="form-control form-control-sm filter-status" placeholder="Filtrar por nome...">
-                                    </div>
-                                    <div class="col-12 col-md-6 col-lg-4">
-                                        <label for="filterStatusStatus" class="form-label">Status</label>
-                                        <select id="filterStatusStatus" class="form-select form-select-sm filter-status">
-                                            <option value="">Todos</option>
-                                            <option value="not_started">Não Iniciado</option>
-                                            <option value="in_progress">Em Andamento</option>
-                                            <option value="completed">Concluído</option>
-                                            <option value="failed">Falhou</option>
-                                        </select>
+                    <!-- Corpo do Card -->
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <!-- Filtros e Controles com componentes Bootswatch -->
+                            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
+                                <!-- Controles à esquerda -->
+                                <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap gap-2">
+                                    <button class="btn btn-sm btn-outline-primary toggle-filters-status" type="button" aria-expanded="true" aria-controls="filterControlsStatus">
+                                        <i class="bi bi-funnel me-1"></i>Filtros
+                                        <i class="bi bi-chevron-down ms-1"></i>
+                                    </button>
+                                    
+                                    <!-- Informação de paginação -->
+                                    <div class="text-muted d-none d-sm-block">
+                                        Mostrando <span id="paginationFromStatus">1</span> a <span id="paginationToStatus">10</span> de <span id="paginationTotalStatus">0</span>
                                     </div>
                                 </div>
+                                
+                                <!-- Controles à direita -->
+                                <div class="input-group input-group-sm" style="width: auto; min-width: 120px; max-width: 250px;">
+                                    <span class="input-group-text">Por página</span>
+                                    <select id="itemsPerPageStatus" class="form-select form-select-sm" style="min-width: 70px;">
+                                        <option value="5">5</option>
+                                        <option value="10" selected>10</option>
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
                             </div>
+
+                            <!-- Filtros Expandidos -->
+                            <div class="card bg-light mb-3" id="filterControlsStatus">
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        <div class="col-12 col-md-6">
+                                            <label for="filterNameStatus" class="form-label">Nome da IA</label>
+                                            <input type="text" id="filterNameStatus" class="form-control form-control-sm filter-status" placeholder="Filtrar por nome...">
+                                        </div>
+                                        <div class="col-12 col-md-6">
+                                            <label for="filterStatusStatus" class="form-label">Status</label>
+                                            <select id="filterStatusStatus" class="form-select form-select-sm filter-status">
+                                                <option value="">Todos</option>
+                                                <option value="not_started">Não Iniciado</option>
+                                                <option value="in_progress">Em Andamento</option>
+                                                <option value="completed">Concluído</option>
+                                                <option value="failed">Falhou</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tabela Responsiva no estilo Bootswatch -->
+                            <div class="table-responsive">
+                                <table class="table table-hover" id="trainingStatusTable">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" class="sortable" data-sort-key="ai_name">
+                                                IA
+                                                <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                            </th>
+                                            <th scope="col" class="sortable" data-sort-key="status">
+                                                Status
+                                                <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                            </th>
+                                            <th scope="col" class="sortable" data-sort-key="model_name">
+                                                Modelo
+                                                <i class="sort-icon bi bi-sort-alpha-down"></i>
+                                            </th>
+                                            <th scope="col" class="text-end">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="trainingStatusBody">
+                                        <!-- Preenchido dinamicamente via JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <!-- Paginação no estilo Bootswatch -->
+                            <nav aria-label="Paginação da tabela de status" class="mt-3">
+                                <ul class="pagination pagination-sm justify-content-center" id="paginationStatus">
+                                    <li class="page-item disabled">
+                                        <a class="page-link" href="#" id="prevPageStatus" aria-label="Página anterior">
+                                            <span aria-hidden="true">&laquo;</span>
+                                        </a>
+                                    </li>
+                                    <!-- Páginas serão inseridas aqui via JavaScript -->
+                                    <li class="page-item">
+                                        <a class="page-link" href="#" id="nextPageStatus" aria-label="Próxima página">
+                                            <span aria-hidden="true">&raquo;</span>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </nav>
                         </div>
-                    </div>
-
-                    <!-- Tabela de Status com ID -->
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0" id="trainingStatusTable">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" data-sort-key="ai_name">
-                                        IA
-                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
-                                    </th>
-                                    <th class="sortable" data-sort-key="status">
-                                        Status
-                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
-                                    </th>
-                                    <th class="sortable" data-sort-key="model_name">
-                                        Modelo
-                                        <i class="sort-icon bi bi-sort-alpha-down"></i>
-                                    </th>
-                                    <th class="text-end">Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody id="trainingStatusBody">
-                                <!-- Preenchido dinamicamente via JavaScript -->
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="card-footer bg-light">
-                        <nav aria-label="Paginação do Status dos Treinamentos" class="mt-3">
-                            <ul class="pagination pagination-sm justify-content-center" id="paginationStatus">
-                                <li class="page-item disabled">
-                                    <a class="page-link" href="#" id="prevPageStatus" aria-label="Página anterior">
-                                        <span aria-hidden="true">&laquo;</span>
-                                    </a>
-                                </li>
-                                <li class="page-item">
-                                    <a class="page-link" href="#" id="nextPageStatus" aria-label="Próxima página">
-                                        <span aria-hidden="true">&raquo;</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </nav>
                     </div>
                 </div>
             </div>
@@ -309,7 +361,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="uploadForm">
+                <form id="uploadForm" data-no-loader data-ajax="true">
                     {% csrf_token %}
                     <div class="mb-3">
                         <label class="form-label">Nome do Arquivo</label>
@@ -319,8 +371,13 @@
                         <label class="form-label">Arquivo de Treinamento</label>
                         <input type="file" class="form-control" name="file" accept=".json,.jsonl" required>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="bi bi-upload"></i> Enviar
+                    <button type="submit" class="btn btn-primary w-100" id="uploadButton">
+                        <span class="normal-state">
+                            <i class="bi bi-upload"></i> Enviar
+                        </span>
+                        <span class="loading-state d-none">
+                            <span class="spinner-border spinner-border-sm"></span> Enviando...
+                        </span>
                     </button>
                 </form>
             </div>
@@ -337,7 +394,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="trainingForm">
+                <form id="trainingForm" data-no-loader data-ajax="true">
                     {% csrf_token %}
 
                     <div class="card mb-3">
@@ -544,7 +601,12 @@
                 const aCell = a.querySelectorAll('td')[1];
                 const bCell = b.querySelectorAll('td')[1];
                 aValue = aCell ? aCell.getAttribute('data-value') : '';
-                bValue = bCell ? bCell.getAttribute('data-value') : '';
+                bValue = bCell ? bCell.getAttribute('data-value') : ''; // Corrigido: era aCell em vez de bCell
+            } else if (sortKeyFiles === 'file_size') {
+                const aCell = a.querySelectorAll('td')[2];
+                const bCell = b.querySelectorAll('td')[2]; // Corrigido: era a.querySelectorAll em vez de b.querySelectorAll
+                aValue = aCell ? parseInt(aCell.getAttribute('data-value') || '0') : 0;
+                bValue = bCell ? parseInt(bCell.getAttribute('data-value') || '0') : 0;
             } else {
                 aValue = '';
                 bValue = '';
@@ -554,6 +616,8 @@
                 const dateA = new Date(aValue);
                 const dateB = new Date(bValue);
                 return sortDirectionFiles === 'asc' ? (dateA - dateB) : (dateB - dateA);
+            } else if (sortKeyFiles === 'file_size') {
+                return sortDirectionFiles === 'asc' ? (aValue - bValue) : (bValue - aValue);
             }
             return sortDirectionFiles === 'asc'
                 ? String(aValue).localeCompare(String(bValue))
@@ -573,7 +637,7 @@
             );
 
             if (key === sortKeyFiles) {
-                if (sortKeyFiles === 'uploaded_at') {
+                if (sortKeyFiles === 'uploaded_at' || sortKeyFiles === 'file_size') {
                     if (sortDirectionFiles === 'asc') icon.classList.add('bi-sort-numeric-down');
                     else icon.classList.add('bi-sort-numeric-up');
                 } else {
@@ -582,7 +646,11 @@
                 }
                 th.classList.add('active-sort');
             } else {
-                icon.classList.add(key === 'uploaded_at' ? 'bi-sort-numeric-down' : 'bi-sort-alpha-down');
+                if (key === 'uploaded_at' || key === 'file_size') {
+                    icon.classList.add('bi-sort-numeric-down');
+                } else {
+                    icon.classList.add('bi-sort-alpha-down');
+                }
             }
         });
 
@@ -648,16 +716,61 @@
     function updateStatusFromServer() {
         fetch("{% url 'ai_config:training_monitor' %}")
             .then(response => response.json())
-            .then(data => {
+            .then(responseObj => {
+                // Extrair dados do objeto APPResponse
+                if (!responseObj.success) {
+                    console.error('Erro na resposta do servidor:', responseObj.error);
+                    // Removi showMessage e substituí pela indicação visual
+                    showStatusLoadError();
+                    return;
+                }
+                
+                const data = responseObj.data;
+                
+                // Atualizar contadores de status
                 document.getElementById('queuedCount').textContent = data.queue_status.queued;
                 document.getElementById('completedCount').textContent = data.queue_status.finished;
                 document.getElementById('processingCount').textContent = data.queue_status.started;
+                
+                // Atualizar dados dos treinamentos
                 trainingsData = data.trainings || [];
                 renderTrainingsTable();
             })
             .catch(error => {
                 console.error('Erro ao buscar status:', error);
+                // Removi showMessage e substituí pela indicação visual
+                showStatusLoadError();
             });
+    }
+    
+    // Função para indicar visualmente erro no carregamento de status
+    function showStatusLoadError() {
+        // Adiciona indicação visual aos cards de contador
+        ['queuedCount', 'completedCount', 'processingCount'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.innerHTML = '<i class="bi bi-exclamation-triangle text-danger"></i>';
+                element.title = 'Erro ao carregar dados';
+            }
+        });
+        
+        // Adiciona indicação visual à tabela de status
+        const statusBody = document.getElementById('trainingStatusBody');
+        if (statusBody) {
+            if (trainingsData.length === 0) {
+                statusBody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center py-4">
+                            <i class="bi bi-exclamation-triangle-fill fs-2 text-danger"></i>
+                            <p class="mt-2 mb-0 text-danger">Erro ao carregar dados de treinamento</p>
+                            <button class="btn btn-sm btn-outline-primary mt-3" onclick="updateStatusFromServer()">
+                                <i class="bi bi-arrow-clockwise"></i> Tentar novamente
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }
+        }
     }
 
     function renderTrainingsTable() {
@@ -911,28 +1024,49 @@
     }
 
     function startTraining(fileId) {
+        // Verificar se o arquivo está vazio antes de abrir o modal
+        const fileSizeCell = document.querySelector(`tr td[data-value="0"].file-size`);
+        const row = fileSizeCell ? fileSizeCell.closest('tr') : null;
+        
+        if (row) {
+            showMessage('warning', 'Arquivos vazios não podem ser usados para treinamento. Por favor, adicione dados ao arquivo antes de continuar.');
+            return;
+        }
+        
         document.getElementById('selectedFileId').value = fileId;
         new bootstrap.Modal(document.getElementById('trainingModal')).show();
     }
 
     function cancelTraining(jobId) {
         showLoading('confirmCancel');
-        fetch(buildUrl("{% url 'ai_config:training_cancel' '999999999' %}", "999999999", jobId), {
+        fetch(buildUrl("{% url 'ai_config:training_cancel' '999999999' %}", "999999999", jobId) + "?no_loader=true", {
             method: 'POST',
             headers: {
                 'X-CSRFToken': '{{ csrf_token }}',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
             }
         })
         .then(response => response.json())
         .then(data => {
             const modal = bootstrap.Modal.getInstance(document.getElementById('cancelTrainingModal'));
             if (modal) modal.hide();
-            location.reload();
+            
+            if (data.success) {
+                showMessage('success', data.data?.message || 'Treinamento cancelado com sucesso');
+            } else {
+                showMessage('error', data.error || 'Erro ao cancelar treinamento');
+            }
+            
+            // Atualizar dados após curto delay
+            setTimeout(() => {
+                updateStatusFromServer();
+            }, 500);
         })
         .catch(error => {
             hideLoading('confirmCancel');
-            location.reload();
+            showMessage('error', 'Erro ao processar solicitação: ' + error.message);
+            updateStatusFromServer();
         });
     }
 
@@ -942,7 +1076,19 @@
     });
 
     function downloadFile(fileId) {
-        window.location.href = buildUrl("{% url 'ai_config:training_file_download' '999999999' %}", "999999999", fileId);
+        // Evitar ativação do loader de transição adicionando ?no_loader=true na URL
+        const downloadUrl = buildUrl("{% url 'ai_config:training_file_download' '999999999' %}", "999999999", fileId) + "?no_loader=true";
+        
+        // Usar iframe oculto para download sem navegação
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = downloadUrl;
+        document.body.appendChild(iframe);
+        
+        // Remover iframe após um tempo
+        setTimeout(() => {
+            document.body.removeChild(iframe);
+        }, 5000);
     }
 
     function openDeleteFileModal(fileId, fileName) {
@@ -974,24 +1120,51 @@
             url = buildUrl("{% url 'ai_config:training_delete' '999999999' %}", "999999999", id);
         }
         
+        // Adicionar no_loader=true para evitar o loader de transição
+        url += "?no_loader=true";
+        
         fetch(url, {
             method: 'POST',
             headers: {
                 'X-CSRFToken': '{{ csrf_token }}',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
             }
         })
         .then(response => response.json())
         .then(data => {
-            if (data.error) throw new Error(data.error);
-            location.reload();
-        })
-        .catch(error => {
-            location.reload();
-        })
-        .finally(() => {
+            // Restaurar o botão ao estado normal em todos os casos
+            hideLoading('confirmDelete');
+            
             const modal = bootstrap.Modal.getInstance(document.getElementById('deleteModal'));
             if (modal) modal.hide();
+            
+            if (data.success) {
+                showMessage('success', data.data?.message || (type === 'file' ? 'Arquivo excluído com sucesso' : 'Treinamento excluído com sucesso'));
+                
+                // Atualizar dados após curto delay
+                setTimeout(() => {
+                    if (type === 'training') {
+                        updateStatusFromServer();
+                    } else {
+                        location.reload();
+                    }
+                }, 500);
+            } else {
+                showMessage('error', data.error || 'Erro ao excluir item');
+                
+                setTimeout(() => {
+                    updateStatusFromServer();
+                }, 500);
+            }
+        })
+        .catch(error => {
+            hideLoading('confirmDelete');
+            showMessage('error', 'Erro ao processar solicitação: ' + error.message);
+            
+            setTimeout(() => {
+                updateStatusFromServer();
+            }, 500);
         });
     });
 
@@ -1056,25 +1229,64 @@
         updateStatusFromServer();
         setInterval(updateStatusFromServer, 5000);
 
-        // 5.2) Upload de Arquivo
+        // 5.2) Upload de Arquivo - Refatorado
         const uploadForm = document.getElementById('uploadForm');
+        const uploadButton = document.getElementById('uploadButton');
+        
         uploadForm.addEventListener('submit', function(e) {
             e.preventDefault();
+            
+            // Mostrar estado de carregamento
+            uploadButton.disabled = true;
+            uploadButton.querySelector('.normal-state').classList.add('d-none');
+            uploadButton.querySelector('.loading-state').classList.remove('d-none');
+            
             const formData = new FormData(this);
+            
             fetch("{% url 'ai_config:training_file_upload' %}", {
                 method: 'POST',
                 body: formData,
                 headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
                     'X-CSRFToken': '{{ csrf_token }}'
                 }
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Erro na resposta do servidor: ' + response.status);
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.success) {
-                    location.reload();
+                    // Fechar o modal e recarregar a página em caso de sucesso
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('uploadModal'));
+                    if (modal) modal.hide();
+                    
+                    showMessage('success', data.data?.message || 'Arquivo enviado com sucesso!');
+                    
+                    // Pequeno atraso para mostrar a mensagem antes de recarregar
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1000);
                 } else {
-                    showToast('error', data.error || 'Erro ao fazer upload');
+                    // Mostrar mensagem de erro
+                    showMessage('error', data.error || 'Erro ao fazer upload do arquivo');
+                    
+                    // Resetar o estado do botão
+                    uploadButton.disabled = false;
+                    uploadButton.querySelector('.normal-state').classList.remove('d-none');
+                    uploadButton.querySelector('.loading-state').classList.add('d-none');
                 }
+            })
+            .catch(error => {
+                console.error('Erro:', error);
+                showMessage('error', 'Erro ao processar o upload: ' + error.message);
+                
+                // Resetar o estado do botão
+                uploadButton.disabled = false;
+                uploadButton.querySelector('.normal-state').classList.remove('d-none');
+                uploadButton.querySelector('.loading-state').classList.add('d-none');
             });
         });
 
@@ -1083,13 +1295,14 @@
         const startTrainingBtn = document.getElementById('startTrainingBtn');
         trainingForm.addEventListener('submit', function(e) {
             e.preventDefault();
-            startTrainingBtn.disabled = true;
-            startTrainingBtn.querySelector('.normal-state').classList.add('d-none');
-            startTrainingBtn.querySelector('.loading-state').classList.remove('d-none');
+            
+            // Mostrar loading no botão
+            showLoading('startTrainingBtn');
 
             const selectedAIs = document.querySelectorAll('.ai-item input[type="checkbox"]:checked');
             if (selectedAIs.length === 0) {
-                location.reload();
+                showMessage('warning', 'Selecione pelo menos uma IA para treinamento');
+                hideLoading('startTrainingBtn');
                 return;
             }
 
@@ -1101,23 +1314,52 @@
                 formData.append('selected_ais', checkbox.value);
             });
             
-            fetch("{% url 'ai_config:training_ai' %}", {
+            // Usar URL com no_loader=true para evitar o loader de transição
+            fetch("{% url 'ai_config:training_ai' %}?no_loader=true", {
                 method: 'POST',
                 body: formData,
                 headers: {
-                    'X-CSRFToken': '{{ csrf_token }}'
+                    'X-CSRFToken': '{{ csrf_token }}',
+                    'X-Requested-With': 'XMLHttpRequest'
                 }
             })
             .then(response => response.json())
             .then(data => {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('trainingModal'));
+                
+                // Exibir mensagens de acordo com o resultado
                 if (data.success) {
-                    bootstrap.Modal.getInstance(document.getElementById('trainingModal')).hide();
+                    if (data.data?.success_message) {
+                        showMessage('success', data.data.success_message);
+                    } else {
+                        showMessage('success', 'Treinamento iniciado com sucesso!');
+                    }
+                    // Fechar modal apenas em caso de sucesso
+                    if (modal) modal.hide();
+                } else {
+                    if (data.error) {
+                        showMessage('error', data.error);
+                    } else if (data.data?.error_message) {
+                        showMessage('error', data.data.error_message);
+                    } else {
+                        showMessage('error', 'Erro ao iniciar treinamento');
+                    }
                 }
-                location.reload();
+                
+                // Atualizar dados
+                setTimeout(() => {
+                    updateStatusFromServer();
+                }, 500);
             })
             .catch(error => {
                 console.error('Erro:', error);
-                location.reload();
+                showMessage('error', 'Ocorreu um erro ao enviar o formulário. Por favor, tente novamente.');
+                setTimeout(() => {
+                    updateStatusFromServer();
+                }, 500);
+            })
+            .finally(() => {
+                hideLoading('startTrainingBtn');
             });
         });
 
@@ -1349,6 +1591,11 @@
     }
     th.sortable.active-sort {
         text-decoration: underline;
+    }
+    /* Estilos específicos para arquivos vazios */
+    .badge.bg-danger {
+        font-size: 0.75rem;
+        vertical-align: middle;
     }
     /* Filtros por default abertos */
     #filterControlsFiles,

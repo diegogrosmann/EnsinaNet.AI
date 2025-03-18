@@ -22,6 +22,7 @@
 
                 <form id="captureForm" method="post" class="needs-validation" novalidate>
                     {% csrf_token %}
+                    <input type="hidden" name="action" value="activate">
                     <div class="form-floating mb-3">
                         <select class="form-select" id="id_token" name="token" required>
                             <option value="">Selecione um token</option>
@@ -88,37 +89,10 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const captureModal = document.getElementById('captureModal');
-    const saveConfirmModal = new bootstrap.Modal(document.getElementById('saveConfirmModal'));
-    let shouldOpenCaptureModal = false;
     
-    // Verificar alterações não salvas antes de abrir o modal de captura
-    captureModal.addEventListener('show.bs.modal', function(event) {
-        if (window.hasUnsavedChanges) {
-            event.preventDefault();
-            shouldOpenCaptureModal = true;
-            saveConfirmModal.show();
-        }
-    });
-
-    // Handler para o botão "Salvar e Continuar"
-    document.getElementById('saveAndContinueBtn').addEventListener('click', function() {
-        const saveButton = document.querySelector('button[name="save_and_continue"]');
-        if (saveButton) {
-            saveButton.click();
-            saveConfirmModal.hide();
-            if (shouldOpenCaptureModal) {
-                setTimeout(() => {
-                    new bootstrap.Modal(captureModal).show();
-                }, 500);
-            }
-        }
-    });
-
-    // Reset flag quando o modal de confirmação é fechado
-    document.getElementById('saveConfirmModal').addEventListener('hidden.bs.modal', function() {
-        shouldOpenCaptureModal = false;
-    });
-
+    // Removendo a verificação de alterações não salvas
+    // Agora o modal pode ser aberto mesmo com alterações não salvas
+    
     const form = document.getElementById('captureForm');
     const errorDiv = document.getElementById('captureError');
     const tokenSelect = document.getElementById('id_token');
@@ -160,28 +134,72 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const formData = new FormData(form);
-        formData.append('action', 'activate');
 
         try {
+            // Mostrar indicador de carregamento
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const originalBtnHtml = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processando...';
+            
             const response = await fetch('{% url "ai_config:capture_toggle" %}', {
                 method: 'POST',
-                body: formData,
-                headers: {
-                    'X-CSRFToken': '{{ csrf_token }}'
-                }
+                body: formData
             });
+
+            if (!response.ok) {
+                throw new Error(`Erro de resposta: ${response.status} ${response.statusText}`);
+            }
 
             const data = await response.json();
             
-            if (!response.ok) {
-                showError(data.error || 'Erro ao ativar a captura');
+            // Restaurar botão
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalBtnHtml;
+            
+            if (!data.success) {
+                // Mostrar mensagem de erro
+                if (typeof showMessage === 'function') {
+                    showMessage('error', data.error || 'Erro ao ativar a captura');
+                } else {
+                    showError(data.error || 'Erro ao ativar a captura');
+                }
+                
+                form.reset();
+                form.classList.remove('was-validated');
+                bootstrap.Modal.getInstance(document.getElementById('captureModal')).hide();
                 return;
             }
 
+            // Esconder o modal
             bootstrap.Modal.getInstance(document.getElementById('captureModal')).hide();
-            window.location.reload();
+            
+            // Atualizar a UI para mostrar que a captura está ativa
+            updateUICaptureActive(data.data);
+            
+            // Mostrar mensagem de sucesso
+            if (typeof showMessage === 'function') {
+                showMessage('success', 'Captura ativada com sucesso');
+            }
+            
         } catch (error) {
-            showError('Erro ao se comunicar com o servidor');
+            console.error('Erro:', error);
+            
+            // Restaurar botão em caso de erro
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-play-circle me-2"></i>Iniciar Captura';
+            
+            // Mostrar mensagem de erro
+            if (typeof showMessage === 'function') {
+                showMessage('error', 'Erro ao se comunicar com o servidor: ' + error.message);
+            } else {
+                showError('Erro ao se comunicar com o servidor: ' + error.message);
+            }
+            
+            form.reset();
+            form.classList.remove('was-validated');
+            bootstrap.Modal.getInstance(document.getElementById('captureModal')).hide();
         }
     });
 
@@ -194,5 +212,72 @@ document.addEventListener('DOMContentLoaded', function() {
     form.querySelectorAll('select').forEach(select => {
         select.addEventListener('change', hideError);
     });
+    
+    // Função para atualizar a UI quando a captura é ativada
+    function updateUICaptureActive(data) {
+        // Obtenha os detalhes da captura configurada
+        const config = data.config;
+        const tokenName = tokenSelect.options[tokenSelect.selectedIndex].text;
+        const aiConfigName = document.getElementById('id_ai_client_config').options[document.getElementById('id_ai_client_config').selectedIndex].text;
+        
+        // Criar ou atualizar o alerta de captura ativa
+        let activeAlert = document.querySelector('.alert-info');
+        if (!activeAlert) {
+            // Criar um novo alerta
+            activeAlert = document.createElement('div');
+            activeAlert.className = 'alert alert-info alert-dismissible fade show';
+            activeAlert.setAttribute('role', 'alert');
+            
+            // Adicionar ao início do conteúdo principal
+            const mainContent = document.getElementById('main-content');
+            if (mainContent) {
+                mainContent.insertBefore(activeAlert, mainContent.firstChild);
+            }
+        }
+        
+        // Atualizar o conteúdo do alerta
+        activeAlert.innerHTML = `
+            <i class="bi bi-record-circle text-danger me-2 recording-icon"></i>
+            Capturando exemplos para o token "${tokenName}" usando ${aiConfigName}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        // Atualizar o botão de captura
+        const captureButtonContainer = document.querySelector('[data-bs-target="#captureModal"]').parentElement;
+        if (captureButtonContainer) {
+            // Criar botão de desativação
+            const deactivateButton = document.createElement('button');
+            deactivateButton.id = 'deactivate-capture-btn';
+            deactivateButton.className = 'btn btn-danger';
+            deactivateButton.innerHTML = '<i class="bi bi-stop-circle me-2"></i> Desativar Captura';
+            deactivateButton.type = 'button';
+            
+            // Adicionar o evento de clique
+            deactivateButton.addEventListener('click', window.deactivateCapture);
+            
+            // Substituir o botão antigo
+            captureButtonContainer.innerHTML = '';
+            captureButtonContainer.appendChild(deactivateButton);
+        }
+        
+        // Configurar variáveis globais para polling de exemplos
+        window.activeCaptureToken = config.token_id;
+        window.activeCaptureAI = config.ai_client_config_id;
+        
+        // Iniciar o polling de exemplos
+        if (typeof fetchTrainingExamples === 'function') {
+            // Busca inicial
+            fetchTrainingExamples();
+            
+            // Configura o polling
+            if (window.pollingInterval) {
+                clearInterval(window.pollingInterval);
+            }
+            window.pollingInterval = setInterval(fetchTrainingExamples, 30000);
+        }
+    }
+    
+    // Disponibiliza a função para uso global
+    window.updateUICaptureActive = updateUICaptureActive;
 });
 </script>

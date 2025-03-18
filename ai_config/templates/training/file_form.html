@@ -534,7 +534,7 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch(buildUrl(buildUrl("{% url 'ai_config:capture_get_examples' 'ffffffff-ffff-ffff-ffff-ffffffffffff' '8888888888'%}", "ffffffff-ffff-ffff-ffff-ffffffffffff", window.activeCaptureToken), '8888888888', window.activeCaptureAI))
             .then(response => response.json())
             .then(data => {
-                if (data.examples && data.examples.length > 0) {
+                if (data.success && data.data && data.data.examples && data.data.examples.length > 0) {
                     // Fecha todos os exemplos existentes
                     const openCollapses = formsetContainer.querySelectorAll('.accordion-collapse.collapse.show');
                     openCollapses.forEach(collapse => {
@@ -543,7 +543,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     // Adiciona os novos exemplos
                     let lastForm = null;
-                    data.examples.forEach(example => {
+                    data.data.examples.forEach(example => {
                         lastForm = createNewExample(example, false);
                     });
 
@@ -598,8 +598,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Função para desativar captura - extraída para reuso
-    async function deactivateCapture() {
+    // Função para desativar captura - extraída para reuso e tornada global
+    window.deactivateCapture = async function() {
         try {
             const response = await fetch('{% url "ai_config:capture_toggle" %}', {
                 method: 'POST',
@@ -612,7 +612,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
             });
 
-            if (response.ok) {
+            const data = await response.json();
+            
+            if (data.success) {
                 // Remove o alerta de captura ativa
                 const activeAlert = document.querySelector('.alert-info');
                 if (activeAlert) {
@@ -649,18 +651,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Usa o sistema de toast do template base
                 createAndShowToast('Captura desativada com sucesso', 'success');
             } else {
-                throw new Error('Erro ao desativar captura');
+                throw new Error(data.error || 'Erro ao desativar captura');
             }
         } catch (error) {
             console.error('Erro:', error);
             showError('Erro ao desativar captura: ' + error.message);
         }
-    }
+    };
+
+    // Torna a função fetchTrainingExamples global para ser usada pelo script de captura
+    window.fetchTrainingExamples = fetchTrainingExamples;
 
     // Configura o botão de desativar captura
     const deactivateButton = document.getElementById('deactivate-capture-btn');
     if (deactivateButton) {
-        deactivateButton.addEventListener('click', deactivateCapture);
+        deactivateButton.addEventListener('click', window.deactivateCapture);
     }
 
     // Configuração dos resizers para markdown

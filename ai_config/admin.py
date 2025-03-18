@@ -16,12 +16,15 @@ from django.utils.html import format_html
 from django.db import transaction
 from django.http import HttpRequest, HttpResponse
 
+from core.types.ai import AISuccess
+from core.types.training import AITrainingStatus
+
 from .models import ( 
     AIClientGlobalConfiguration, 
     AIClientConfiguration,
-    AITrainedModelsManager,
+    AIFilesManager,
+    AIModelsManager,
     AITraining,
-    AITrainingFilesManager, 
     TokenAIConfiguration, 
     AITrainingFile, 
     DoclingConfiguration,
@@ -143,7 +146,7 @@ class AITrainingFileAdmin(admin.ModelAdmin):
     Configura a interface para upload, download e exclusão de arquivos.
     """
     form = AITrainingFileForm
-    list_display = ('name', 'user', 'file', 'uploaded_at')  # Removido train_all_a_is
+    list_display = ('name', 'user', 'uploaded_at')  # Removido train_all_a_is
     list_filter = ('uploaded_at', 'user')  # Adicionado filtro por usuário
     search_fields = ('name', 'user__email', 'user__username')  # Adicionado busca por email/username
     readonly_fields = ('uploaded_at',)
@@ -316,10 +319,151 @@ class AITrainingAdmin(admin.ModelAdmin):
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
 
-class AITrainingFilesAdmin(admin.ModelAdmin):
-    """Interface administrativa para gerenciar arquivos de treinamento."""
+class AIModelsAdmin(admin.ModelAdmin):
+    """Interface administrativa para gerenciar modelos."""
     
-    change_list_template = "admin/ai_config/training_files_manager.html"
+    change_list_template = "admin/ai_config/models_manager.html"
+    
+    def has_add_permission(self, request):
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        return False
+    
+    def changelist_view(self, request, extra_context=None):
+        # Obtém todas as configurações globais que implementam o método api_list_models
+        global_configs = []
+        for config in AIClientGlobalConfiguration.objects.all():
+            try:
+                client = config.create_api_client_instance()
+                # Verifica se o cliente implementa o método api_list_models
+                if hasattr(client, 'api_list_models'):
+                    global_configs.append(config)
+            except Exception as e:
+                logger.warning(f"Erro ao verificar cliente {config.name}: {e}")
+        
+        context = {
+            'title': 'Gerenciador de Modelos',
+            'global_configs': global_configs,
+            'selected_config': request.GET.get('ai_config'),
+            **self.admin_site.each_context(request),
+        }
+        
+        if request.GET.get('ai_config'):
+            try:
+                config = AIClientGlobalConfiguration.objects.get(id=request.GET['ai_config'])
+                client = config.create_api_client_instance()
+                
+                if hasattr(client, 'api_list_models'):
+                    # Obtém os modelos da API
+                    models = client.api_list_models(list_trained_models=True, list_base_models=True)
+                    
+                    # Processa os modelos para adicionar informações de treinamento
+                    formatted_models = []
+                    for model in models:
+                        model_data = {
+                            'id': model.id,
+                            'display_id': model.id,
+                            'name': model.name,
+                            'is_fine_tuned': model.is_fine_tuned,
+                            'owner': None,
+                            'training_id': None,
+                            'training_status': None
+                        }
+                        
+                        # Tenta encontrar um registro de treinamento associado a este modelo
+                        if model.is_fine_tuned:
+                            training = AITraining.objects.filter(model_name=model.id).first()
+                            if training:
+                                model_data['owner'] = training.ai_config.user.username
+                                model_data['training_id'] = training.id
+                                model_data['training_status'] = training.status
+                        
+                        formatted_models.append(model_data)
+                    
+                    context['models'] = formatted_models
+                else:
+                    messages.warning(request, 'Esta IA não suporta listagem de modelos.')
+            except Exception as e:
+                messages.error(request, f'Erro ao listar modelos: {str(e)}')
+        
+        return TemplateResponse(request, self.change_list_template, context)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('delete/', self.admin_site.admin_view(self.delete_models_view), name='delete_trained_models'),
+        ]
+        return custom_urls + urls
+    
+    def delete_models_view(self, request):
+        """Deleta múltiplos modelos treinados e seus registros de treinamento."""
+        if request.method != 'POST':
+            return JsonResponse({'error': 'Método não permitido'}, status=405)
+        
+        config_id = request.POST.get('ai_config')
+        model_ids = request.POST.getlist('model_names[]')
+        
+        if not config_id or not model_ids:
+            return JsonResponse({'error': 'Parâmetros inválidos'}, status=400)
+        
+        config = get_object_or_404(AIClientGlobalConfiguration, id=config_id)
+        
+        errors = []
+        success_count = 0
+        
+        try:
+            
+            for model_id in model_ids:
+                try:
+                    # Primeiro verifica se existe treinamento associado a este modelo
+                    training = AITraining.objects.filter(model_name=model_id).first()
+                    
+                    if training and training.status != AITrainingStatus.COMPLETED.value:
+                        errors.append(f"Não é possível excluir o modelo {model_id} porque o treinamento {training.id} ainda está em andamento.")
+                        continue
+                    
+                    if training:
+                        try:
+                            id = training.id
+                            training.delete()
+                            logger.info(f"Registro de treinamento {id} excluído junto com o modelo {model_id}")
+                        except Exception as e:
+                            errors.append(f'Erro ao deletar registro de treinamento {training.id}: {str(e)}')
+                            result = AISuccess(success=False, error=str(e))
+                    else:
+                        client = config.create_api_client_instance()
+                        # Tenta excluir o modelo da API
+                        result = client.delete_trained_model(model_id)
+                        logger.info(f"Modelo {model_id} excluído com sucesso")
+                    
+                    if result.success:
+                        # Se o modelo foi excluído com sucesso, também exclui o registro de treinamento
+                        if training:
+                            training.delete()
+                            logger.info(f"Registro de treinamento {training.id} excluído junto com o modelo {model_id}")
+                        
+                        success_count += 1
+                    else:
+                        errors.append(f'Não foi possível deletar o modelo {model_id}: {result.error}')
+                except Exception as e:
+                    errors.append(f'Erro ao deletar modelo {model_id}: {str(e)}')
+        except Exception as e:
+            return JsonResponse({'error': f'Erro ao criar cliente de API: {str(e)}'}, status=500)
+        
+        return JsonResponse({
+            'success': True,
+            'deleted': success_count,
+            'errors': errors
+        })
+
+class AIFilesAdmin(admin.ModelAdmin):
+    """Interface administrativa para gerenciar arquivos de IA."""
+    
+    change_list_template = "admin/ai_config/files_manager.html"
     
     def has_add_permission(self, request):
         return False
@@ -332,14 +476,19 @@ class AITrainingFilesAdmin(admin.ModelAdmin):
     
     def changelist_view(self, request, extra_context=None):
         """View customizada para listar os clientes de IA disponíveis."""
-        # Obtém todas as configurações globais que suportam treinamento
+        # Obtém todas as configurações globais que implementam o método api_list_files
         global_configs = []
         for config in AIClientGlobalConfiguration.objects.all():
-            if config.get_client_can_train():
-                global_configs.append(config)
+            try:
+                client = config.create_api_client_instance()
+                # Verifica se o cliente implementa o método api_list_files
+                if hasattr(client, 'api_list_files'):
+                    global_configs.append(config)
+            except Exception as e:
+                logger.warning(f"Erro ao verificar cliente {config.name}: {e}")
         
         context = {
-            'title': 'Arquivos de Treinamento na IA',
+            'title': 'Arquivos na IA',
             'global_configs': global_configs,
             'selected_config': request.GET.get('ai_config'),
             **self.admin_site.each_context(request),
@@ -348,7 +497,20 @@ class AITrainingFilesAdmin(admin.ModelAdmin):
         if request.GET.get('ai_config'):
             try:
                 config = AIClientGlobalConfiguration.objects.get(id=request.GET['ai_config'])
-                context['files'] = config.list_files()
+                client = config.create_api_client_instance()
+                if hasattr(client, 'api_list_files'):
+                    files = client.api_list_files()
+                    # Garantindo que cada arquivo tenha seu ID disponível para exibição
+                    for file in files:
+                        # Se o arquivo não tiver um atributo 'id' explícito, verificamos outros campos comuns
+                        if not hasattr(file, 'id') and hasattr(file, 'file_id'):
+                            file.id = file.file_id
+                        # Adicionamos o id como um campo de exibição explícito para facilitar sua visualização no template
+                        if hasattr(file, 'id'):
+                            file.display_id = file.id
+                    context['files'] = files
+                else:
+                    messages.warning(request, 'Esta IA não suporta listagem de arquivos.')
             except Exception as e:
                 messages.error(request, f'Erro ao listar arquivos: {str(e)}')
         
@@ -357,12 +519,12 @@ class AITrainingFilesAdmin(admin.ModelAdmin):
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
-            path('delete/', self.admin_site.admin_view(self.delete_files_view), name='delete_training_files'),
+            path('delete/', self.admin_site.admin_view(self.delete_files_view), name='delete_files'),
         ]
         return custom_urls + urls
     
     def delete_files_view(self, request):
-        """Deleta múltiplos arquivos de treinamento."""
+        """Deleta múltiplos arquivos de IA."""
         if request.method != 'POST':
             return JsonResponse({'error': 'Método não permitido'}, status=405)
         
@@ -377,94 +539,19 @@ class AITrainingFilesAdmin(admin.ModelAdmin):
         errors = []
         success_count = 0
         
-        for file_id in file_ids:
-            try:
-                if config.delete_training_file(file_id):
-                    success_count += 1
-                else:
-                    errors.append(f'Não foi possível deletar o arquivo {file_id}')
-            except Exception as e:
-                errors.append(f'Erro ao deletar arquivo {file_id}: {str(e)}')
-        
-        return JsonResponse({
-            'success': True,
-            'deleted': success_count,
-            'errors': errors
-        })
-
-class AITrainedModelsAdmin(admin.ModelAdmin):
-    """Interface administrativa para gerenciar modelos treinados."""
-    
-    change_list_template = "admin/ai_config/models_manager.html"
-    
-    def has_add_permission(self, request):
-        return False
-    
-    def has_delete_permission(self, request, obj=None):
-        return False
-    
-    def has_change_permission(self, request, obj=None):
-        return False
-    
-    def changelist_view(self, request, extra_context=None):
-        # Obtém apenas configurações globais que suportam treinamento
-        global_configs = []
-        for config in AIClientGlobalConfiguration.objects.all():
-            if config.get_client_can_train():
-                global_configs.append(config)
-        
-        context = {
-            'title': 'Gerenciador de Modelos Treinados',
-            'global_configs': global_configs,
-            'selected_config': request.GET.get('ai_config'),
-            **self.admin_site.each_context(request),
-        }
-        
-        if request.GET.get('ai_config'):
-            try:
-                config = AIClientGlobalConfiguration.objects.get(id=request.GET['ai_config'])
-                
-                if config.get_client_can_train():
-                    models = config.list_trained_models()
-                    context['models'] = models
-                else:
-                    messages.error(request, 'Esta IA não suporta treinamento.')
-            except Exception as e:
-                messages.error(request, f'Erro ao listar modelos: {str(e)}')
-        
-        return TemplateResponse(request, self.change_list_template, context)
-
-    def get_urls(self):
-        urls = super().get_urls()
-        custom_urls = [
-            path('delete/', self.admin_site.admin_view(self.delete_models_view), name='delete_trained_models'),
-        ]
-        return custom_urls + urls
-    
-    def delete_models_view(self, request):
-        """Deleta múltiplos modelos treinados."""
-        if request.method != 'POST':
-            return JsonResponse({'error': 'Método não permitido'}, status=405)
-        
-        config_id = request.POST.get('ai_config')
-        model_names = request.POST.getlist('model_names[]')
-        
-        if not config_id or not model_names:
-            return JsonResponse({'error': 'Parâmetros inválidos'}, status=400)
-        
-        config = get_object_or_404(AIClientGlobalConfiguration, id=config_id)
-        
-        errors = []
-        success_count = 0
-        
-        for model_name in model_names:
-            try:
-                if config.delete_trained_model(model_name):
-                    success_count += 1
-                else:
-                    errors.append(f'Não foi possível deletar o modelo {model_name}')
-            except Exception as e:
-                errors.append(f'Erro ao deletar modelo {model_name}: {str(e)}')
+        try:
+            client = config.create_api_client_instance()
+            for file_id in file_ids:
+                try:
+                    result = client.delete_file(file_id)
+                    if result.success:
+                        success_count += 1
+                    else:
+                        errors.append(f'Não foi possível deletar o arquivo {file_id}: {result.error}')
+                except Exception as e:
+                    errors.append(f'Erro ao deletar arquivo {file_id}: {str(e)}')
+        except Exception as e:
+            return JsonResponse({'error': f'Erro ao criar cliente de API: {str(e)}'}, status=500)
         
         return JsonResponse({
             'success': True,
@@ -478,5 +565,5 @@ admin.site.register(AIClientConfiguration, AIClientConfigurationAdmin)
 admin.site.register(TokenAIConfiguration, TokenAIConfigurationAdmin)
 admin.site.register(AITrainingFile, AITrainingFileAdmin)
 admin.site.register(DoclingConfiguration, DoclingConfigurationAdmin)
-admin.site.register(AITrainingFilesManager, AITrainingFilesAdmin)
-admin.site.register(AITrainedModelsManager, AITrainedModelsAdmin)
+admin.site.register(AIFilesManager, AIFilesAdmin)
+admin.site.register(AIModelsManager, AIModelsAdmin)

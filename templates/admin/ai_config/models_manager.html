@@ -1,0 +1,267 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_list %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" type="text/css" href="{% static "admin/css/changelists.css" %}">
+  <style>
+    .ai-selection-form {
+      margin-bottom: 20px;
+      padding: 15px;
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .ai-selection-form select {
+      min-width: 300px;
+      padding: 5px;
+    }
+    .ai-selection-form button {
+      margin-left: 10px;
+    }
+    .model-list {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .model-list th, .model-list td {
+      padding: 8px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    .model-list th {
+      background-color: #f2f2f2;
+    }
+    .checkbox-column {
+      width: 20px;
+    }
+    .actions {
+      margin-top: 15px;
+    }
+    .select-all {
+      margin-right: 5px;
+    }
+    .fine-tuned {
+      background-color: #e6f7ff;
+    }
+    .base-model {
+      background-color: #f9f9f9;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 6px;
+      border-radius: 3px;
+      font-size: 0.75em;
+      font-weight: bold;
+      margin-left: 5px;
+    }
+    .badge-fine-tuned {
+      background-color: #007bff;
+      color: white;
+    }
+    .badge-base {
+      background-color: #6c757d;
+      color: white;
+    }
+    .disabled-checkbox {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .tooltip {
+      position: relative;
+      display: inline-block;
+      cursor: help;
+    }
+    .tooltip .tooltiptext {
+      visibility: hidden;
+      width: 200px;
+      background-color: #555;
+      color: #fff;
+      text-align: center;
+      border-radius: 6px;
+      padding: 5px 0;
+      position: absolute;
+      z-index: 1;
+      bottom: 125%;
+      left: 50%;
+      margin-left: -100px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .tooltip:hover .tooltiptext {
+      visibility: visible;
+      opacity: 1;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div id="content-main">
+    <div class="module filtered">
+      <div class="ai-selection-form">
+        <h2>Selecione uma IA para visualizar seus modelos</h2>
+        <form method="get">
+          <select name="ai_config" id="ai_config">
+            <option value="">Selecione uma IA</option>
+            {% for config in global_configs %}
+              <option value="{{ config.id }}" {% if selected_config == config.id|stringformat:"s" %}selected{% endif %}>
+                {{ config.name }} ({{ config.api_client_class }})
+              </option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="default">Visualizar Modelos</button>
+        </form>
+      </div>
+
+      {% if models %}
+        <h2>Modelos disponíveis na IA</h2>
+        <form id="model-action-form">
+          <table class="model-list">
+            <thead>
+              <tr>
+                <th class="checkbox-column">
+                  <input type="checkbox" id="select-all" class="select-all">
+                </th>
+                <th>ID</th>
+                <th>Nome</th>
+                <th>Tipo</th>
+                <th>Dono</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for model in models %}
+                <tr class="{% if model.is_fine_tuned %}fine-tuned{% else %}base-model{% endif %}">
+                  <td class="checkbox-column">
+                    {% if model.is_fine_tuned %}
+                      <input type="checkbox" name="model_names" value="{{ model.id }}" class="model-checkbox">
+                    {% else %}
+                      <input type="checkbox" disabled class="disabled-checkbox" title="Modelos base não podem ser excluídos">
+                    {% endif %}
+                  </td>
+                  <td>{{ model.display_id }}</td>
+                  <td>{{ model.name }}</td>
+                  <td>
+                    {% if model.is_fine_tuned %}
+                      <span class="badge badge-fine-tuned">Treinado</span>
+                    {% else %}
+                      <span class="badge badge-base">Base</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if model.owner %}
+                      {{ model.owner }}
+                    {% else %}
+                      <span class="tooltip">-
+                        <span class="tooltiptext">Modelo não está associado a nenhum treinamento registrado no sistema</span>
+                      </span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if model.training_status %}
+                      {{ model.training_status }}
+                    {% elif model.is_fine_tuned %}
+                      <span class="tooltip">Não rastreado
+                        <span class="tooltiptext">Este modelo foi treinado, mas não está sendo rastreado pelo sistema</span>
+                      </span>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="5">Nenhum modelo encontrado.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+
+          {% if models %}
+            <div class="actions">
+              <input type="hidden" name="ai_config" value="{{ selected_config }}">
+              <button type="button" id="delete-selected" class="default">Excluir Selecionados</button>
+            </div>
+          {% endif %}
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Selecionar todos os checkboxes (apenas para modelos treinados)
+      const selectAll = document.getElementById('select-all');
+      if (selectAll) {
+        selectAll.addEventListener('change', function() {
+          const checkboxes = document.querySelectorAll('.model-checkbox');
+          checkboxes.forEach(checkbox => {
+            checkbox.checked = this.checked;
+          });
+        });
+      }
+
+      // Botão para excluir selecionados
+      const deleteButton = document.getElementById('delete-selected');
+      if (deleteButton) {
+        deleteButton.addEventListener('click', function() {
+          const checkboxes = document.querySelectorAll('.model-checkbox:checked');
+          if (checkboxes.length === 0) {
+            alert('Selecione pelo menos um modelo para excluir');
+            return;
+          }
+
+          if (confirm('Tem certeza que deseja excluir os modelos selecionados? Esta operação também excluirá os registros de treinamento associados.')) {
+            const form = document.getElementById('model-action-form');
+            const formData = new FormData();
+            const aiConfig = document.querySelector('select[name="ai_config"]').value;
+            
+            formData.append('ai_config', aiConfig);
+            checkboxes.forEach(checkbox => {
+              formData.append('model_names[]', checkbox.value);
+            });
+
+            fetch('{% url "admin:delete_trained_models" %}', {
+              method: 'POST',
+              body: formData,
+              headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+              }
+            })
+            .then(response => response.json())
+            .then(data => {
+              if (data.success) {
+                alert(`${data.deleted} modelo(s) excluído(s) com sucesso.`);
+                if (data.errors && data.errors.length > 0) {
+                  alert(`Erros: ${data.errors.join(', ')}`);
+                }
+                // Recarrega a página
+                window.location.reload();
+              } else {
+                alert(`Erro: ${data.error}`);
+              }
+            })
+            .catch(error => {
+              alert(`Erro: ${error}`);
+            });
+          }
+        });
+      }
+
+      // Função para obter cookie CSRF
+      function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+          const cookies = document.cookie.split(';');
+          for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+              cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+              break;
+            }
+          }
+        }
+        return cookieValue;
+      }
+    });
+  </script>
+{% endblock %}

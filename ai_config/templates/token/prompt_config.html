@@ -138,13 +138,42 @@ document.addEventListener('DOMContentLoaded', function() {
             method: 'POST',
             body: formData,
             headers: {
+                'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
             }
         })
         .then(response => {
-            if (response.ok) {
+            // Melhor tratamento para verificar se a resposta é JSON
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                return response.json().then(data => {
+                    return { 
+                        ok: response.ok, 
+                        status: response.status,
+                        data: data
+                    };
+                });
+            } else {
+                // Se não for JSON, retorna um objeto de erro com o status
+                return {
+                    ok: false,
+                    status: response.status,
+                    data: {
+                        success: false,
+                        error: `Erro na resposta do servidor (${response.status})`
+                    }
+                };
+            }
+        })
+        .then(result => {
+            if (result.ok && result.data.success) {
+                // Indicar que não há alterações não salvas
+                if (window.hasUnsavedChanges !== undefined) {
+                    window.hasUnsavedChanges = false;
+                }
+                
                 if (typeof showMessage === 'function') {
-                    showMessage('success', 'Configurações salvas com sucesso!');
+                    showMessage('success', result.data.data?.message || 'Configurações salvas com sucesso!');
                 } else {
                     // Fallback para alerta bootstrap nativo
                     const alertHtml = `
@@ -166,15 +195,36 @@ document.addEventListener('DOMContentLoaded', function() {
                     }, 3000);
                 }
             } else {
+                const errorMessage = result.data.error || 'Erro ao salvar configurações';
+                console.error('Erro na resposta:', errorMessage);
                 if (typeof showMessage === 'function') {
-                    showMessage('error', 'Erro ao salvar configurações');
+                    showMessage('error', errorMessage);
+                } else {
+                    // Fallback para alerta bootstrap nativo de erro
+                    const alertHtml = `
+                        <div class="alert alert-dismissible alert-danger">
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            <strong>Erro!</strong> ${errorMessage}
+                        </div>
+                    `;
+                    const container = document.querySelector('.container');
+                    container.insertAdjacentHTML('afterbegin', alertHtml);
                 }
             }
         })
         .catch(error => {
-            console.error('Erro:', error);
+            console.error('Erro de rede:', error);
             if (typeof showMessage === 'function') {
-                showMessage('error', 'Erro ao salvar configurações');
+                showMessage('error', 'Erro de conexão ao salvar configurações');
+            } else {
+                const alertHtml = `
+                    <div class="alert alert-dismissible alert-danger">
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        <strong>Erro!</strong> Erro de conexão ao salvar configurações
+                    </div>
+                `;
+                const container = document.querySelector('.container');
+                container.insertAdjacentHTML('afterbegin', alertHtml);
             }
         })
         .finally(() => {
@@ -183,15 +233,41 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Adiciona validação em tempo real ao campo prompt
-    document.querySelector('#id_prompt').addEventListener('input', validateForm);
+    document.querySelector('#id_prompt').addEventListener('input', function() {
+        validateForm();
+        // Marcar que há alterações não salvas quando o usuário edita o campo
+        if (window.hasUnsavedChanges !== undefined) {
+            window.hasUnsavedChanges = true;
+        }
+    });
+    
+    // Também marcar alterações não salvas nos outros campos
+    document.querySelector('#id_base_instruction').addEventListener('input', function() {
+        if (window.hasUnsavedChanges !== undefined) {
+            window.hasUnsavedChanges = true;
+        }
+    });
+    
+    document.querySelector('#id_responses').addEventListener('input', function() {
+        if (window.hasUnsavedChanges !== undefined) {
+            window.hasUnsavedChanges = true;
+        }
+    });
 
-    // Suporte ao ctrl+s
+    // Suporte ao ctrl+s independente de CapsLock
     document.addEventListener('keydown', function(e) {
-        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        // Verifica se é a tecla S (maiúscula ou minúscula) com Ctrl ou Command
+        if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
             e.preventDefault();
             console.log('Ctrl+S pressionado - salvamento manual');
             saveForm();
         }
+    });
+
+    // Monitorar envio tradicional do formulário também
+    document.getElementById('tokenConfigForm').addEventListener('submit', function(e) {
+        e.preventDefault(); // Prevenir envio tradicional
+        saveForm();        // Usar nosso método AJAX
     });
 
     // Monitora mudanças no estado de colapso

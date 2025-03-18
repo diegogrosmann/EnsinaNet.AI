@@ -233,23 +233,19 @@
                 Salvando...
             `;
             
-            // Monta dados para envio
-            const formData = new FormData();
-            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+            // Preparar payload no formato esperado pela nova API
+            const payload = {};
+            const tokenId = "{{ token.id }}";
+            payload[tokenId] = {};
+            payload[tokenId][aiId] = isActive;
             
-            if (isActive) {
-                formData.append('enabled_ai', aiId);
-            } else {
-                // Quando desativamos, enviamos o ID da IA explicitamente
-                formData.append('disable_ai', aiId);
-            }
-            
-            fetch(window.location.href, {
+            fetch("{% url 'ai_config:token_ai_toggle' %}", {
                 method: 'POST',
-                body: formData,
+                body: JSON.stringify(payload),
                 headers: {
                     'X-CSRFToken': '{{ csrf_token }}',
-                    'X-Requested-With': 'XMLHttpRequest'  // Adicionar header XMLHttpRequest
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Content-Type': 'application/json'
                 }
             })
             .then(response => {
@@ -259,14 +255,14 @@
                 return response.json();
             })
             .then(data => {
-                if (data.status === 'success') {
+                if (data.success) {
                     statusBadge.className = isActive
                         ? 'badge ms-2 bg-success'
                         : 'badge ms-2 bg-secondary';
                     statusBadge.textContent = isActive ? 'Ativa' : 'Inativa';
                     showMessage('success', 'IA ' + (isActive ? 'ativada' : 'desativada') + ' com sucesso!');
                 } else {
-                    throw new Error(data.message || 'Erro ao processar solicitação');
+                    throw new Error(data.error || 'Erro ao processar solicitação');
                 }
             })
             .catch(error => {
@@ -324,29 +320,23 @@
                 // Resto do código original da função
                 const processToastId = showMessage('info', `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Processando ${actionText} todas as IAs...`, 0, false);
                 
-                // Montar dados para envio
-                const formData = new FormData();
-                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+                // Preparar payload para a nova API
+                const payload = {};
+                const tokenId = "{{ token.id }}";
+                payload[tokenId] = {};
                 
-                // Usar a mesma lógica da view atual, com enabled_ai e disable_ai
-                if (activate) {
-                    // Quando ativa, adiciona todas as IAs como enabled_ai
-                    visibleAIs.forEach(aiId => {
-                        formData.append('enabled_ai', aiId);
-                    });
-                } else {
-                    // Quando desativa, adiciona todas as IAs como disable_ai
-                    visibleAIs.forEach(aiId => {
-                        formData.append('disable_ai', aiId);
-                    });
-                }
+                // Adicionar cada AI visível ao payload
+                visibleAIs.forEach(aiId => {
+                    payload[tokenId][aiId] = activate;
+                });
                 
-                fetch(window.location.href, {
+                fetch("{% url 'ai_config:token_ai_toggle' %}", {
                     method: 'POST',
-                    body: formData,
+                    body: JSON.stringify(payload),
                     headers: {
                         'X-CSRFToken': '{{ csrf_token }}',
-                        'X-Requested-With': 'XMLHttpRequest'
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/json'
                     }
                 })
                 .then(response => {
@@ -356,7 +346,7 @@
                     return response.json();
                 })
                 .then(data => {
-                    if (data.status === 'success') {
+                    if (data.success) {
                         // Fechar o toast de processamento
                         closeMessage(processToastId);
                         
@@ -380,7 +370,7 @@
                         showMessage('success', `Todas as IAs foram ${activate ? 'ativadas' : 'desativadas'} com sucesso!`);
                         updateTable(); // Atualizar tabela para refletir as mudanças em filtros/ordenação
                     } else {
-                        throw new Error(data.message || `Erro ao ${actionText} IAs`);
+                        throw new Error(data.error || `Erro ao ${actionText} IAs`);
                     }
                 })
                 .catch(error => {

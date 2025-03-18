@@ -54,14 +54,6 @@
         }
     });
 
-    // Removido o event listener do modal que estava causando o erro
-    // const deleteTokenModal = document.getElementById('deleteConfirmationModal');
-    // deleteTokenModal.addEventListener('show.bs.modal', function (event) {
-    //     const button = event.relatedTarget;
-    //     const tokenId = button.getAttribute('data-token-id'); 
-    //     document.getElementById('delete_token_id').value = tokenId;
-    // });
-
     const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
     confirmDeleteBtn.addEventListener('click', function() {
         // Alterar o botão para mostrar carregamento
@@ -89,8 +81,8 @@
             return response.json().catch(() => ({})); 
         })
         .then(data => {
-            if (data.success === false && data.error) {
-                showMessage('danger', data.error);
+            if (!data.success) {
+                showMessage('danger', data.error || 'Erro ao deletar token');
                 console.error('Erro do servidor:', data.error);
             } else {
                 window.location.reload();
