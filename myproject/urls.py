@@ -31,6 +31,11 @@ urlpatterns: List[Union[URLPattern, URLResolver]] = [
     # APIs e Configurações
     path('api/', include('api.urls', namespace='api')),
     path('ai-config/', include('ai_config.urls', namespace='ai_config')),
+    
+    # Versão do Cliente
+    path('client-version/', include('client_version.urls', namespace='client_version')),
+    # Rota específica para a versão do cliente pnet
+    path('install/pnet/', include('client_version.urls')),
 ]
 
 # Configurações para modo DEBUG

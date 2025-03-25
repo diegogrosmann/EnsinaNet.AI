@@ -27,11 +27,11 @@ class OverwriteStorage(FileSystemStorage):
         Returns:
             str: Nome do arquivo para armazenamento.
         """
-        try:
-            if self.exists(name):
-                logger.debug(f"Removendo arquivo existente: {name}")
-                self.delete(name)
-            return name
-        except Exception as e:
-            logger.error(f"Erro ao processar nome de arquivo '{name}': {e}")
-            raise
+        full_path = os.path.join(self.location, name)
+        if os.path.exists(full_path):
+            try:
+                os.remove(full_path)
+            except Exception as e:
+                logger.error(f"Erro ao processar nome de arquivo {name}: {e}", exc_info=True)
+                raise e
+        return name

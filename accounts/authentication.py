@@ -7,24 +7,24 @@ logger = logging.getLogger(__name__)
 
 class CustomTokenAuthentication(TokenAuthentication):
     """Autenticação personalizada por token utilizando o modelo UserToken.
-    
-    Implementa autenticação de API com base em tokens.
-    Estende a TokenAuthentication padrão do DRF para usar o modelo UserToken.
+
+    Implementa autenticação de API com base em tokens, utilizando o modelo UserToken.
+    Estende a TokenAuthentication padrão do DRF para usar o modelo personalizado.
     
     Attributes:
-        keyword: Palavra-chave para o cabeçalho de autorização (ex: "Token").
+        keyword (str): Palavra-chave para o cabeçalho de autorização (ex: "Token").
     """
     keyword = 'Token'
 
     def authenticate_credentials(self, key):
         """Autentica as credenciais do token fornecido.
-        
+
         Args:
-            key: String contendo a chave do token a ser verificada.
-        
+            key (str): Chave do token a ser verificada.
+
         Returns:
-            tuple: Uma tupla contendo (usuário, token) se a autenticação for bem-sucedida.
-        
+            tuple: Tupla contendo (usuário, token) se a autenticação for bem-sucedida.
+
         Raises:
             AuthenticationFailed: Se o token for inválido ou o usuário estiver inativo.
         """
@@ -35,7 +35,7 @@ class CustomTokenAuthentication(TokenAuthentication):
             logger.warning(f"Tentativa de autenticação com token inválido: {key[:8]}...")
             raise exceptions.AuthenticationFailed('Token inválido.')
         except Exception as e:
-            logger.error(f"Erro durante autenticação do token: {str(e)}")
+            logger.error(f"Erro durante autenticação do token: {str(e)}", exc_info=True)
             raise exceptions.AuthenticationFailed('Erro ao processar autenticação.')
 
         if not token.user.is_active:

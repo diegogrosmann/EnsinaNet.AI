@@ -17,7 +17,9 @@ from django.db import transaction
 from django.http import HttpRequest, HttpResponse
 
 from core.types.ai import AISuccess
-from core.types.training import AITrainingStatus
+from core.types.base import Result
+from core.types.task import TaskStatus
+from core.exceptions import AIConfigError, TrainingError, ApplicationError
 
 from .models import ( 
     AIClientGlobalConfiguration, 
@@ -67,7 +69,7 @@ class AIClientGlobalConfigAdmin(admin.ModelAdmin):
                 return '*' * len(obj.api_key)
             return ""
         except Exception as e:
-            logger.error(f"Erro ao mascarar API key para {obj.name}: {e}")
+            logger.error(f"Erro ao mascarar API key para {obj.name}: {e}", exc_info=True)
             return "Erro ao mascarar chave"
     masked_api_key.short_description = 'API Key'
 
@@ -104,7 +106,7 @@ class AIClientGlobalConfigAdmin(admin.ModelAdmin):
                 )
         except Exception as e:
             logger.exception(f"Erro ao salvar configuração global '{obj.name}': {e}")
-            raise
+            raise AIConfigError(f"Erro ao salvar configuração: {str(e)}")
 
 class AIClientConfigurationAdmin(admin.ModelAdmin):
     """Administração das configurações dos clientes de IA."""
@@ -152,7 +154,14 @@ class AITrainingFileAdmin(admin.ModelAdmin):
     readonly_fields = ('uploaded_at',)
     
     def get_queryset(self, request):
-        """Retorna o queryset dos arquivos de treinamento com user relacionado."""
+        """Retorna o queryset dos arquivos de treinamento com user relacionado.
+        
+        Args:
+            request: Requisição HTTP
+            
+        Returns:
+            QuerySet: Conjunto de registros filtrados
+        """
         return super().get_queryset(request).select_related('user')
 
 class DoclingConfigurationAdmin(admin.ModelAdmin):
@@ -183,7 +192,14 @@ class AITrainingAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at', 'updated_at')
 
     def get_queryset(self, request: HttpRequest) -> Any:
-        """Retorna queryset otimizado com relacionamentos pré-carregados."""
+        """Retorna queryset otimizado com relacionamentos pré-carregados.
+        
+        Args:
+            request: Requisição HTTP
+            
+        Returns:
+            QuerySet: Conjunto de registros otimizado
+        """
         return AITraining.objects.all().select_related(
             'ai_config',
             'ai_config__ai_client',
@@ -207,7 +223,7 @@ class AITrainingAdmin(admin.ModelAdmin):
                 reverse('admin:ai_files_list', args=[obj.ai_config.id])
             )
         except Exception as e:
-            logger.error(f"Erro ao gerar botão de arquivos: {e}")
+            logger.error(f"Erro ao gerar botão de arquivos: {e}", exc_info=True)
             return "-"
     view_files_button.short_description = 'Arquivos'
 
@@ -228,11 +244,16 @@ class AITrainingAdmin(admin.ModelAdmin):
                 reverse('admin:ai_models_list', args=[obj.ai_config.id])
             )
         except Exception as e:
-            logger.error(f"Erro ao gerar botão de modelos: {e}")
+            logger.error(f"Erro ao gerar botão de modelos: {e}", exc_info=True)
             return "-"
     view_models_button.short_description = 'Modelos'
     
     def get_urls(self):
+        """Define URLs customizadas para administração de modelos e arquivos.
+        
+        Returns:
+            list: Lista de URLs
+        """
         urls = super().get_urls()
         custom_urls = [
             path('ai/<int:ai_config_id>/files/',
@@ -251,7 +272,15 @@ class AITrainingAdmin(admin.ModelAdmin):
         return custom_urls + urls
     
     def ai_files_list_view(self, request, ai_config_id):
-        """View para listar arquivos de uma IA específica."""
+        """View para listar arquivos de uma IA específica.
+        
+        Args:
+            request: Requisição HTTP
+            ai_config_id: ID da configuração da IA
+            
+        Returns:
+            HttpResponse: Resposta com template renderizado
+        """
         ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id)
         try:
             files = ai_config.ai_client.list_files()
@@ -263,11 +292,20 @@ class AITrainingAdmin(admin.ModelAdmin):
             }
             return TemplateResponse(request, 'admin/ai_config/training_files_list.html', context)
         except Exception as e:
+            logger.error(f"Erro ao listar arquivos para IA {ai_config_id}: {e}", exc_info=True)
             messages.error(request, f'Erro ao listar arquivos: {str(e)}')
             return redirect('..')
     
     def ai_models_list_view(self, request, ai_config_id):
-        """View para listar modelos treinados de uma IA específica."""
+        """View para listar modelos treinados de uma IA específica.
+        
+        Args:
+            request: Requisição HTTP
+            ai_config_id: ID da configuração da IA
+            
+        Returns:
+            HttpResponse: Resposta com template renderizado
+        """
         ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id)
         try:
             models = ai_config.ai_client.list_trained_models()
@@ -290,33 +328,58 @@ class AITrainingAdmin(admin.ModelAdmin):
             }
             return TemplateResponse(request, 'admin/ai_config/models_list.html', context)
         except Exception as e:
+            logger.error(f"Erro ao listar modelos para IA {ai_config_id}: {e}", exc_info=True)
             messages.error(request, f'Erro ao listar modelos: {str(e)}')
             return redirect('..')
     
     def delete_file_view(self, request, ai_config_id, file_id):
-        """View para deletar um arquivo de treinamento."""
+        """View para deletar um arquivo de treinamento.
+        
+        Args:
+            request: Requisição HTTP
+            ai_config_id: ID da configuração da IA
+            file_id: ID do arquivo a ser excluído
+            
+        Returns:
+            JsonResponse: Resposta com status da operação
+        """
         if request.method != 'POST':
             return JsonResponse({'error': 'Método não permitido'}, status=405)
             
         ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id)
         try:
             if ai_config.ai_client.delete_training_file(file_id):
+                logger.info(f"Arquivo {file_id} excluído com sucesso por {request.user.username}")
                 return JsonResponse({'success': True})
+            logger.warning(f"Falha ao excluir arquivo {file_id}")
             return JsonResponse({'error': 'Não foi possível deletar o arquivo'}, status=400)
         except Exception as e:
+            logger.error(f"Erro ao deletar arquivo {file_id}: {e}", exc_info=True)
             return JsonResponse({'error': str(e)}, status=500)
     
     def delete_model_view(self, request, ai_config_id, model_name):
-        """View para deletar um modelo treinado."""
+        """View para deletar um modelo treinado.
+        
+        Args:
+            request: Requisição HTTP
+            ai_config_id: ID da configuração da IA
+            model_name: Nome do modelo a ser excluído
+            
+        Returns:
+            JsonResponse: Resposta com status da operação
+        """
         if request.method != 'POST':
             return JsonResponse({'error': 'Método não permitido'}, status=405)
             
         ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id)
         try:
             if ai_config.ai_client.delete_trained_model(model_name):
+                logger.info(f"Modelo {model_name} excluído com sucesso por {request.user.username}")
                 return JsonResponse({'success': True})
+            logger.warning(f"Falha ao excluir modelo {model_name}")
             return JsonResponse({'error': 'Não foi possível deletar o modelo'}, status=400)
         except Exception as e:
+            logger.error(f"Erro ao deletar modelo {model_name}: {e}", exc_info=True)
             return JsonResponse({'error': str(e)}, status=500)
 
 class AIModelsAdmin(admin.ModelAdmin):
@@ -325,15 +388,50 @@ class AIModelsAdmin(admin.ModelAdmin):
     change_list_template = "admin/ai_config/models_manager.html"
     
     def has_add_permission(self, request):
+        """Verifica se o usuário tem permissão para adicionar registros.
+        
+        Args:
+            request: Requisição HTTP
+            
+        Returns:
+            bool: Sempre False, pois não permitimos adição direta
+        """
         return False
     
     def has_delete_permission(self, request, obj=None):
+        """Verifica se o usuário tem permissão para excluir registros.
+        
+        Args:
+            request: Requisição HTTP
+            obj: Objeto a ser excluído ou None
+            
+        Returns:
+            bool: Sempre False, pois usamos view customizada para exclusão
+        """
         return False
     
     def has_change_permission(self, request, obj=None):
+        """Verifica se o usuário tem permissão para editar registros.
+        
+        Args:
+            request: Requisição HTTP
+            obj: Objeto a ser editado ou None
+            
+        Returns:
+            bool: Sempre False, pois esta interface é somente para visualização
+        """
         return False
     
     def changelist_view(self, request, extra_context=None):
+        """View customizada para listar os modelos disponíveis.
+        
+        Args:
+            request: Requisição HTTP
+            extra_context: Contexto adicional opcional
+            
+        Returns:
+            HttpResponse: Resposta com template renderizado
+        """
         # Obtém todas as configurações globais que implementam o método api_list_models
         global_configs = []
         for config in AIClientGlobalConfiguration.objects.all():
@@ -388,11 +486,17 @@ class AIModelsAdmin(admin.ModelAdmin):
                 else:
                     messages.warning(request, 'Esta IA não suporta listagem de modelos.')
             except Exception as e:
+                logger.error(f"Erro ao listar modelos: {e}", exc_info=True)
                 messages.error(request, f'Erro ao listar modelos: {str(e)}')
         
         return TemplateResponse(request, self.change_list_template, context)
 
     def get_urls(self):
+        """Define URLs customizadas para administração de modelos.
+        
+        Returns:
+            list: Lista de URLs
+        """
         urls = super().get_urls()
         custom_urls = [
             path('delete/', self.admin_site.admin_view(self.delete_models_view), name='delete_trained_models'),
@@ -400,7 +504,14 @@ class AIModelsAdmin(admin.ModelAdmin):
         return custom_urls + urls
     
     def delete_models_view(self, request):
-        """Deleta múltiplos modelos treinados e seus registros de treinamento."""
+        """Deleta múltiplos modelos treinados e seus registros de treinamento.
+        
+        Args:
+            request: Requisição HTTP
+            
+        Returns:
+            JsonResponse: Resposta com status da operação
+        """
         if request.method != 'POST':
             return JsonResponse({'error': 'Método não permitido'}, status=405)
         
@@ -416,13 +527,12 @@ class AIModelsAdmin(admin.ModelAdmin):
         success_count = 0
         
         try:
-            
             for model_id in model_ids:
                 try:
                     # Primeiro verifica se existe treinamento associado a este modelo
                     training = AITraining.objects.filter(model_name=model_id).first()
                     
-                    if training and training.status != AITrainingStatus.COMPLETED.value:
+                    if training and training.status != TaskStatus.COMPLETED.value:
                         errors.append(f"Não é possível excluir o modelo {model_id} porque o treinamento {training.id} ainda está em andamento.")
                         continue
                     
@@ -432,8 +542,9 @@ class AIModelsAdmin(admin.ModelAdmin):
                             training.delete()
                             logger.info(f"Registro de treinamento {id} excluído junto com o modelo {model_id}")
                         except Exception as e:
+                            logger.error(f"Erro ao deletar registro de treinamento {training.id}: {e}", exc_info=True)
                             errors.append(f'Erro ao deletar registro de treinamento {training.id}: {str(e)}')
-                            result = AISuccess(success=False, error=str(e))
+                            result = Result(success=False, error=str(e))
                     else:
                         client = config.create_api_client_instance()
                         # Tenta excluir o modelo da API
@@ -450,8 +561,10 @@ class AIModelsAdmin(admin.ModelAdmin):
                     else:
                         errors.append(f'Não foi possível deletar o modelo {model_id}: {result.error}')
                 except Exception as e:
+                    logger.error(f"Erro ao deletar modelo {model_id}: {e}", exc_info=True)
                     errors.append(f'Erro ao deletar modelo {model_id}: {str(e)}')
         except Exception as e:
+            logger.error(f"Erro ao criar cliente de API: {e}", exc_info=True)
             return JsonResponse({'error': f'Erro ao criar cliente de API: {str(e)}'}, status=500)
         
         return JsonResponse({
@@ -466,16 +579,50 @@ class AIFilesAdmin(admin.ModelAdmin):
     change_list_template = "admin/ai_config/files_manager.html"
     
     def has_add_permission(self, request):
+        """Verifica se o usuário tem permissão para adicionar registros.
+        
+        Args:
+            request: Requisição HTTP
+            
+        Returns:
+            bool: Sempre False, pois não permitimos adição direta
+        """
         return False
     
     def has_delete_permission(self, request, obj=None):
+        """Verifica se o usuário tem permissão para excluir registros.
+        
+        Args:
+            request: Requisição HTTP
+            obj: Objeto a ser excluído ou None
+            
+        Returns:
+            bool: Sempre False, pois usamos view customizada para exclusão
+        """
         return False
     
     def has_change_permission(self, request, obj=None):
+        """Verifica se o usuário tem permissão para editar registros.
+        
+        Args:
+            request: Requisição HTTP
+            obj: Objeto a ser editado ou None
+            
+        Returns:
+            bool: Sempre False, pois esta interface é somente para visualização
+        """
         return False
     
     def changelist_view(self, request, extra_context=None):
-        """View customizada para listar os clientes de IA disponíveis."""
+        """View customizada para listar os clientes de IA disponíveis.
+        
+        Args:
+            request: Requisição HTTP
+            extra_context: Contexto adicional opcional
+            
+        Returns:
+            HttpResponse: Resposta com template renderizado
+        """
         # Obtém todas as configurações globais que implementam o método api_list_files
         global_configs = []
         for config in AIClientGlobalConfiguration.objects.all():
@@ -512,11 +659,17 @@ class AIFilesAdmin(admin.ModelAdmin):
                 else:
                     messages.warning(request, 'Esta IA não suporta listagem de arquivos.')
             except Exception as e:
+                logger.error(f"Erro ao listar arquivos: {e}", exc_info=True)
                 messages.error(request, f'Erro ao listar arquivos: {str(e)}')
         
         return TemplateResponse(request, self.change_list_template, context)
 
     def get_urls(self):
+        """Define URLs customizadas para administração de arquivos.
+        
+        Returns:
+            list: Lista de URLs
+        """
         urls = super().get_urls()
         custom_urls = [
             path('delete/', self.admin_site.admin_view(self.delete_files_view), name='delete_files'),
@@ -524,7 +677,14 @@ class AIFilesAdmin(admin.ModelAdmin):
         return custom_urls + urls
     
     def delete_files_view(self, request):
-        """Deleta múltiplos arquivos de IA."""
+        """Deleta múltiplos arquivos de IA.
+        
+        Args:
+            request: Requisição HTTP
+            
+        Returns:
+            JsonResponse: Resposta com status da operação
+        """
         if request.method != 'POST':
             return JsonResponse({'error': 'Método não permitido'}, status=405)
         
@@ -546,11 +706,15 @@ class AIFilesAdmin(admin.ModelAdmin):
                     result = client.delete_file(file_id)
                     if result.success:
                         success_count += 1
+                        logger.info(f"Arquivo {file_id} excluído com sucesso")
                     else:
+                        logger.warning(f"Falha ao excluir arquivo {file_id}: {result.error}")
                         errors.append(f'Não foi possível deletar o arquivo {file_id}: {result.error}')
                 except Exception as e:
+                    logger.error(f"Erro ao deletar arquivo {file_id}: {e}", exc_info=True)
                     errors.append(f'Erro ao deletar arquivo {file_id}: {str(e)}')
         except Exception as e:
+            logger.error(f"Erro ao criar cliente de API: {e}", exc_info=True)
             return JsonResponse({'error': f'Erro ao criar cliente de API: {str(e)}'}, status=500)
         
         return JsonResponse({

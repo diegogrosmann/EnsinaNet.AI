@@ -4,9 +4,14 @@ Este módulo contém funções auxiliares para converter modelos Django em tipos
 e para validação de dados.
 """
 
+import logging
 from typing import List, Dict, Any, TypeVar, Type, Optional
 from datetime import datetime
 from dataclasses import is_dataclass, asdict
+from core.exceptions import ApplicationError
+from core.types.base import JSONDict
+
+logger = logging.getLogger(__name__)
 
 # Tipo genérico para dataclasses
 T = TypeVar('T')
@@ -14,61 +19,97 @@ T = TypeVar('T')
 def model_to_dataclass(model_instance: Any, dataclass_type: Type[T]) -> T:
     """Converte uma instância de modelo Django para um objeto dataclass.
     
+    Extrai os dados relevantes do modelo Django e cria uma instância
+    do dataclass especificado com esses dados.
+    
     Args:
-        model_instance: Instância de modelo Django
-        dataclass_type: Tipo de dataclass para converter
+        model_instance: Instância do modelo Django a ser convertida.
+        dataclass_type: Tipo do dataclass para criar.
         
     Returns:
-        Objeto dataclass preenchido com dados do modelo
+        Nova instância do tipo dataclass_type.
     
     Raises:
-        ValueError: Se o tipo alvo não for um dataclass
+        ApplicationError: Se o tipo alvo não for um dataclass ou ocorrer erro
     """
-    if not is_dataclass(dataclass_type):
-        raise ValueError(f"{dataclass_type.__name__} não é um dataclass")
+    logger.debug(f"Convertendo modelo para dataclass {dataclass_type.__name__}")
     
-    # Obter todos os campos para o dataclass
-    fields = {f.name for f in dataclass_type.__dataclass_fields__.values()}
-    
-    # Construir dicionário com valores do modelo
-    data = {}
-    for field in fields:
-        if hasattr(model_instance, field):
-            data[field] = getattr(model_instance, field)
-    
-    # Criar e retornar a instância do dataclass
-    return dataclass_type(**data)
+    try:
+        if not is_dataclass(dataclass_type):
+            raise ValueError(f"O tipo {dataclass_type.__name__} não é um dataclass")
+        
+        # Extrair os dados do modelo Django como dicionário
+        model_data = {}
+        for field in model_instance._meta.fields:
+            field_name = field.name
+            field_value = getattr(model_instance, field_name)
+            model_data[field_name] = field_value
+        
+        # Criar a instância do dataclass com os dados extraídos
+        return dataclass_type(**model_data)
+        
+    except ValueError as e:
+        raise ApplicationError(f"Erro na conversão para dataclass: {str(e)}")
+    except Exception as e:
+        logger.exception(f"Erro ao converter modelo para dataclass: {str(e)}")
+        raise ApplicationError(f"Erro na conversão de tipo: {str(e)}")
 
-def dataclass_to_dict(dataclass_obj: Any) -> Dict[str, Any]:
+def dataclass_to_dict(dataclass_obj: Any) -> JSONDict:
     """Converte um objeto dataclass para dicionário com tratamento de tipos complexos.
     
+    Transforma um objeto dataclass em um dicionário, tratando tipos especiais
+    como datetime para garantir serialização adequada.
+    
     Args:
-        dataclass_obj: Objeto dataclass para converter
+        dataclass_obj: Objeto dataclass a ser convertido.
         
     Returns:
-        Dicionário com dados do dataclass
+        JSONDict: Dicionário com os atributos do dataclass.
+        
+    Raises:
+        ApplicationError: Se o objeto fornecido não for um dataclass ou ocorrer erro
     """
-    if not is_dataclass(dataclass_obj):
-        raise ValueError(f"Objeto não é um dataclass")
+    logger.debug(f"Convertendo dataclass para dicionário")
     
-    data = asdict(dataclass_obj)
-    
-    # Processar tipos complexos
-    for key, value in data.items():
-        # Converter datetime para string
-        if isinstance(value, datetime):
-            data[key] = value.isoformat()
-    
-    return data
+    try:
+        if not is_dataclass(dataclass_obj):
+            raise ValueError(f"O objeto não é um dataclass")
+        
+        # Converter para dicionário usando asdict
+        result = asdict(dataclass_obj)
+        
+        # Processar tipos especiais (datetime, etc.)
+        for key, value in result.items():
+            if isinstance(value, datetime):
+                result[key] = value.isoformat()
+        
+        return result
+        
+    except ValueError as e:
+        raise ApplicationError(f"Erro na conversão para dicionário: {str(e)}")
+    except Exception as e:
+        logger.exception(f"Erro ao converter dataclass para dicionário: {str(e)}")
+        raise ApplicationError(f"Erro na conversão para dicionário: {str(e)}")
 
 def list_models_to_dataclasses(model_instances: List[Any], dataclass_type: Type[T]) -> List[T]:
     """Converte uma lista de instâncias de modelo Django para uma lista de dataclasses.
     
+    Aplica a conversão model_to_dataclass para cada elemento da lista.
+    
     Args:
-        model_instances: Lista de instâncias de modelo Django
-        dataclass_type: Tipo de dataclass para converter
+        model_instances: Lista de instâncias de modelo Django.
+        dataclass_type: Tipo do dataclass para criar para cada instância.
         
     Returns:
-        Lista de objetos dataclass
+        List[T]: Lista de instâncias do dataclass especificado.
+        
+    Raises:
+        ApplicationError: Se ocorrer erro durante a conversão
     """
-    return [model_to_dataclass(instance, dataclass_type) for instance in model_instances]
+    logger.debug(f"Convertendo lista de {len(model_instances)} modelos para dataclass {dataclass_type.__name__}")
+    
+    try:
+        return [model_to_dataclass(instance, dataclass_type) for instance in model_instances]
+    except Exception as e:
+        logger.exception(f"Erro ao converter lista de modelos: {str(e)}")
+        raise ApplicationError(f"Erro na conversão de lista: {str(e)}")

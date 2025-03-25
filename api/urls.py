@@ -1,6 +1,7 @@
 """URLs da API.
 
-Define os padrões de URL para endpoints de API e monitoramento.
+Define os padrões de URL para endpoints de API e monitoramento,
+estabelecendo as rotas de acesso para todos os recursos disponíveis.
 """
 
 import logging
@@ -15,6 +16,7 @@ from api.views.monitoring import (
     monitoring_requests,
     monitoring_request_details
 )
+from core.exceptions import APIError
 
 logger = logging.getLogger(__name__)
 
@@ -36,4 +38,33 @@ urlpatterns: List[Union[URLPattern, URLResolver]] = [
 ]
 
 # Log das URLs registradas
+logger.info(f"URLs de monitoramento registradas: {len(monitoring_patterns)}")
 logger.info("Todas as URLs da API inicializadas com sucesso")
+
+def get_available_endpoints() -> List[str]:
+    """Retorna uma lista de todos os endpoints disponíveis na API.
+    
+    Esta função é útil para documentação automática ou para
+    debug de rotas disponíveis.
+    
+    Returns:
+        List[str]: Lista de endpoints registrados.
+    
+    Raises:
+        APIError: Se ocorrer erro ao analisar as URLs.
+    """
+    try:
+        result = []
+        
+        # Processar URLs de monitoramento
+        for pattern in monitoring_patterns:
+            route = f"/api/monitoring{pattern.pattern}"
+            result.append(route)
+        
+        # Nota: poderíamos expandir para outras URLs se necessário
+        
+        logger.debug(f"Endpoints disponíveis recuperados: {len(result)}")
+        return result
+    except Exception as e:
+        logger.error(f"Erro ao obter endpoints disponíveis: {str(e)}", exc_info=True)
+        raise APIError(f"Erro ao processar rotas da API: {str(e)}")

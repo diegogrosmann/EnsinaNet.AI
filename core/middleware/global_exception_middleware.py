@@ -1,15 +1,14 @@
-"""Middleware global para tratamento de exceções.
+"""
+Middleware global para tratamento centralizado de exceções.
 
-Fornece um mecanismo centralizado para capturar e tratar exceções
-de forma consistente em toda a aplicação.
+Fornece um mecanismo centralizado para capturar e tratar exceções de forma consistente em toda a aplicação,
+garantindo logs padronizados e respostas apropriadas ao usuário sem expor detalhes técnicos.
 """
 
 import logging
-import time
-import json
 import traceback
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Callable
 
 from django.http import JsonResponse, HttpResponseRedirect, HttpRequest, HttpResponse
 from django.contrib import messages
@@ -18,132 +17,136 @@ from rest_framework import status
 from django.conf import settings
 
 from core.exceptions import ApplicationError
+from core.types.api_response import APIResponseDict
+from core.types.base import JSONDict
 
 logger = logging.getLogger(__name__)
 
+
 class GlobalExceptionMiddleware:
-    """Middleware para tratamento centralizado de exceções.
-    
-    Captura exceções não tratadas e retorna respostas apropriadas
-    sem expor detalhes técnicos em produção.
+    """Middleware para tratamento global de exceções.
+
+    Captura exceções não tratadas e retorna respostas apropriadas sem expor detalhes técnicos,
+    utilizando tratamento centralizado de exceções.
+
+    Args:
+        get_response (Callable): Função para processar a requisição.
     """
 
     def __init__(self, get_response):
-        """Inicializa o middleware.
-        
-        Args:
-            get_response: Callable que processa a requisição.
-        """
+        # Inicializa o middleware com a função de resposta da requisição
         self.get_response = get_response
 
     def _is_ajax(self, request: HttpRequest) -> bool:
-        """Verifica se a requisição é AJAX/JSON.
-        
+        """Verifica se a requisição é do tipo AJAX/JSON.
+
         Args:
-            request: Objeto de requisição HTTP.
-            
+            request: Requisição HTTP a ser analisada.
+
         Returns:
-            bool: True se for AJAX/JSON, False caso contrário.
+            bool: True se a requisição for AJAX/JSON, False caso contrário.
         """
         return any([
+            request.path.startswith('/api/'),
             request.headers.get('X-Requested-With') == 'XMLHttpRequest',
             request.content_type == 'application/json',
-            request.headers.get('Accept') == 'application/json',
-            request.path.startswith('/api/')
+            'json' in (request.headers.get('Accept') or '').lower()
         ])
 
-    def _format_error_response(self, 
-                             error: Exception, 
-                             error_id: str,
-                             status_code: int = 500) -> Dict[str, Any]:
+    def _format_error_response(self, error: Exception, error_id: str, status_code: int = 500) -> JSONDict:
         """Formata a resposta de erro de forma padronizada.
-        
+
+        Em modo DEBUG, inclui detalhes como traceback; caso contrário, retorna mensagem genérica para erros internos.
+
         Args:
-            error: Exceção capturada.
-            error_id: Identificador único do erro.
-            status_code: Código HTTP do erro.
-            
+            error: Exceção ocorrida.
+            error_id: Identificador único do erro para rastreamento.
+            status_code: Código HTTP de status para a resposta.
+
         Returns:
-            Dict com a resposta formatada.
+            JSONDict: Dicionário com a resposta formatada.
         """
         if settings.DEBUG:
-            message = str(error)
-            details = {
+            # Em modo debug, fornecer mais informações
+            return {
+                'success': False,
+                'error': str(error),
                 'error_id': error_id,
-                'type': error.__class__.__name__,
+                'status_code': status_code,
                 'traceback': traceback.format_exc()
             }
         else:
-            message = (
-                str(error) if status_code != 500
-                else "Erro interno do servidor. Por favor, tente novamente mais tarde."
-            )
-            details = {}
-
-        return {
-            'success': False,
-            'error': {
-                'message': message,
-                'code': status_code,
-                **details
+            # Em produção, esconder detalhes técnicos para erros de servidor
+            error_message = str(error) if status_code < 500 else f"Erro interno (ID: {error_id})"
+            return {
+                'success': False,
+                'error': error_message,
+                'error_id': error_id,
+                'status_code': status_code
             }
-        }
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        """Processa a requisição e trata exceções.
-        
+        """Processa a requisição e trata exceções de forma centralizada.
+
         Args:
-            request: Objeto de requisição HTTP.
-            
+            request: Requisição HTTP a ser processada.
+
         Returns:
-            HttpResponse: Resposta HTTP apropriada.
+            HttpResponse: Resposta HTTP apropriada conforme o tipo de exceção.
         """
         try:
-            response = self.get_response(request)
-            return response
-
+            return self.get_response(request)
         except (ApplicationError, PermissionDenied, ValidationError) as e:
+            # Gerar ID único para o erro (para rastreamento)
             error_id = str(uuid.uuid4())
-            logger.warning(
-                f"Erro conhecido (ID: {error_id}): {str(e)}", 
-                exc_info=True,
-                extra={'request_path': request.path}
-            )
             
-            status_code = getattr(e, 'status_code', 400)
-            error_response = self._format_error_response(e, error_id, status_code)
+            # Determinar o status_code com base no tipo de erro
+            if isinstance(e, PermissionDenied):
+                status_code = status.HTTP_403_FORBIDDEN
+            elif isinstance(e, ValidationError):
+                status_code = status.HTTP_400_BAD_REQUEST
+            else:
+                status_code = getattr(e, 'status_code', status.HTTP_500_INTERNAL_SERVER_ERROR)
             
-            if self._is_ajax(request):
-                return JsonResponse(error_response, status=status_code)
-            
-            messages.error(request, error_response['error']['message'])
-            return HttpResponseRedirect(request.META.get('HTTP_REFERER', '/'))
-
-        except Exception as e:
-            error_id = str(uuid.uuid4())
+            # Log do erro
             logger.error(
-                f"Erro não tratado (ID: {error_id})",
-                exc_info=True,
-                extra={
-                    'request_path': request.path,
-                    'request_method': request.method,
-                }
+                f"Erro tratado: {type(e).__name__} - {str(e)} (ID: {error_id})",
+                exc_info=True
             )
             
-            error_response = self._format_error_response(
-                e, 
-                error_id,
-                status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-            
+            # Determinar o tipo de resposta
             if self._is_ajax(request):
-                return JsonResponse(
-                    error_response, 
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+                # Retornar resposta JSON para APIs
+                error_response = self._format_error_response(e, error_id, status_code)
+                return JsonResponse(error_response, status=status_code)
+            else:
+                # Redirecionar com mensagem flash para interface web
+                messages.error(request, f"{str(e)} (ID: {error_id})")
+                referer = request.META.get('HTTP_REFERER', '/')
+                return HttpResponseRedirect(referer)
+                
+        except Exception as e:
+            # Gerar ID único para o erro (para rastreamento)
+            error_id = str(uuid.uuid4())
             
-            messages.error(
-                request, 
-                'Ocorreu um erro inesperado. Nossa equipe foi notificada.'
+            # Log do erro não tratado
+            logger.critical(
+                f"Erro não tratado: {type(e).__name__} - {str(e)} (ID: {error_id})",
+                exc_info=True
             )
-            return HttpResponseRedirect(request.META.get('HTTP_REFERER', '/'))
+            
+            # Determinar o tipo de resposta
+            if self._is_ajax(request):
+                # Retornar resposta JSON para APIs
+                error_response = self._format_error_response(
+                    e, error_id, status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+                return JsonResponse(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            else:
+                # Redirecionar com mensagem flash para interface web
+                messages.error(
+                    request, 
+                    f"Ocorreu um erro interno. Nossa equipe foi notificada. (ID: {error_id})"
+                )
+                referer = request.META.get('HTTP_REFERER', '/')
+                return HttpResponseRedirect(referer)

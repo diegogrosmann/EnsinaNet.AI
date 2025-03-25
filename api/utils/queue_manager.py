@@ -1,4 +1,9 @@
-"""Gerenciador de filas de tarefas assíncronas."""
+"""Gerenciador de filas de tarefas assíncronas.
+
+Este módulo implementa um sistema de processamento de tarefas em segundo plano
+com suporte a execução paralela e retentativas com backoff exponencial,
+permitindo a execução eficiente de operações demoradas ou com alta taxa de falha.
+"""
 
 import logging
 import time
@@ -6,147 +11,250 @@ import random
 import threading
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, List
+from typing import Any, List, Optional, Dict, Union
 
-from core.types import QueueableTask, QueueConfig, QueueableTaskCollection
+from core.types.task import QueueableTask, QueueConfig, QueueableTaskCollection
+from core.types.queue import QueueStats, QueueProcessor
+from core.types.base import Result
+from core.exceptions import ApplicationError
 
 logger = logging.getLogger(__name__)
 
 class TaskQueue:
-    """Fila de tarefas com parâmetros configuráveis."""
+    """Fila de tarefas com parâmetros configuráveis.
+    
+    Gerencia uma coleção de tarefas executáveis com suporte a retentativas
+    e controle de concorrência por semáforos.
+    
+    Attributes:
+        config: Configuração da fila.
+        tasks: Lista de tarefas a serem executadas.
+        retry_tasks: Lista de tarefas para retentativa.
+        first_semaphore: Controle de concorrência para primeiras tentativas.
+        retry_semaphore: Controle de concorrência para retentativas.
+        stats: Estatísticas da fila.
+    """
     
     def __init__(self, config: QueueConfig):
-        self.name: str = config.name
-        self.config: QueueConfig = config
+        """Inicializa a fila com a configuração fornecida.
+        
+        Args:
+            config: Configuração com parâmetros da fila.
+        """
+        self.config = config
         self.tasks: QueueableTaskCollection = []
+        self.retry_tasks: QueueableTaskCollection = []
         
-        # Configura semáforos para controle de concorrência
-        first_limit = (sys.maxsize if config.max_parallel_first == -1 
-                      else config.max_parallel_first)
-        retry_limit = (sys.maxsize if config.max_parallel_retry == -1 
-                      else config.max_parallel_retry)
-                      
-        self.first_semaphore = threading.Semaphore(first_limit)
-        self.retry_semaphore = threading.Semaphore(retry_limit)
+        # Semáforos para controle de concorrência
+        max_parallel_first = config.max_parallel_first if config.max_parallel_first > 0 else sys.maxsize
+        self.first_semaphore = threading.Semaphore(max_parallel_first)
+        self.retry_semaphore = threading.Semaphore(config.max_parallel_retry)
         
-        logger.info(f"Fila '{self.name}' criada com max_attempts={config.max_attempts}")
-
+        # Estatísticas
+        self.stats = QueueStats(queue_name=config.name)
+        
+        logger.info(f"Fila '{config.name}' criada com {max_parallel_first} workers para primeiras tentativas"
+                   f" e {config.max_parallel_retry} workers para retentativas")
+    
     def add_task(self, task: QueueableTask) -> None:
-        """Adiciona uma tarefa à fila."""
-        logger.debug(f"Fila '{self.config.name}': Tarefa '{task.identifier}' adicionada")
+        """Adiciona uma tarefa à fila.
+        
+        Args:
+            task: Tarefa a ser adicionada.
+        """
         self.tasks.append(task)
-
+        self.stats.pending_tasks += 1
+        logger.debug(f"Tarefa {task.task_id} adicionada à fila '{self.config.name}'")
+    
     def _run_task(self, task: QueueableTask) -> Any:
-        """Executa uma tarefa com retentativas.
+        """Executa uma tarefa e gerencia retentativas se necessário.
         
         Args:
             task: Tarefa a ser executada.
             
         Returns:
-            Any: Resultado da execução ou None se falhar.
+            Resultado da execução da tarefa.
         """
-        while task.attempt <= self.config.max_attempts:
-            semaphore = (self.first_semaphore if task.attempt == 1 
-                        else self.retry_semaphore)
+        # Atualizar estatísticas
+        self.stats.pending_tasks -= 1
+        self.stats.in_progress_tasks += 1
+        
+        start_time = time.time()
+        result = task.execute()
+        elapsed_time = time.time() - start_time
+        
+        # Atualizar estatísticas após execução
+        self.stats.in_progress_tasks -= 1
+        
+        if result.is_success:
+            self.stats.completed_tasks += 1
+            # Contribuir para o tempo médio de execução
+            if self.stats.avg_processing_time == 0:
+                self.stats.avg_processing_time = elapsed_time
+            else:
+                # Média móvel
+                alpha = 0.2  # Peso para o novo valor
+                self.stats.avg_processing_time = (alpha * elapsed_time) + ((1 - alpha) * self.stats.avg_processing_time)
+                
+            logger.debug(f"Tarefa {task.task_id} concluída com sucesso em {elapsed_time:.3f}s")
+            return result
+        
+        # Falha na execução
+        self.stats.failed_tasks += 1
+        
+        # Verificar se deve tentar novamente
+        if self.config.should_retry(task.attempt, Exception(result.error)):
+            # Calcular tempo de espera antes da próxima tentativa
+            wait_time = self._calculate_delay(task.attempt)
             
-            with semaphore:
-                try:
-                    start_time = time.time()
-                    result = task.func(*task.args, **(task.kwargs or {}))
-                    elapsed = time.time() - start_time
-                    
-                    if task.result_callback:
-                        task.result_callback(task.identifier, result)
-                        
-                    logger.info(
-                        f"Fila '{self.name}': Tarefa '{task.identifier}' "
-                        f"concluída na tentativa {task.attempt} em {elapsed:.2f}s"
-                    )
-                    return result
-                    
-                except Exception as e:
-                    elapsed = time.time() - start_time
-                    logger.exception(
-                        f"Fila '{self.name}': Erro na tarefa '{task.identifier}' "
-                        f"(tentativa {task.attempt}/{self.config.max_attempts}): {e}"
-                    )
-                    
-                    if task.attempt == self.config.max_attempts:
-                        if task.result_callback:
-                            task.result_callback(task.identifier, {"error": str(e)})
-                        return None
-                    
-                    delay = self._calculate_delay(task.attempt)
-                    logger.info(f"Aguardando {delay:.2f}s para nova tentativa")
-                    time.sleep(delay)
-                    task.attempt += 1
-
+            # Incrementar contador de tentativa
+            task.attempt += 1
+            
+            # Adicionar à fila de retentativa
+            self.retry_tasks.append(task)
+            self.stats.retry_tasks += 1
+            
+            logger.warning(f"Tarefa {task.task_id} falhou (tentativa #{task.attempt-1}). "
+                         f"Agendando nova tentativa em {wait_time:.1f}s")
+            
+            # Esperar antes da próxima tentativa
+            time.sleep(wait_time)
+        else:
+            # Não tentar novamente, retornar erro
+            logger.error(f"Tarefa {task.task_id} falhou permanentemente após {task.attempt} tentativas: {result.error}")
+        
+        return result
+    
     def _calculate_delay(self, attempt: int) -> float:
-        """Calcula o tempo de espera entre tentativas.
+        """Calcula o tempo de espera antes da próxima tentativa.
         
         Args:
             attempt: Número da tentativa atual.
             
         Returns:
-            float: Tempo de espera em segundos.
+            Tempo de espera em segundos.
         """
-        delay = self.config.initial_wait * (self.config.backoff_factor ** (attempt - 1))
-        random_factor = random.uniform(
-            1 - self.config.randomness_factor,
-            1 + self.config.randomness_factor
-        )
-        return delay * random_factor
+        # Exponential backoff with jitter
+        delay = self.config.calculate_wait_time(attempt)
+        if delay <= 0:
+            return 0
+            
+        # Adicionar aleatoriedade para evitar thundering herd
+        jitter = random.uniform(-self.config.randomness_factor, self.config.randomness_factor)
+        delay = delay * (1 + jitter)
+        
+        return max(0.1, delay)  # Mínimo de 100ms
 
     def process_tasks(self) -> None:
-        """Processa todas as tarefas da fila em paralelo."""
-        tasks_count = len(self.tasks)
-        logger.info(f"Fila '{self.name}': Processando {tasks_count} tarefas")
+        """Processa todas as tarefas na fila.
         
-        start_time = time.time()
-        
-        # Configura o pool de threads
-        max_workers = max(
-            self.config.max_parallel_first,
-            self.config.max_parallel_retry
-        )
-        if max_workers == -1:
-            max_workers = min(32, (tasks_count + 4))
+        As tarefas são executadas em paralelo respeitando os limites de concorrência
+        definidos na configuração. Tarefas que falharem podem ser agendadas para retentativa.
+        """
+        if not self.tasks and not self.retry_tasks:
+            logger.debug(f"Fila '{self.config.name}' vazia, nada a processar")
+            return
             
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(self._run_task, task) for task in self.tasks]
-            for future in futures:
-                future.result()
+        logger.info(f"Iniciando processamento da fila '{self.config.name}': "
+                   f"{len(self.tasks)} tarefas, {len(self.retry_tasks)} retentativas")
+        
+        # Criar thread pool para processar as tarefas
+        with ThreadPoolExecutor() as executor:
+            # Processar primeiras tentativas
+            first_futures = []
+            for task in self.tasks:
+                # Esperar por um slot disponível
+                self.first_semaphore.acquire()
                 
-        elapsed = time.time() - start_time
-        logger.info(
-            f"Fila '{self.name}': {tasks_count} tarefas processadas em {elapsed:.2f}s"
-        )
+                # Criar função para executar a tarefa e liberar o semáforo
+                def process_with_semaphore(task=task):
+                    try:
+                        return self._run_task(task)
+                    finally:
+                        self.first_semaphore.release()
+                
+                # Submeter tarefa para o pool
+                future = executor.submit(process_with_semaphore)
+                first_futures.append(future)
+            
+            # Processar retentativas
+            retry_futures = []
+            for task in self.retry_tasks:
+                # Esperar por um slot disponível
+                self.retry_semaphore.acquire()
+                
+                # Criar função para executar a tarefa e liberar o semáforo
+                def process_retry_with_semaphore(task=task):
+                    try:
+                        return self._run_task(task)
+                    finally:
+                        self.retry_semaphore.release()
+                
+                # Submeter tarefa para o pool
+                future = executor.submit(process_retry_with_semaphore)
+                retry_futures.append(future)
+            
+            # Aguardar todas as tarefas terminarem
+            for future in first_futures + retry_futures:
+                future.result()  # Isso forçará qualquer exceção não tratada a ser levantada
+        
+        # Limpar a fila
+        self.tasks.clear()
+        self.retry_tasks.clear()
+        self.stats.retry_tasks = 0
+        self.stats.pending_tasks = 0
+        
+        logger.info(f"Processamento da fila '{self.config.name}' concluído: "
+                   f"{self.stats.completed_tasks} sucesso, {self.stats.failed_tasks} falhas")
 
 class TaskManager:
+    """Gerenciador de múltiplas filas de tarefas.
+    
+    Gerencia uma ou mais filas de tarefas, processando-as em paralelo
+    em diferentes threads.
+    
+    Attributes:
+        queues: Lista de filas a serem gerenciadas.
     """
-    Gerencia uma ou mais filas de tasks, processando-as em paralelo.
-    """
+    
     def __init__(self):
-        self.queues = []
+        """Inicializa o gerenciador com uma lista vazia de filas."""
+        self.queues: List[TaskQueue] = []
+        logger.debug("TaskManager inicializado")
 
     def add_queue(self, queue: TaskQueue) -> None:
-        logger.debug(f"TaskManager: Adicionada fila '{queue.name}' com {len(queue.tasks)} tarefas")
-        self.queues.append(queue)
-
-    def run(self) -> None:
-        queues_count = len(self.queues)
-        logger.info(f"TaskManager: Iniciando processamento de {queues_count} filas")
-        start_time = time.time()
+        """Adiciona uma fila ao gerenciador.
         
+        Args:
+            queue: Fila a ser adicionada.
+        """
+        self.queues.append(queue)
+        logger.debug(f"Fila '{queue.config.name}' adicionada ao TaskManager")
+    
+    def run(self) -> None:
+        """Executa o processamento de todas as filas.
+        
+        Cada fila é processada em sua própria thread, permitindo execução paralela.
+        """
+        if not self.queues:
+            logger.debug("Nenhuma fila a processar")
+            return
+            
+        logger.info(f"Iniciando processamento de {len(self.queues)} filas")
+        
+        # Criar threads para processar cada fila
         threads = []
         for queue in self.queues:
-            logger.debug(f"TaskManager: Iniciando thread para fila '{queue.name}'")
-            t = threading.Thread(target=queue.process_tasks)
-            t.start()
-            threads.append(t)
+            thread = threading.Thread(
+                target=queue.process_tasks,
+                name=f"queue-{queue.config.name}"
+            )
+            thread.daemon = True  # Permitir que o programa termine mesmo que a thread ainda esteja rodando
+            threads.append(thread)
+            thread.start()
         
-        for t in threads:
-            t.join()
-        
-        elapsed_time = time.time() - start_time
-        logger.info(f"TaskManager: Processamento de todas as {queues_count} filas concluído em {elapsed_time:.2f}s")
+        # Aguardar todas as threads terminarem
+        for thread in threads:
+            thread.join()
+            
+        logger.info("Processamento de filas concluído")

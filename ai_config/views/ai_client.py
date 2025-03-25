@@ -1,8 +1,10 @@
 """
 Views para gerenciamento de configurações de clientes de IA.
 
-Este módulo contém funções para criar, editar, excluir e gerenciar
-configurações de clientes de IA para diferentes usuários.
+Este módulo contém funções para criar, editar, excluir e gerenciar configurações de clientes de IA
+para diferentes usuários.
+
+A documentação segue o padrão Google e os logs/exceções são tratados de forma padronizada.
 """
 
 import logging
@@ -16,55 +18,42 @@ from django.template.loader import render_to_string
 from django.db import DatabaseError, transaction
 
 from accounts.models import UserToken
-
-from ..models import AIClientConfiguration, AIClientTokenConfig, AIClientGlobalConfiguration
-from ..forms import AIClientConfigurationForm
-
-from core.types import APPResponse
+from ai_config.models import AIClientConfiguration, AIClientTokenConfig, AIClientGlobalConfiguration
+from ai_config.forms import AIClientConfigurationForm
+from core.types.api_response import APIResponse
 
 logger = logging.getLogger(__name__)
+
 
 @login_required
 def manage_ai(request: HttpRequest) -> HttpResponse:
     """Lista todas as IAs configuradas do usuário atual.
-    
+
     Permite filtrar e paginar a lista de configurações de IA.
-    
+
     Args:
-        request: Objeto de requisição HTTP.
-        
+        request (HttpRequest): Objeto de requisição HTTP.
+
     Returns:
         HttpResponse: Página renderizada com a lista de IAs do usuário.
     """
     try:
         search_query = request.GET.get('search', '')
         api_type = request.GET.get('api_type', '')
-        
         logger.debug(f"Listando IAs para usuário {request.user.email} com filtros: search={search_query}, api_type={api_type}")
-        
-        # Query base - filtrando apenas por IAs do usuário atual
-        queryset = AIClientConfiguration.objects.filter(user=request.user).annotate(
-            token_count=Count('tokens')
-        ).order_by('name')
-        
-        # Aplica filtros
+
+        queryset = AIClientConfiguration.objects.filter(user=request.user).annotate(token_count=Count('tokens')).order_by('name')
+
         if search_query:
             queryset = queryset.filter(name__icontains=search_query)
             logger.debug(f"Aplicando filtro de busca: '{search_query}'")
-        
         if api_type:
             queryset = queryset.filter(ai_client__api_client_class=api_type)
             logger.debug(f"Aplicando filtro de tipo de API: '{api_type}'")
-        
-        # Obtém lista única de tipos de API
-        api_types = AIClientConfiguration.objects.filter(user=request.user).values_list(
-            'ai_client__api_client_class', flat=True
-        ).distinct().order_by('ai_client__api_client_class')
-        
+
+        api_types = AIClientConfiguration.objects.filter(user=request.user).values_list('ai_client__api_client_class', flat=True).distinct().order_by('ai_client__api_client_class')
         logger.debug(f"Total de IAs encontradas: {queryset.count()}")
-        
-        # MODIFICAÇÃO: Não usamos paginação no backend, já que fazemos isso no frontend
-        # Enviamos todas as IAs para o JavaScript
+
         context = {
             'ai_clients': queryset,
             'api_types': api_types,
@@ -73,24 +62,14 @@ def manage_ai(request: HttpRequest) -> HttpResponse:
         }
 
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            html = render_to_string(
-                'ai_client/partials/ai_table.html',
-                context,
-                request=request
-            )
-            response = APPResponse(
-                success=True,
-                data={
-                    'html': html,
-                    'total': queryset.count(),
-                }
-            )
+            html_content = render_to_string('ai_client/partials/ai_table.html', context, request=request)
+            response = APIResponse.success_response(data={'html': html_content, 'total': queryset.count()})
             return JsonResponse(response.to_dict())
 
         return render(request, 'ai_client/manage.html', context)
 
     except DatabaseError as e:
-        logger.error(f"Erro de banco de dados ao listar IAs: {str(e)}")
+        logger.error(f"Erro de banco de dados ao listar IAs: {str(e)}", exc_info=True)
         messages.error(request, "Erro ao carregar a lista de IAs. Tente novamente mais tarde.")
         return render(request, 'ai_client/manage.html', {'error': True})
     except Exception as e:
@@ -98,16 +77,16 @@ def manage_ai(request: HttpRequest) -> HttpResponse:
         messages.error(request, "Ocorreu um erro inesperado. Por favor, tente novamente.")
         return render(request, 'ai_client/manage.html', {'error': True})
 
+
 @login_required
 def create_ai(request: HttpRequest) -> HttpResponse:
     """Cria uma nova configuração de IA.
-    
-    Exibe o formulário para criar uma nova configuração ou processa
-    os dados de formulário recebidos.
-    
+
+    Exibe o formulário para criar uma nova configuração ou processa os dados recebidos.
+
     Args:
-        request: Objeto de requisição HTTP.
-        
+        request (HttpRequest): Objeto de requisição HTTP.
+
     Returns:
         HttpResponse: Página do formulário ou redirecionamento após criação.
     """
@@ -120,17 +99,14 @@ def create_ai(request: HttpRequest) -> HttpResponse:
                         ai_config = form.save(commit=False)
                         ai_config.user = request.user
                         ai_config.save()
-                    
                     logger.info(f"Nova IA '{ai_config.name}' criada por {request.user.email} (ID: {ai_config.id})")
                     messages.success(request, 'IA criada com sucesso!')
-                    
-                    # Obter URL de retorno do formulário ou usar fallback
                     next_url = request.POST.get('next')
-                    if next_url and next_url.startswith('/'):  # Verificar se é uma URL interna válida
+                    if next_url and next_url.startswith('/'):
                         return redirect(next_url)
-                    return redirect('ai_config:ai_manage')  # Fallback
+                    return redirect('ai_config:ai_manage')
                 except Exception as e:
-                    logger.error(f"Erro ao salvar nova configuração de IA: {str(e)}")
+                    logger.error(f"Erro ao salvar nova configuração de IA: {str(e)}", exc_info=True)
                     messages.error(request, f"Erro ao criar IA: {str(e)}")
             else:
                 logger.warning(f"Formulário de criação de IA inválido: {form.errors}")
@@ -138,16 +114,14 @@ def create_ai(request: HttpRequest) -> HttpResponse:
         else:
             form = AIClientConfigurationForm()
             logger.debug(f"Exibindo formulário de criação de IA para {request.user.email}")
-        
         return render(request, 'ai_client/form.html', {
             'form': form,
             'title': 'Nova IA',
             'submit_text': 'Criar',
             'is_edit': False
         })
-
     except DatabaseError as e:
-        logger.error(f"Erro de banco de dados ao criar IA: {str(e)}")
+        logger.error(f"Erro de banco de dados ao criar IA: {str(e)}", exc_info=True)
         messages.error(request, "Erro ao criar IA. Tente novamente mais tarde.")
         return redirect('ai_config:ai_manage')
     except Exception as e:
@@ -155,24 +129,23 @@ def create_ai(request: HttpRequest) -> HttpResponse:
         messages.error(request, "Ocorreu um erro inesperado. Por favor, tente novamente.")
         return redirect('ai_config:ai_manage')
 
+
 @login_required
 def edit_ai(request: HttpRequest, ai_id: int) -> HttpResponse:
     """Edita uma configuração de IA existente.
-    
-    Exibe o formulário pré-preenchido para edição ou processa 
-    os dados do formulário recebidos.
-    
+
+    Exibe o formulário pré-preenchido para edição ou processa os dados do formulário recebidos.
+
     Args:
-        request: Objeto de requisição HTTP.
-        ai_id: ID da configuração de IA a ser editada.
-        
+        request (HttpRequest): Objeto de requisição HTTP.
+        ai_id (int): ID da configuração de IA a ser editada.
+
     Returns:
         HttpResponse: Página do formulário ou redirecionamento após edição.
     """
     try:
         ai = get_object_or_404(AIClientConfiguration, id=ai_id, user=request.user)
         logger.debug(f"Editando IA '{ai.name}' (ID: {ai_id}) para usuário {request.user.email}")
-        
         if request.method == 'POST':
             form = AIClientConfigurationForm(request.POST, instance=ai)
             if form.is_valid():
@@ -180,21 +153,18 @@ def edit_ai(request: HttpRequest, ai_id: int) -> HttpResponse:
                     form.save()
                     logger.info(f"IA '{ai.name}' (ID: {ai_id}) atualizada com sucesso por {request.user.email}")
                     messages.success(request, 'IA atualizada com sucesso!')
-                    
-                    # Obter URL de retorno do formulário ou usar fallback
                     next_url = request.POST.get('next')
-                    if next_url and next_url.startswith('/'):  # Verificar se é uma URL interna válida
+                    if next_url and next_url.startswith('/'):
                         return redirect(next_url)
-                    return redirect('ai_config:ai_manage')  # Fallback
+                    return redirect('ai_config:ai_manage')
                 except Exception as e:
-                    logger.error(f"Erro ao salvar alterações na IA {ai_id}: {str(e)}")
+                    logger.error(f"Erro ao salvar alterações na IA {ai_id}: {str(e)}", exc_info=True)
                     messages.error(request, f"Erro ao atualizar IA: {str(e)}")
             else:
                 logger.warning(f"Formulário de edição inválido para IA {ai_id}: {form.errors}")
                 messages.error(request, 'Corrija os erros no formulário.')
         else:
             form = AIClientConfigurationForm(instance=ai)
-        
         return render(request, 'ai_client/form.html', {
             'form': form,
             'title': f'Editar IA: {ai.name}',
@@ -202,13 +172,12 @@ def edit_ai(request: HttpRequest, ai_id: int) -> HttpResponse:
             'is_edit': True,
             'ai_config': ai
         })
-
     except AIClientConfiguration.DoesNotExist:
         logger.warning(f"Tentativa de edição de IA inexistente (ID: {ai_id}) por {request.user.email}")
         messages.error(request, "IA não encontrada.")
         return redirect('ai_config:ai_manage')
     except DatabaseError as e:
-        logger.error(f"Erro de banco de dados ao editar IA {ai_id}: {str(e)}")
+        logger.error(f"Erro de banco de dados ao editar IA {ai_id}: {str(e)}", exc_info=True)
         messages.error(request, "Erro ao atualizar IA. Tente novamente mais tarde.")
         return redirect('ai_config:ai_manage')
     except Exception as e:
@@ -216,88 +185,62 @@ def edit_ai(request: HttpRequest, ai_id: int) -> HttpResponse:
         messages.error(request, "Ocorreu um erro inesperado. Por favor, tente novamente.")
         return redirect('ai_config:ai_manage')
 
+
 @login_required
 def delete_ai(request: HttpRequest, ai_id: int) -> JsonResponse:
     """Remove uma configuração de IA.
-    
+
     Args:
-        request: Objeto de requisição HTTP.
-        ai_id: ID da configuração de IA a ser removida.
-        
+        request (HttpRequest): Objeto de requisição HTTP.
+        ai_id (int): ID da configuração de IA a ser removida.
+
     Returns:
         JsonResponse: Resposta JSON com status da operação.
     """
     if request.method != 'POST':
         logger.warning(f"Tentativa de exclusão de IA {ai_id} com método não permitido: {request.method}")
-        response = APPResponse(
-            success=False,
-            error='Método não permitido'
-        )
+        response = APIResponse.error_response(error_message='Método não permitido')
         return JsonResponse(response.to_dict(), status=405)
-        
     try:
         ai = get_object_or_404(AIClientConfiguration, id=ai_id, user=request.user)
         name = ai.name
         logger.info(f"Excluindo IA '{name}' (ID: {ai_id}) para usuário {request.user.email}")
-        
         with transaction.atomic():
             ai.delete()
-        
         logger.info(f"IA '{name}' (ID: {ai_id}) excluída com sucesso")
         messages.success(request, f'IA "{name}" excluída com sucesso!')
-        response = APPResponse(
-            success=True
-        )
+        response = APIResponse.success_response()
         return JsonResponse(response.to_dict())
-    
     except AIClientConfiguration.DoesNotExist:
         logger.error(f"IA {ai_id} não encontrada para exclusão")
-        response = APPResponse(
-            success=False,
-            error='IA não encontrada'
-        )
+        response = APIResponse.error_response(error_message='IA não encontrada')
         return JsonResponse(response.to_dict(), status=404)
     except DatabaseError as e:
-        logger.error(f"Erro de banco de dados ao excluir IA {ai_id}: {str(e)}")
-        response = APPResponse(
-            success=False,
-            error='Erro ao excluir IA. Tente novamente mais tarde.'
-        )
+        logger.error(f"Erro de banco de dados ao excluir IA {ai_id}: {str(e)}", exc_info=True)
+        response = APIResponse.error_response(error_message='Erro ao excluir IA. Tente novamente mais tarde.')
         return JsonResponse(response.to_dict(), status=500)
     except Exception as e:
         logger.exception(f"Erro inesperado ao excluir IA {ai_id}: {str(e)}")
-        response = APPResponse(
-            success=False,
-            error='Erro inesperado ao excluir IA'
-        )
+        response = APIResponse.error_response(error_message='Erro inesperado ao excluir IA')
         return JsonResponse(response.to_dict(), status=500)
+
 
 @login_required
 def ai_available_tokens(request: HttpRequest, ai_id: int) -> JsonResponse:
     """Lista tokens disponíveis para uma IA específica e seu estado (vinculado ou não).
-    
+
     Args:
-        request: Objeto de requisição HTTP.
-        ai_id: ID da configuração de IA.
-        
+        request (HttpRequest): Objeto de requisição HTTP.
+        ai_id (int): ID da configuração de IA.
+
     Returns:
         JsonResponse: Lista de tokens com seu estado de vinculação.
     """
     try:
-        # Verificar se a IA pertence ao usuário atual
         ai_config = get_object_or_404(AIClientConfiguration, id=ai_id, user=request.user)
         logger.debug(f"Listando tokens disponíveis para IA '{ai_config.name}' (ID: {ai_id})")
-        
-        # Obter todos os tokens do usuário
         user_tokens = UserToken.objects.filter(user=request.user)
-        
-        # Obter configurações já vinculadas a esta IA
-        token_configs = {
-            config.token_id: config.enabled 
-            for config in AIClientTokenConfig.objects.filter(ai_config=ai_config)
-        }
-        
-        # Preparar dados para a resposta
+        token_configs = {config.token_id: config.enabled for config in AIClientTokenConfig.objects.filter(ai_config=ai_config)}
         tokens_data = []
         for token in user_tokens:
             tokens_data.append({
@@ -306,50 +249,37 @@ def ai_available_tokens(request: HttpRequest, ai_id: int) -> JsonResponse:
                 'linked': token.id in token_configs,
                 'enabled': token_configs.get(token.id, False)
             })
-        
         logger.debug(f"Encontrados {len(tokens_data)} tokens para IA {ai_id}")
-        response = APPResponse(
-            success=True,
-            data={'tokens': tokens_data}
-        )
+        response = APIResponse.success_response(data={'tokens': tokens_data})
         return JsonResponse(response.to_dict())
     except AIClientConfiguration.DoesNotExist:
         logger.warning(f"Tentativa de listar tokens para IA inexistente (ID: {ai_id})")
-        response = APPResponse(
-            success=False,
-            error='Configuração de IA não encontrada'
-        )
+        response = APIResponse.error_response(error_message='Configuração de IA não encontrada')
         return JsonResponse(response.to_dict(), status=404)
     except Exception as e:
         logger.exception(f"Erro ao listar tokens disponíveis para IA {ai_id}: {str(e)}")
-        response = APPResponse(
-            success=False,
-            error='Ocorreu um erro ao carregar os tokens disponíveis.'
-        )
+        response = APIResponse.error_response(error_message='Ocorreu um erro ao carregar os tokens disponíveis.')
         return JsonResponse(response.to_dict(), status=500)
+
 
 @login_required
 def get_ai_models(request: HttpRequest, ai_client_id: int) -> JsonResponse:
     """Lista modelos disponíveis para um cliente de IA específico.
-    
+
     Retorna uma lista dos modelos base e dos modelos treinados pelo usuário atual.
-    
+
     Args:
-        request: Objeto de requisição HTTP.
-        ai_client_id: ID da configuração global de cliente de IA.
-        
+        request (HttpRequest): Objeto de requisição HTTP.
+        ai_client_id (int): ID da configuração global de cliente de IA.
+
     Returns:
         JsonResponse: Lista de modelos disponíveis.
     """
     try:
-        # Obtém a configuração global do cliente de IA
+        from ai_config.models import AIClientGlobalConfiguration
         ai_client = get_object_or_404(AIClientGlobalConfiguration, id=ai_client_id)
         logger.debug(f"Listando modelos para cliente IA {ai_client.name}")
-        
-        # Cria uma instância do cliente de IA
         client_instance = ai_client.create_api_client_instance()
-        
-        # Verifica se o cliente suporta listagem de modelos
         if not hasattr(client_instance, 'api_list_models'):
             logger.warning(f"Cliente {ai_client.api_client_class} não suporta listagem de modelos")
             return JsonResponse({
@@ -357,34 +287,18 @@ def get_ai_models(request: HttpRequest, ai_client_id: int) -> JsonResponse:
                 'error': 'Este cliente de IA não suporta listagem de modelos',
                 'models': []
             })
-        
-        # Obtém os modelos da API
         models = client_instance.api_list_models(list_trained_models=True, list_base_models=True)
-        
-        # Filtra modelos treinados para mostrar apenas os do usuário atual
-        from ..models import AITraining
-        user_trained_models = set(AITraining.objects.filter(
-            ai_config__user=request.user,
-            status='completed'
-        ).values_list('model_name', flat=True))
-        
-        # Formata a resposta separando modelos base dos treinados
+        from ai_config.models import AITraining
+        user_trained_models = set(AITraining.objects.filter(ai_config__user=request.user, status='completed').values_list('model_name', flat=True))
         base_models = []
         trained_models = []
-        
         for model in models:
-            model_data = {
-                'id': model.id,
-                'name': model.name
-            }
-            
+            model_data = {'id': model.id, 'name': model.name}
             if model.is_fine_tuned:
-                # Apenas adiciona modelos fine-tuned do usuário
                 if model.id in user_trained_models:
                     trained_models.append(model_data)
             else:
                 base_models.append(model_data)
-        
         return JsonResponse({
             'success': True,
             'models': {
@@ -392,7 +306,6 @@ def get_ai_models(request: HttpRequest, ai_client_id: int) -> JsonResponse:
                 'trained': trained_models
             }
         })
-        
     except AIClientGlobalConfiguration.DoesNotExist:
         logger.warning(f"Cliente IA não encontrado: ID {ai_client_id}")
         return JsonResponse({
@@ -401,7 +314,7 @@ def get_ai_models(request: HttpRequest, ai_client_id: int) -> JsonResponse:
             'models': []
         }, status=404)
     except Exception as e:
-        logger.error(f"Erro ao listar modelos para cliente IA {ai_client_id}: {str(e)}")
+        logger.error(f"Erro ao listar modelos para cliente IA {ai_client_id}: {str(e)}", exc_info=True)
         return JsonResponse({
             'success': False,
             'error': f'Erro ao carregar modelos: {str(e)}',

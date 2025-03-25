@@ -1,17 +1,39 @@
+# accounts/tests/test_signals.py
+
 from django.test import TestCase
-from django.contrib.auth.models import User
-from django.core import mail
+from django.contrib.auth import get_user_model
 from accounts.models import Profile
 
-class SignalsTest(TestCase):
-    def test_create_user_profile_signal(self):
-        user = User.objects.create_user(username='signaluser', email='signal@example.com', password='pass')
-        self.assertTrue(Profile.objects.filter(user=user).exists())
+User = get_user_model()
 
-    def test_handle_user_approval_sends_email(self):
-        user = User.objects.create_user(username='approver', email='approver@example.com', password='pass')
-        profile = user.profile
+class SignalsTest(TestCase):
+    """Testes para os signals de criação de Profile e aprovação de usuário."""
+
+    def test_criacao_de_profile_automatico(self):
+        """
+        Testa se ao criar um novo usuário, o Profile é criado automaticamente pelo signal.
+        """
+        user = User.objects.create_user(
+            email="sinal@example.com",
+            username="sinal@example.com",
+            password="test123"
+        )
+        profile = Profile.objects.get(user=user)
+        self.assertIsNotNone(profile)
+
+    def test_aprovar_usuario_ativa_conta(self):
+        """
+        Testa se ao aprovar um profile, o usuário é ativado automaticamente.
+        """
+        user = User.objects.create_user(
+            email="aprovar@example.com",
+            username="aprovar@example.com",
+            password="test123",
+            is_active=False
+        )
+        profile = Profile.objects.get(user=user)
         profile.is_approved = True
         profile.save()
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn('Sua conta foi aprovada!', mail.outbox[0].subject)
+
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)

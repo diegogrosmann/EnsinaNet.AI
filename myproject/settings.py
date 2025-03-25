@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'api',
     'public',
     'ai_config',
+    'client_version'
 ]
 
 SITE_ID = 1

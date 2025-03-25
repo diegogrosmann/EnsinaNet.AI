@@ -1,12 +1,14 @@
 """Views para monitoramento e métricas da API.
 
 Este módulo fornece endpoints para monitorar o uso da API,
-métricas de desempenho e estatísticas de utilização.
+incluindo métricas de desempenho, estatísticas de utilização
+e logs detalhados de requisições.
 """
 
 import logging
 import json
-from typing import List, Dict, Optional, Any
+import traceback
+from typing import List, Dict, Optional, Any, Union
 from django.http import JsonResponse, HttpRequest, HttpResponse
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, get_object_or_404
@@ -16,397 +18,383 @@ from datetime import datetime, timedelta
 
 from ..models import APILog
 from accounts.models import UserToken
-from core.types.api_response import APPResponse
+from core.types.api_response import APIResponse, APIResponseDict, APIResponseList
 from core.types.monitoring import TokenMetrics, UsageMetrics
+from core.types.base import JSONDict
+from core.exceptions import APIError, ApplicationError
 
 logger = logging.getLogger(__name__)
 
 @login_required
 def monitoring_dashboard(request: HttpRequest) -> HttpResponse:
-    """
+    """Renderiza o dashboard principal de monitoramento.
+    
     Retorna uma página HTML com um script de polling para logs de requisições.
-
     Se o usuário não for staff, só vai conseguir visualizar os logs filtrados
-    (essa lógica está em monitoring_data).
+    relacionados a seu próprio usuário.
     
     Args:
-        request: Objeto de requisição HTTP
+        request: Requisição HTTP.
         
     Returns:
-        HttpResponse: Página do dashboard de monitoramento
+        HttpResponse: Página renderizada do dashboard de monitoramento.
+        
+    Raises:
+        Exception: Erros são tratados pelo Django e renderizam página de erro
     """
-    return render(request, 'monitoring/dashboard.html')
-
+    logger.info(f"Acessando dashboard de monitoramento: usuário {request.user.username}")
+    
+    try:
+        # Verificar se usuário é staff para determinar o modo de exibição
+        is_staff = request.user.is_staff
+        
+        # Obter tokens do usuário ou todos os tokens (para staff)
+        tokens = UserToken.objects.all()
+        if not is_staff:
+            tokens = tokens.filter(user=request.user)
+            
+        tokens = tokens.values('id', 'name', 'user__username')
+        
+        # Preparar contexto para o template
+        context = {
+            'is_staff': is_staff,
+            'tokens': tokens,
+            'user': request.user,
+        }
+        
+        return render(request, 'monitoring/dashboard.html', context)
+    except Exception as e:
+        logger.exception(f"Erro ao renderizar dashboard: {str(e)}")
+        # Redirecionar para uma página de erro ou renderizar template de erro
+        return render(request, 'monitoring/error.html', {
+            'error_message': "Erro ao carregar dashboard de monitoramento"
+        })
 
 @login_required
 def monitoring_data(request: HttpRequest) -> JsonResponse:
-    """
-    Retorna JSON dos logs recentes da API.
-
+    """Retorna dados de logs recentes da API em formato JSON.
+    
+    Filtra os logs conforme permissões do usuário:
+    - Usuários staff podem ver todos os logs
+    - Usuários normais veem apenas seus próprios logs
+    
     Args:
-        request: Objeto de requisição HTTP
+        request: Requisição HTTP.
         
     Returns:
-        JsonResponse: Dados de monitoramento filtrados por permissão do usuário
+        JsonResponse: Logs recentes da API formatados como JSON.
+        
+    Raises:
+        APIError: Se houver erro ao processar logs
     """
     try:
-        if request.user.is_staff:
-            logs = APILog.objects.order_by('-timestamp')[:50]
-        else:
-            # Mostra apenas logs do próprio usuário
-            logs = APILog.objects.filter(user=request.user).order_by('-timestamp')[:50]
-
-        # Converte logs para o formato estruturado
-        data = []
+        # Verificar permissões do usuário
+        is_staff = request.user.is_staff
+        
+        # Construir a query base
+        logs_query = APILog.objects.order_by('-timestamp')
+        
+        # Se não for staff, filtrar apenas logs do próprio usuário
+        if not is_staff:
+            user_tokens = UserToken.objects.filter(user=request.user).values_list('id', flat=True)
+            logs_query = logs_query.filter(user_token__in=user_tokens)
+        
+        # Aplicar filtros adicionais
+        token_id = request.GET.get('token_id')
+        if token_id:
+            logs_query = logs_query.filter(user_token_id=token_id)
+            
+        status_code = request.GET.get('status_code')
+        if status_code:
+            logs_query = logs_query.filter(status_code=status_code)
+            
+        # Paginação
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 25))
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        
+        # Obter logs paginados
+        logs = logs_query[start_idx:end_idx]
+        total_logs = logs_query.count()
+        
+        # Converter para formato de resposta
+        logs_data = []
         for log in logs:
-            data.append({
+            log_data = {
                 'id': log.id,
-                'user_token': log.user_token.key if log.user_token else None,
                 'path': log.path,
                 'method': log.method,
                 'status_code': log.status_code,
                 'execution_time': log.execution_time,
-                'timestamp': log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-            })
+                'timestamp': log.timestamp.isoformat(),
+                'user': log.user.username if log.user else None,
+                'token': {
+                    'id': log.user_token.id,
+                    'name': log.user_token.name
+                } if log.user_token else None
+            }
+            logs_data.append(log_data)
         
-        response = APPResponse(success=True, data={'logs': data})
+        # Construir resposta tipada
+        response = APIResponseDict.success_response({
+            'logs': logs_data,
+            'total': total_logs,
+            'page': page,
+            'per_page': per_page,
+            'total_pages': (total_logs + per_page - 1) // per_page
+        })
+        
         return JsonResponse(response.to_dict())
     except Exception as e:
-        logger.error(f"Erro ao buscar dados de monitoramento: {str(e)}")
-        response = APPResponse(success=False, error=f"Erro ao buscar dados: {str(e)}")
-        return JsonResponse(response.to_dict())
-
+        logger.exception(f"Erro ao obter dados de monitoramento: {str(e)}")
+        response = APIResponseDict.error_response(f"Erro ao obter logs: {str(e)}")
+        return JsonResponse(response.to_dict(), status=500)
 
 @login_required
 def monitoring_stats(request: HttpRequest) -> JsonResponse:
-    """
-    Retorna estatísticas gerais de uso da API.
+    """Retorna estatísticas gerais de uso da API.
+    
+    Obtém métricas e estatísticas agregadas com base nos logs
+    da API, podendo filtrar por token e período.
     
     Args:
-        request: Objeto de requisição HTTP
+        request: Requisição HTTP.
         
     Returns:
-        JsonResponse: Estatísticas de uso da API em formato APPResponse
+        JsonResponse: Estatísticas e métricas de uso formatadas como JSON.
+        
+    Raises:
+        APIError: Se houver erro ao processar estatísticas
     """
     try:
-        # Obter parâmetros de filtro
-        token_id = request.GET.get('token')
-        start_date_str = request.GET.get('start_date')
-        end_date_str = request.GET.get('end_date')
+        # Verificar permissões do usuário
+        is_staff = request.user.is_staff
         
-        # Aplicar filtros
-        query_filters = Q()
+        # Parâmetros de filtro
+        days = int(request.GET.get('days', 7))
+        token_id = request.GET.get('token_id')
         
-        # Filtrar por usuário, a menos que seja staff
-        if not request.user.is_staff:
-            query_filters &= Q(user=request.user)
+        # Data de início para o período de análise
+        start_date = timezone.now() - timedelta(days=days)
         
-        # Filtrar por token se especificado
+        # Construir a query base
+        logs_query = APILog.objects.filter(timestamp__gte=start_date)
+        
+        # Se não for staff, filtrar apenas logs do próprio usuário
+        if not is_staff:
+            user_tokens = UserToken.objects.filter(user=request.user).values_list('id', flat=True)
+            logs_query = logs_query.filter(user_token__in=user_tokens)
+        
+        # Aplicar filtro de token se fornecido
         if token_id:
-            query_filters &= Q(user_token_id=token_id)
+            logs_query = logs_query.filter(user_token_id=token_id)
         
-        # Preparar filtros de data
-        if start_date_str:
-            try:
-                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-                query_filters &= Q(timestamp__gte=start_date)
-            except ValueError:
-                pass
+        # Estatísticas agregadas
+        total_calls = logs_query.count()
+        avg_time = logs_query.aggregate(Avg('execution_time'))['execution_time__avg'] or 0
         
-        if end_date_str:
-            try:
-                # Adicionar um dia para incluir todo o dia final
-                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
-                end_date = end_date.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
-                query_filters &= Q(timestamp__lte=end_date)
-            except ValueError:
-                pass
+        # Distribuição por status code
+        status_distribution = logs_query.values('status_code').annotate(
+            count=Count('id')
+        ).order_by('status_code')
         
-        # Período padrão: últimos 30 dias
-        if not start_date_str and not end_date_str:
-            default_start = timezone.now() - timedelta(days=30)
-            query_filters &= Q(timestamp__gte=default_start)
+        # Distribuição por método HTTP
+        method_distribution = logs_query.values('method').annotate(
+            count=Count('id')
+        ).order_by('method')
         
-        # Obter logs com os filtros aplicados
-        logs = APILog.objects.filter(query_filters)
+        # Distribuição diária de chamadas (últimos N dias)
+        daily_calls = logs_query.extra(
+            select={'day': 'DATE(timestamp)'}
+        ).values('day').annotate(count=Count('id')).order_by('day')
         
-        # Calcular estatísticas
-        total_requests = logs.count()
-        success_count = logs.filter(status_code__lt=400).count()
-        error_count = total_requests - success_count
-        avg_time = logs.aggregate(avg_time=Avg('execution_time'))['avg_time'] or 0
-        
-        # Formatar tempo médio para milissegundos
-        avg_time_ms = round(avg_time * 1000)
-        
-        # Preparar dados por hora (últimas 24h)
-        last_24h = timezone.now() - timedelta(hours=24)
-        hourly_logs = logs.filter(timestamp__gte=last_24h)
-        
-        # Agrupar por hora
-        hour_counts = {}
-        for log in hourly_logs:
-            hour_key = log.timestamp.strftime('%Y-%m-%d %H:00')
-            hour_counts[hour_key] = hour_counts.get(hour_key, 0) + 1
-        
-        # Preparar dados para o gráfico
-        sorted_hours = sorted(hour_counts.keys())
-        requests_by_hour = {
-            'labels': sorted_hours,
-            'values': [hour_counts[hour] for hour in sorted_hours]
+        # Construir resposta tipada
+        stats_data = {
+            'total_calls': total_calls,
+            'avg_time': avg_time,
+            'status_distribution': list(status_distribution),
+            'method_distribution': list(method_distribution),
+            'daily_calls': list(daily_calls),
+            'period_days': days
         }
         
-        # Obter tokens disponíveis para filtro
-        available_tokens = []
-        token_queryset = UserToken.objects.all()
-        
-        # Se não for staff, limitar aos tokens do próprio usuário
-        if not request.user.is_staff:
-            token_queryset = token_queryset.filter(user=request.user)
-        
-        for token in token_queryset:
-            available_tokens.append({
-                'id': token.id,
-                'name': token.name or token.key[:8]  # Nome ou prefixo do token
-            })
-        
-        # Preparar resposta
-        data = {
-            'total_requests': total_requests,
-            'success_count': success_count,
-            'error_count': error_count,
-            'avg_time': avg_time_ms,
-            'requests_by_hour': requests_by_hour,
-            'tokens': available_tokens
-        }
-        
-        response = APPResponse(success=True, data=data)
+        response = APIResponseDict.success_response(stats_data)
         return JsonResponse(response.to_dict())
         
     except Exception as e:
-        logger.error(f"Erro ao gerar estatísticas: {str(e)}")
-        response = APPResponse(success=False, error=f"Erro ao gerar estatísticas: {str(e)}")
-        return JsonResponse(response.to_dict())
-
+        logger.exception(f"Erro ao gerar estatísticas: {str(e)}")
+        response = APIResponseDict.error_response(f"Erro ao processar estatísticas: {str(e)}")
+        return JsonResponse(response.to_dict(), status=500)
 
 @login_required
 def monitoring_requests(request: HttpRequest) -> JsonResponse:
-    """
-    Retorna lista paginada de requisições à API.
+    """Retorna lista paginada de requisições à API.
+    
+    Fornece dados detalhados sobre as requisições à API com suporte
+    a paginação e filtros por data e token.
     
     Args:
-        request: Objeto de requisição HTTP
+        request: Requisição HTTP.
         
     Returns:
-        JsonResponse: Lista paginada de requisições em formato APPResponse
+        JsonResponse: Lista paginada de requisições.
+        
+    Raises:
+        APIError: Se houver erro ao processar requisições
     """
     try:
-        # Obter parâmetros de paginação e filtro
-        page = int(request.GET.get('page', 1))
-        page_size = int(request.GET.get('page_size', 10))
-        token_id = request.GET.get('token')
-        start_date_str = request.GET.get('start_date')
-        end_date_str = request.GET.get('end_date')
+        # Verificar permissões do usuário
+        is_staff = request.user.is_staff
         
-        # Validar página
-        if page < 1:
-            page = 1
+        # Construir a query base
+        logs_query = APILog.objects.order_by('-timestamp')
+        
+        # Se não for staff, filtrar apenas logs do próprio usuário
+        if not is_staff:
+            user_tokens = UserToken.objects.filter(user=request.user).values_list('id', flat=True)
+            logs_query = logs_query.filter(user_tokens)
         
         # Aplicar filtros
-        query_filters = Q()
-        
-        # Filtrar por usuário, a menos que seja staff
-        if not request.user.is_staff:
-            query_filters &= Q(user=request.user)
-        
-        # Filtrar por token se especificado
+        token_id = request.GET.get('token_id')
         if token_id:
-            query_filters &= Q(user_token_id=token_id)
-        
-        # Preparar filtros de data
-        if start_date_str:
-            try:
-                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-                query_filters &= Q(timestamp__gte=start_date)
-            except ValueError:
-                pass
-        
-        if end_date_str:
-            try:
-                # Adicionar um dia para incluir todo o dia final
-                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
-                end_date = end_date.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
-                query_filters &= Q(timestamp__lte=end_date)
-            except ValueError:
-                pass
-        
-        # Obter logs com os filtros aplicados
-        logs = APILog.objects.filter(query_filters).order_by('-timestamp')
-        
-        # Calcular paginação
-        total_items = logs.count()
-        total_pages = (total_items + page_size - 1) // page_size  # Arredondar para cima
-        
-        # Ajustar página se estiver fora dos limites
-        if page > total_pages and total_pages > 0:
-            page = total_pages
-        
-        # Calcular offsets
-        start_idx = (page - 1) * page_size
-        end_idx = start_idx + page_size
-        
-        # Obter registros da página atual
-        page_logs = logs[start_idx:end_idx]
-        
-        # Formatar dados para a resposta
-        requests_data = []
-        for log in page_logs:
-            token_name = log.user_token.name if log.user_token else "N/A"
-            if not token_name and log.user_token:
-                token_name = f"Token {log.user_token.key[:8]}..."
+            logs_query = logs_query.filter(user_token_id=token_id)
             
-            requests_data.append({
+        status_code = request.GET.get('status_code')
+        if status_code:
+            logs_query = logs_query.filter(status_code=status_code)
+            
+        method = request.GET.get('method')
+        if method:
+            logs_query = logs_query.filter(method=method)
+            
+        path = request.GET.get('path')
+        if path:
+            logs_query = logs_query.filter(path__icontains=path)
+            
+        # Filtro de período
+        days = int(request.GET.get('days', 7))
+        start_date = timezone.now() - timedelta(days=days)
+        logs_query = logs_query.filter(timestamp__gte=start_date)
+        
+        # Paginação
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 25))
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        
+        # Obter logs paginados
+        logs = logs_query[start_idx:end_idx]
+        total_logs = logs_query.count()
+        
+        # Converter para formato de resposta
+        logs_data = []
+        for log in logs:
+            log_data = {
                 'id': log.id,
-                'timestamp': log.timestamp.isoformat(),
-                'token_name': token_name,
-                'endpoint': f"{log.method} {log.path}",
+                'path': log.path,
+                'method': log.method,
                 'status_code': log.status_code,
-                'response_time': round(log.execution_time * 1000)  # Converter para ms
-            })
+                'execution_time': log.execution_time,
+                'timestamp': log.timestamp.isoformat(),
+                'user': log.user.username if log.user else None,
+                'token': {
+                    'id': log.user_token.id if log.user_token else None,
+                    'name': log.user_token.name if log.user_token else None
+                }
+            }
+            logs_data.append(log_data)
         
-        # Preparar informações de paginação
-        pagination_info = {
+        # Construir resposta tipada
+        response_data = {
+            'requests': logs_data,
+            'total': total_logs,
             'page': page,
-            'page_size': page_size,
-            'total_pages': total_pages,
-            'total': total_items,
-            'from': start_idx + 1 if total_items > 0 else 0,
-            'to': min(end_idx, total_items) if total_items > 0 else 0
+            'per_page': per_page,
+            'total_pages': (total_logs + per_page - 1) // per_page,
+            'filter': {
+                'token_id': token_id,
+                'status_code': status_code,
+                'method': method,
+                'path': path,
+                'days': days
+            }
         }
         
-        # Preparar resposta
-        data = {
-            'requests': requests_data,
-            'pagination': pagination_info
-        }
-        
-        response = APPResponse(success=True, data=data)
+        response = APIResponseDict.success_response(response_data)
         return JsonResponse(response.to_dict())
         
     except Exception as e:
-        logger.error(f"Erro ao listar requisições: {str(e)}")
-        response = APPResponse(success=False, error=f"Erro ao listar requisições: {str(e)}")
-        return JsonResponse(response.to_dict())
-
+        logger.exception(f"Erro ao listar requisições: {str(e)}")
+        response = APIResponseDict.error_response(f"Erro ao processar requisições: {str(e)}")
+        return JsonResponse(response.to_dict(), status=500)
 
 @login_required
 def monitoring_request_details(request: HttpRequest, request_id: int) -> JsonResponse:
-    """
-    Retorna detalhes de uma requisição específica.
+    """Retorna detalhes de uma requisição específica.
+    
+    Fornece todos os dados disponíveis sobre uma requisição específica,
+    incluindo corpo da requisição e resposta.
     
     Args:
-        request: Objeto de requisição HTTP
-        request_id: ID da requisição a ser detalhada
+        request: Requisição HTTP.
+        request_id: ID da requisição a ser detalhada.
         
     Returns:
-        JsonResponse: Detalhes da requisição em formato APPResponse
+        JsonResponse: Detalhes da requisição.
+        
+    Raises:
+        APIError: Se houver erro ao processar detalhes
     """
     try:
-        # Preparar query base
-        query = Q(id=request_id)
+        # Obter o log da requisição
+        log = get_object_or_404(APILog, id=request_id)
         
-        # Se não for staff, restringir aos logs do próprio usuário
-        if not request.user.is_staff:
-            query &= Q(user=request.user)
+        # Verificar permissões do usuário
+        is_staff = request.user.is_staff
+        if not is_staff and log.user_token and log.user_token.user != request.user:
+            # Usuário não tem permissão para acessar este log
+            response = APIResponseDict.error_response("Sem permissão para acessar este log")
+            return JsonResponse(response.to_dict(), status=403)
         
-        # Buscar o log
-        log = get_object_or_404(APILog, query)
+        # Formatar o request_body e response_body como JSON se possível
+        request_body = None
+        response_body = None
         
-        # Formatar token
-        token_name = log.user_token.name if log.user_token else "N/A"
-        if not token_name and log.user_token:
-            token_name = f"Token {log.user_token.key[:8]}..."
+        if log.request_body:
+            try:
+                request_body = json.loads(log.request_body)
+            except json.JSONDecodeError:
+                request_body = log.request_body
         
-        # Tentar parsear os corpos como JSON
-        try:
-            request_body = json.loads(log.request_body) if log.request_body else {}
-        except (json.JSONDecodeError, TypeError):
-            request_body = log.request_body
+        if log.response_body:
+            try:
+                response_body = json.loads(log.response_body)
+            except json.JSONDecodeError:
+                response_body = log.response_body
         
-        try:
-            response_body = json.loads(log.response_body) if log.response_body else {}
-        except (json.JSONDecodeError, TypeError):
-            response_body = log.response_body
-        
-        # Parsear headers (eles podem estar em formato string ou JSON)
-        headers = {}
-        # Headers seriam armazenados em um campo adicional, se existente
-        # Este é um exemplo, você pode precisar ajustar conforme seu modelo
-        
-        # Preparar dados detalhados
+        # Construir resposta tipada
         log_details = {
             'id': log.id,
-            'timestamp': log.timestamp.isoformat(),
-            'token_name': token_name,
-            'endpoint': f"{log.method} {log.path}",
+            'path': log.path,
+            'method': log.method,
             'status_code': log.status_code,
-            'response_time': round(log.execution_time * 1000),  # Converter para ms
+            'execution_time': log.execution_time,
+            'timestamp': log.timestamp.isoformat(),
+            'user': log.user.username if log.user else None,
+            'token': {
+                'id': log.user_token.id,
+                'name': log.user_token.name
+            } if log.user_token else None,
+            'requester_ip': log.requester_ip,
             'request_body': request_body,
-            'response_body': response_body,
-            'headers': headers
+            'response_body': response_body
         }
         
-        response = APPResponse(success=True, data=log_details)
+        response = APIResponseDict.success_response(log_details)
         return JsonResponse(response.to_dict())
         
     except Exception as e:
-        logger.error(f"Erro ao buscar detalhes da requisição {request_id}: {str(e)}")
-        response = APPResponse(success=False, error=f"Erro ao buscar detalhes da requisição: {str(e)}")
-        return JsonResponse(response.to_dict())
-
-
-@login_required
-def api_usage_metrics(request: HttpRequest) -> JsonResponse:
-    """Retorna métricas de uso da API para o usuário atual.
-    
-    Calcula estatísticas como total de chamadas, tempo médio de resposta
-    e distribuição de status code por token.
-    
-    Args:
-        request: Objeto de requisição HTTP
-        
-    Returns:
-        JsonResponse: Métricas de uso da API
-    """
-    try:
-        # Período de análise (últimos 30 dias)
-        start_date = timezone.now() - timedelta(days=30)
-        
-        # Obter logs do usuário
-        user_logs = APILog.objects.filter(
-            user=request.user,
-            timestamp__gte=start_date
-        ).select_related('user_token')
-        
-        # Calcular métricas por token
-        token_metrics: Dict[str, Dict[str, Any]] = {}
-        for token in UserToken.objects.filter(user=request.user):
-            token_logs = user_logs.filter(user_token=token)
-            status_codes = dict(token_logs.values_list('status_code').annotate(count=Count('id')))
-            
-            metrics: Dict[str, Any] = {
-                'name': token.name,
-                'total_calls': token_logs.count(),
-                'avg_time': token_logs.aggregate(Avg('execution_time'))['execution_time__avg'] or 0,
-                'status_codes': status_codes
-            }
-            token_metrics[str(token.id)] = metrics
-        
-        logger.info(f"Métricas de uso geradas para usuário {request.user.email}")
-        response = APPResponse(success=True, data={'metrics': token_metrics})
-        return JsonResponse(response.to_dict())
-        
-    except Exception as e:
-        logger.error(f"Erro ao gerar métricas de uso: {str(e)}")
-        response = APPResponse(success=False, error=f"Erro ao gerar métricas de uso: {str(e)}")
+        logger.exception(f"Erro ao obter detalhes da requisição {request_id}: {str(e)}")
+        response = APIResponseDict.error_response(f"Erro ao processar detalhes: {str(e)}")
         return JsonResponse(response.to_dict(), status=500)

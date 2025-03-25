@@ -333,8 +333,15 @@ document.addEventListener('DOMContentLoaded', function() {
         loadingIndicator.classList.remove('d-none');
         modelDropdownButton.disabled = true;
         
-        // Limpar o campo de nome do modelo (será removido quando um novo cliente for selecionado)
-        modelNameInput.value = '';
+        // Armazenar o valor atual do modelo antes de limpar
+        const currentModelValue = modelNameInput.value;
+        const isEditMode = {{ is_edit|yesno:"true,false" }};
+        
+        // Limpar o campo de nome do modelo apenas se não estivermos em modo de edição
+        // ou se o cliente IA for alterado
+        if (!isEditMode) {
+            modelNameInput.value = '';
+        }
         
         // Fazer a requisição AJAX
         fetch(`{% url 'ai_config:ai_manage' %}client/${clientId}/models/`, {
@@ -360,6 +367,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (baseModels.length === 0 && trainedModels.length === 0) {
                     modelsList.innerHTML = '<li><h6 class="dropdown-header">Nenhum modelo disponível</h6></li>';
                     modelDropdownButton.disabled = true;
+                    
+                    // Restaurar o valor original se estamos em modo de edição
+                    if (isEditMode && currentModelValue) {
+                        modelNameInput.value = currentModelValue;
+                    }
                     return;
                 }
                 
@@ -375,6 +387,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         link.className = 'dropdown-item';
                         link.href = '#';
                         link.textContent = model.name;
+                        
+                        // Destacar o modelo selecionado se estamos em modo de edição
+                        if (isEditMode && (model.id === currentModelValue || model.name === currentModelValue)) {
+                            link.className += ' active';
+                        }
+                        
                         link.onclick = function(e) {
                             e.preventDefault();
                             modelNameInput.value = model.id;
@@ -425,6 +443,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 modelDropdownButton.disabled = true;
                 modelsList.innerHTML = `<li><h6 class="dropdown-header text-danger">Erro ao carregar modelos</h6></li>
                                       <li><span class="dropdown-item-text">${data.error || 'Tente novamente ou digite o modelo manualmente'}</span></li>`;
+                
+                // Restaurar o valor original se estamos em modo de edição
+                if (isEditMode && currentModelValue) {
+                    modelNameInput.value = currentModelValue;
+                }
             }
         })
         .catch(error => {
@@ -434,6 +457,11 @@ document.addEventListener('DOMContentLoaded', function() {
             modelsList.innerHTML = '<li><h6 class="dropdown-header text-danger">Erro ao carregar modelos</h6></li>' +
                                   '<li><span class="dropdown-item-text">Tente novamente ou digite o modelo manualmente</span></li>';
             console.error('Erro ao carregar modelos:', error);
+            
+            // Restaurar o valor original se estamos em modo de edição
+            if (isEditMode && currentModelValue) {
+                modelNameInput.value = currentModelValue;
+            }
         });
     }
     

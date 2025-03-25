@@ -14,7 +14,6 @@ function getCookie(name) {
     return cookieValue;
 }
 
-// Configurar CSRF token para todas requisições AJAX
 const csrftoken = getCookie('csrftoken');
 
 $.ajaxSetup({
@@ -113,11 +112,9 @@ function hideLoading() {
 function showButtonLoading(button, loadingText = 'Carregando...') {
     if (!button) return;
     
-    // Guardar o texto original
     button.dataset.originalHtml = button.innerHTML;
     button.disabled = true;
     
-    // Adicionar spinner e texto
     button.innerHTML = `
         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
         <span class="ms-1">${loadingText}</span>
@@ -127,34 +124,26 @@ function showButtonLoading(button, loadingText = 'Carregando...') {
 function hideButtonLoading(button) {
     if (!button || !button.dataset.originalHtml) return;
     
-    // Restaurar o estado original
     button.innerHTML = button.dataset.originalHtml;
     button.disabled = false;
     delete button.dataset.originalHtml;
 }
 
-// Controle de mudanças não salvas
 window.hasUnsavedChanges = false;
 window.addEventListener('beforeunload', function(e) {
     if (window.hasUnsavedChanges) {
-        e.preventDefault();
         e.preventDefault();
         return 'Você tem alterações não salvas. Deseja realmente sair?';
     }
 });
 
-// Sistema de detecção e gerenciamento de tema
 function initThemeDetection() {
-    // Inicialização do sistema de temas (se disponível)
     if (typeof initThemeSystem === 'function') {
-        // O novo sistema de temas irá gerenciar tudo
         initThemeSystem();
     }
 }
 
-// Alternar tema manualmente - função legada, mantida apenas para compatibilidade
 function toggleTheme() {
-    // Se o novo sistema de temas estiver disponível, use-o
     if (typeof toggleThemeMode === 'function') {
         toggleThemeMode();
     }
@@ -168,8 +157,6 @@ function buildUrl(url, tempID, replaceID) {
     return url.replace(tempID, replaceID);
 }
 
-// Funções do MarkdownX são delegadas para o arquivo markdownx.js
-// Aliases para manter compatibilidade com código existente
 function initMarkdownX() {
     if (typeof MarkdownX !== 'undefined') {
         MarkdownX.init();
@@ -190,11 +177,6 @@ function resetMarkdownHeight() {
     }
 }
 
-/**
- * Funções para gerenciar o loader da página
- */
-
-// Controle do loader inicial da página
 function showPageLoader() {
   const loader = document.getElementById('pageLoader');
   if (loader) {
@@ -213,7 +195,6 @@ function hidePageLoader() {
   }
 }
 
-// Controle do loader de transição
 function showTransitionLoader() {
   const transLoader = document.getElementById('transitionLoader');
   if (transLoader) {
@@ -228,28 +209,17 @@ function hideTransitionLoader() {
   }
 }
 
-// Configura o loader de transição apenas para saída do site
 function setupTransitionLoader() {
-  // Removemos os eventos de cliques em links - eles não devem disparar o loader
-  // O loader só será mostrado no evento beforeunload quando o usuário realmente sair da página
-  
-  // Para formulários, mantemos o comportamento mas melhoramos a detecção
   const forms = document.querySelectorAll('form');
   forms.forEach(form => {
-    // Não aplicar a formulários com atributo data-no-loader ou que usam AJAX
     if (!form.hasAttribute('data-no-loader')) {
       form.addEventListener('submit', function(e) {
-        // Verificamos se o formulário será enviado via AJAX
         const isAjaxForm = form.hasAttribute('data-ajax') || 
                           form.classList.contains('ajaxForm') || 
                           form.getAttribute('onsubmit')?.includes('ajax') ||
                           form.dataset.remote === 'true';
-        
-        // Verificar se o destino do formulário contém no_loader=true
         const formAction = form.getAttribute('action') || '';
         const isNoLoader = formAction.includes('no_loader=true');
-        
-        // Só mostrar loader se for um envio tradicional, não AJAX e não tiver no_loader
         if (!isAjaxForm && !isNoLoader && !e.defaultPrevented) {
           showTransitionLoader();
         }
@@ -258,51 +228,37 @@ function setupTransitionLoader() {
   });
 }
 
-// Executar quando o DOM estiver pronto
 document.addEventListener('DOMContentLoaded', function() {
-  // Esconde o loader quando o DOM terminar de carregar
   hidePageLoader();
-  hideTransitionLoader(); // Garantir que o loader de transição também esteja escondido
-  
-  // Configura o loader de transição
+  hideTransitionLoader();
   setupTransitionLoader();
 });
 
-// Garantir que o loader seja escondido quando todos os recursos carregarem
 window.addEventListener('load', function() {
   hidePageLoader();
   hideTransitionLoader();
 });
 
-// Tratar especificamente quando a página é restaurada do histórico de navegação
 window.addEventListener('pageshow', function(event) {
-  // Verificar se a página está sendo restaurada do cache
   if (event.persisted) {
-    // Esconder todos os loaders quando voltamos usando o botão voltar
     hidePageLoader();
     hideTransitionLoader();
   }
 });
 
-// Mostra o loader apenas quando o usuário realmente sai do site
 window.addEventListener('beforeunload', function(e) {
-  // Verificar se a navegação não é causada por um link interno, AJAX ou download (no_loader)
   if (window.location.href.includes('no_loader=true')) {
-    // Não mostrar o loader para downloads
     e.preventDefault();
     return;
   }
   
-  // Se for uma saída real do site, mostrar o loader
   if (!e.defaultPrevented) {
     showTransitionLoader();
   }
 });
 
-// Inicializa o loader ao carregar o script
 showPageLoader();
 
-// Inicializações gerais
 document.addEventListener('DOMContentLoaded', function() {
     initToasts();
     initThemeDetection();
