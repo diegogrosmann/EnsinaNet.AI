@@ -530,35 +530,117 @@ document.addEventListener('DOMContentLoaded', function() {
     // Atualizar função de polling
     function fetchTrainingExamples() {
         if (!window.activeCaptureToken || !window.activeCaptureAI) return;
+        
+        const url = buildUrl(
+            buildUrl(
+                "{% url 'ai_config:capture_get_examples' 'ffffffff-ffff-ffff-ffff-ffffffffffff' '8888888888'%}", 
+                "ffffffff-ffff-ffff-ffff-ffffffffffff", 
+                window.activeCaptureToken
+            ), 
+            '8888888888', 
+            window.activeCaptureAI
+        );
 
-        fetch(buildUrl(buildUrl("{% url 'ai_config:capture_get_examples' 'ffffffff-ffff-ffff-ffff-ffffffffffff' '8888888888'%}", "ffffffff-ffff-ffff-ffff-ffffffffffff", window.activeCaptureToken), '8888888888', window.activeCaptureAI))
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && data.data && data.data.examples && data.data.examples.length > 0) {
-                    // Fecha todos os exemplos existentes
-                    const openCollapses = formsetContainer.querySelectorAll('.accordion-collapse.collapse.show');
-                    openCollapses.forEach(collapse => {
-                        bootstrap.Collapse.getInstance(collapse)?.hide();
-                    });
+        ajaxAPI(url, 'GET', null, { showLoading: false })
+            .then(apiResponse => {
+                if (apiResponse.isSuccess()) {
+                    let data = apiResponse.getData();
                     
-                    // Adiciona os novos exemplos
-                    let lastForm = null;
-                    data.data.examples.forEach(example => {
-                        lastForm = createNewExample(example, false);
-                    });
-
-                    // Expande apenas o último exemplo adicionado
-                    if (lastForm) {
-                        const collapse = lastForm.querySelector('.accordion-collapse');
-                        if (collapse) {
-                            setTimeout(() => {
-                                new bootstrap.Collapse(collapse).show();
-                            }, 50);
-                        }
+                    // Log detalhado para debug
+                    console.log("Dados recebidos:", data);
+                    
+                    // Garantir que estamos trabalhando com o primeiro item se for array
+                    if (Array.isArray(data)) {
+                        data = data[0];
+                        console.log("Usando primeiro item do array:", data);
                     }
+                    
+                    // Verificação mais robusta para exemplos
+                    if (data) {
+                        // Resolver exemplos - verificar todas as formas possíveis em que os exemplos podem estar disponíveis
+                        let examples = [];
+                        
+                        // Caso 1: data.examples é um array
+                        if (data.examples && Array.isArray(data.examples) && data.examples.length > 0) {
+                            console.log("Exemplos encontrados no array examples:", data.examples);
+                            examples = data.examples;
+                        } 
+                        // Caso 2: data tem propriedades numéricas (0, 1, 2...) que são exemplos
+                        else if (data.examples && typeof data.examples === 'object') {
+                            console.log("Exemplos encontrados como propriedades do objeto:", data.examples);
+                            
+                            // Extrair exemplos das propriedades numéricas
+                            const numericProps = Object.keys(data.examples)
+                                .filter(key => /^\d+$/.test(key))
+                                .sort((a, b) => parseInt(a) - parseInt(b));
+                            
+                            if (numericProps.length > 0) {
+                                console.log(`Encontradas ${numericProps.length} propriedades numéricas`);
+                                examples = numericProps.map(key => data.examples[key]);
+                            }
+                        }
+                        // Caso 3: data tem propriedades numéricas diretamente
+                        else {
+                            const numericProps = Object.keys(data)
+                                .filter(key => /^\d+$/.test(key))
+                                .sort((a, b) => parseInt(a) - parseInt(b));
+                            
+                            if (numericProps.length > 0) {
+                                console.log(`Encontradas ${numericProps.length} propriedades numéricas diretamente em data`);
+                                examples = numericProps.map(key => data[key]);
+                            }
+                        }
+                        
+                        if (examples.length > 0) {
+                            console.log(`Processando ${examples.length} exemplos:`, examples);
+                            
+                            // Fecha todos os exemplos existentes
+                            const openCollapses = formsetContainer.querySelectorAll('.accordion-collapse.collapse.show');
+                            openCollapses.forEach(collapse => {
+                                bootstrap.Collapse.getInstance(collapse)?.hide();
+                            });
+                            
+                            // Adiciona os novos exemplos
+                            let lastForm = null;
+                            examples.forEach(example => {
+                                // Verificação mais flexível
+                                if (example && (example.user_message !== undefined || example.response !== undefined)) {
+                                    console.log("Criando exemplo a partir de:", example);
+                                    lastForm = createNewExample({
+                                        system_message: example.system_message || '',
+                                        user_message: example.user_message || '',
+                                        response: example.response || ''
+                                    }, false);
+                                } else {
+                                    console.warn("Exemplo inválido ou formato não reconhecido:", example);
+                                }
+                            });
+
+                            // Expande apenas o último exemplo adicionado
+                            if (lastForm) {
+                                const collapse = lastForm.querySelector('.accordion-collapse');
+                                if (collapse) {
+                                    setTimeout(() => {
+                                        new bootstrap.Collapse(collapse).show();
+                                    }, 50);
+                                }
+                            }
+                            
+                            showMessage('success', `${examples.length} novo(s) exemplo(s) adicionado(s)!`);
+                        } else {
+                            console.log("Nenhum exemplo encontrado nos dados recebidos:", data);
+                        }
+                    } else {
+                        console.log("Dados inválidos ou sem exemplos:", data);
+                    }
+                } else {
+                    console.warn("Resposta da API não foi bem-sucedida:", apiResponse.getError());
                 }
             })
-            .catch(error => showError('Erro ao buscar exemplos: ' + error));
+            .catch(error => {
+                console.error('Erro ao buscar exemplos:', error);
+                showError('Erro ao buscar exemplos: ' + error);
+            });
     }
 
     // Inicializar numeração inicial
@@ -601,20 +683,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // Função para desativar captura - extraída para reuso e tornada global
     window.deactivateCapture = async function() {
         try {
-            const response = await fetch('{% url "ai_config:capture_toggle" %}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-CSRFToken': getCookie('csrftoken')
-                },
-                body: new URLSearchParams({
-                    'action': 'deactivate'
-                })
-            });
-
-            const data = await response.json();
+            const formData = new FormData();
+            formData.append('action', 'deactivate');
             
-            if (data.success) {
+            const apiResponse = await ajaxAPI('{% url "ai_config:capture_toggle" %}', 'POST', formData, {
+                showLoading: false,
+                processData: false,
+                contentType: false
+            });
+            
+            if (apiResponse.isSuccess()) {
                 // Remove o alerta de captura ativa
                 const activeAlert = document.querySelector('.alert-info');
                 if (activeAlert) {
@@ -648,14 +726,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     clearInterval(window.pollingInterval);
                 }
 
-                // Usa o sistema de toast do template base
-                createAndShowToast('Captura desativada com sucesso', 'success');
+                // Usa o método showMessage da classe APIResponse
+                apiResponse.showMessage({showSuccess: true});
             } else {
-                throw new Error(data.error || 'Erro ao desativar captura');
+                throw new Error(apiResponse.getError()?.message || 'Erro ao desativar captura');
             }
         } catch (error) {
             console.error('Erro:', error);
-            showError('Erro ao desativar captura: ' + error.message);
+            showMessage('error', 'Erro ao desativar captura: ' + error.message);
         }
     };
 

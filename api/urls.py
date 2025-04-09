@@ -5,6 +5,7 @@ estabelecendo as rotas de acesso para todos os recursos disponíveis.
 """
 
 import logging
+from anthropic import APIError
 from django.urls import path, include
 from django.urls.resolvers import URLPattern, URLResolver
 from typing import List, Union
@@ -16,7 +17,7 @@ from api.views.monitoring import (
     monitoring_requests,
     monitoring_request_details
 )
-from core.exceptions import APIError
+from api.views.healthcheck import healthcheck
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ monitoring_patterns: List[Union[URLPattern, URLResolver]] = [
 
 # Todas as URLs da aplicação
 urlpatterns: List[Union[URLPattern, URLResolver]] = [
+    path('healthcheck/', healthcheck, name='healthcheck'),
     path('monitoring/', include(monitoring_patterns)),
     path('v1/', include(('api.v1.urls', 'api.v1'), namespace='api_v1')),
 ]

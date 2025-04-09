@@ -6,20 +6,20 @@ as rotas de acesso para todos os recursos deste namespace.
 
 import logging
 from django.urls import path
-from . import views
-from core.exceptions import APIError
+
+from api.exceptions import APIClientException
+from .views import compare, compare_async, operation_status, operations_list
 
 logger = logging.getLogger(__name__)
 
 app_name = 'v1'
 
 urlpatterns = [
-    path('compare/', views.compare, name='compare'),
-    path('async_compare/', views.async_compare, name='async_compare'),
-    path('async_compare/<str:task_id>/', views.async_compare_status, name='async_compare_status'),
+    path('compare/', compare, name='compare'),
+    path('compare/async/', compare_async, name='compare_async'),
+    path('operations/<str:operation_id>/', operation_status, name='operation_status'),
+    path('operations/', operations_list, name='operations_list'),
 ]
-
-logger.info(f"Endpoints da API v1 registrados: {len(urlpatterns)}")
 
 def get_api_endpoints() -> list:
     """Lista todos os endpoints disponíveis na API v1.
@@ -38,4 +38,4 @@ def get_api_endpoints() -> list:
         return endpoints
     except Exception as e:
         logger.error(f"Erro ao listar endpoints API v1: {str(e)}", exc_info=True)
-        raise APIError(f"Erro ao processar endpoints da API v1: {str(e)}")
+        raise APIClientException(f"Erro ao processar endpoints da API v1: {str(e)}")

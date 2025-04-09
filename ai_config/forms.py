@@ -7,14 +7,15 @@ e processar arquivos de treinamento.
 import logging
 import json
 import bleach
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from django import forms
 from django.core.exceptions import ValidationError
 from django.forms import formset_factory, BaseFormSet, ModelChoiceField
 from django.contrib.auth import get_user_model
 from markdownx.widgets import MarkdownxWidget
 
-from core.exceptions import AIConfigError, FileProcessingError, ApplicationError
+from ai_config.exceptions import AIConfigException
+from core.exceptions import FileProcessingException
 
 from .models import (
     AIClientGlobalConfiguration, 
@@ -64,7 +65,7 @@ class BaseTrainingExampleFormSet(BaseFormSet):
                 self.media += form.media
         except Exception as e:
             logger.error(f"Erro ao inicializar formset de treinamento: {e}", exc_info=True)
-            raise AIConfigError(f"Erro ao preparar formulário de treinamento: {e}")
+            raise AIConfigException(f"Erro ao preparar formulário de treinamento: {e}")
 
 class AIClientGlobalConfigForm(forms.ModelForm):
     """Formulário para criar/editar AIClientGlobalConfiguration.
@@ -98,7 +99,7 @@ class AIClientGlobalConfigForm(forms.ModelForm):
                 self.initial['original_api_key'] = self.instance.api_key
         except Exception as e:
             logger.error(f"Erro ao inicializar formulário de configuração global: {e}", exc_info=True)
-            raise AIConfigError(f"Erro ao preparar formulário de configuração: {e}")
+            raise AIConfigException(f"Erro ao preparar formulário de configuração: {e}")
 
     def mask_api_key(self, api_key: str) -> str:
         """Mascara a chave de acesso à API para exibição.
@@ -242,7 +243,7 @@ class AIClientConfigurationForm(forms.ModelForm):
                     self.fields['use_system_message'].disabled = True
         except Exception as e:
             logger.error(f"Erro ao inicializar formulário de configuração de cliente: {e}", exc_info=True)
-            raise AIConfigError(f"Erro ao preparar formulário: {e}")
+            raise AIConfigException(f"Erro ao preparar formulário: {e}")
 
     def clean(self) -> Dict[str, Any]:
         """Valida o formulário garantindo consistência com a classe da API.
@@ -448,7 +449,7 @@ class TokenAIConfigurationForm(forms.ModelForm):
             self.user = user
         except Exception as e:
             logger.error(f"Erro ao inicializar formulário de configuração de token: {e}", exc_info=True)
-            raise AIConfigError(f"Erro ao preparar formulário de token: {e}")
+            raise AIConfigException(f"Erro ao preparar formulário de token: {e}")
 
     def clean_base_instruction(self) -> str:
         """Limpa e sanitiza o campo 'base_instruction'.
@@ -532,7 +533,7 @@ class TrainingCaptureForm(forms.ModelForm):
                 self.fields['ai_client_config'].queryset = AIClientConfiguration.objects.filter(user=user)
         except Exception as e:
             logger.error(f"Erro ao inicializar formulário de captura de treinamento: {e}", exc_info=True)
-            raise AIConfigError(f"Erro ao preparar formulário de captura: {e}")
+            raise AIConfigException(f"Erro ao preparar formulário de captura: {e}")
 
 class AITrainingFileForm(forms.ModelForm):
     """Formulário para upload de arquivo de treinamento."""
@@ -557,7 +558,7 @@ class AITrainingFileForm(forms.ModelForm):
             return file
         except Exception as e:
             logger.error(f"Erro ao validar arquivo: {e}", exc_info=True)
-            raise FileProcessingError(f"Erro ao processar arquivo: {e}")
+            raise FileProcessingException(f"Erro ao processar arquivo: {e}")
 
 class UserAITrainingFileForm(forms.ModelForm):
     """Formulário para upload de arquivo de treinamento vinculado ao usuário."""
@@ -580,7 +581,7 @@ class UserAITrainingFileForm(forms.ModelForm):
             self.fields['file'].required = True
         except Exception as e:
             logger.error(f"Erro ao inicializar formulário de arquivo de treinamento: {e}", exc_info=True)
-            raise AIConfigError(f"Erro ao preparar formulário: {e}")
+            raise AIConfigException(f"Erro ao preparar formulário: {e}")
 
 class TrainAIForm(forms.Form):
     """Formulário para seleção de IAs a serem treinadas."""
@@ -605,7 +606,7 @@ class TrainAIForm(forms.Form):
             self.fields['ai_clients_to_train'].choices = [(client.name, client.name) for client in ai_clients]
         except Exception as e:
             logger.error(f"Erro ao inicializar formulário de treinamento de IA: {e}", exc_info=True)
-            raise AIConfigError(f"Erro ao preparar formulário de treinamento: {e}")
+            raise AIConfigException(f"Erro ao preparar formulário de treinamento: {e}")
 
 class TrainingExampleForm(forms.Form):
     """Formulário para exemplo de treinamento com mensagens do sistema e usuário."""

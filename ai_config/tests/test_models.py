@@ -14,7 +14,7 @@ from ai_config.models import (
     AITraining,
 )
 from accounts.models import UserToken, Profile, User
-from core.types.training import AITrainingExample, AITrainingExampleCollection
+from core1.types.training import AITrainingExample, AITrainingExampleCollection
 
 @override_settings(MEDIA_ROOT=os.path.join(settings.BASE_DIR, "test_media"))
 class AITrainingFileTest(TestCase):

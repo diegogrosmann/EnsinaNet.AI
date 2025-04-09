@@ -13,8 +13,6 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import get_user_model, authenticate
 from allauth.account.models import EmailAddress
-from django.urls import reverse_lazy
-from django.core.exceptions import ValidationError
 from django.utils.safestring import mark_safe
 
 from accounts.models import UserToken

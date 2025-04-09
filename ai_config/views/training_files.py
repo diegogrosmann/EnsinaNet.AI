@@ -27,11 +27,7 @@ from ai_config.forms import (
     TrainingCaptureForm,
     TrainingExampleForm
 )
-from core.types import APIResponse
-from core.types.training import (
-    AITrainingExample,
-    AITrainingExampleCollection
-)
+from core.types import APPResponse, APPError, AIExample, AIExampleDict
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +47,13 @@ def training_file_upload(request: HttpRequest) -> HttpResponse:
     """
     if request.method != 'POST':
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse(APIResponse.error_response(error_message="Método não suportado").to_dict())
+            error = APPError(
+                message="Método não suportado",
+                code="method_not_allowed",
+                status_code=405
+            )
+            response = APPResponse.create_failure(error)
+            return JsonResponse(response.to_dict(), status=405)
         else:
             messages.error(request, 'Método não suportado!')
             return redirect('ai_config:training_center')
@@ -59,7 +61,13 @@ def training_file_upload(request: HttpRequest) -> HttpResponse:
         if 'file' not in request.FILES:
             messages.error(request, "Nenhum arquivo enviado.")
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse(APIResponse.error_response(error_message="Nenhum arquivo enviado").to_dict())
+                error = APPError(
+                    message="Nenhum arquivo enviado",
+                    code="no_file",
+                    status_code=400
+                )
+                response = APPResponse.create_failure(error)
+                return JsonResponse(response.to_dict(), status=400)
             else:
                 messages.error(request, 'Nenhum arquivo enviado!')
                 return redirect('ai_config:training_center')
@@ -69,7 +77,13 @@ def training_file_upload(request: HttpRequest) -> HttpResponse:
         existing_file = AITrainingFile.objects.filter(user=request.user, name=file_name).first()
         if existing_file:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse(APIResponse.error_response(error_message="Já existe um arquivo com esse nome. Por favor, escolha outro.").to_dict())
+                error = APPError(
+                    message="Já existe um arquivo com esse nome. Por favor, escolha outro.",
+                    code="duplicate_file_name",
+                    status_code=400
+                )
+                response = APPResponse.create_failure(error)
+                return JsonResponse(response.to_dict(), status=400)
             else:
                 messages.error(request, "Já existe um arquivo com esse nome. Por favor, escolha outro.")
                 return redirect('ai_config:training_center')
@@ -83,27 +97,52 @@ def training_file_upload(request: HttpRequest) -> HttpResponse:
             logger.info(f"Novo arquivo de treinamento criado: {file_name}")
             messages.success(request, f"Arquivo '{file_name}' criado com sucesso.")
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse(APIResponse.success_response(data={"message": f"Arquivo {file_name} criado com sucesso", "id": training_file.id}).to_dict())
+                response_data = {
+                    "message": f"Arquivo {file_name} criado com sucesso", 
+                    "id": training_file.id
+                }
+                response = APPResponse.create_success(response_data)
+                return JsonResponse(response.to_dict())
             else:
                 return redirect('ai_config:training_center')
         except ValidationError as e:
             logger.error(f"Erro na validação do arquivo: {e}", exc_info=True)
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse(APIResponse.error_response(error_message="Arquivo inválido.").to_dict())
+                error = APPError(
+                    message="Arquivo inválido",
+                    code="invalid_file",
+                    status_code=400
+                )
+                response = APPResponse.create_failure(error)
+                return JsonResponse(response.to_dict(), status=400)
             else:
                 messages.error(request, "Arquivo inválido!")
                 return redirect('ai_config:training_center')
         except Exception as e:
             logger.error(f"Erro ao processar arquivo: {e}", exc_info=True)
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse(APIResponse.error_response(error_message="Erro ao processar arquivo.").to_dict())
+                error = APPError(
+                    message="Erro ao processar arquivo",
+                    code="processing_error",
+                    status_code=500,
+                    error_id=str(uuid.uuid4())
+                )
+                response = APPResponse(success=False, error=error)
+                return JsonResponse(response.to_dict(), status=500)
             else:
                 messages.error(request, "Erro ao processar arquivo!")
                 return redirect('ai_config:training_center')
     except Exception as e:
         logger.error(f"Erro ao processar upload de arquivo: {e}", exc_info=True)
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse(APIResponse.error_response(error_message=f"Erro ao processar o arquivo: {e}").to_dict())
+            error = APPError(
+                message=f"Erro ao processar o arquivo: {e}",
+                code="upload_error",
+                status_code=500,
+                error_id=str(uuid.uuid4())
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=500)
         else:
             return redirect('ai_config:training_center')
 
@@ -129,7 +168,25 @@ def training_file_form(request: HttpRequest, file_id: Optional[int] = None) -> H
         training_file = get_object_or_404(AITrainingFile, id=file_id, user=request.user)
         try:
             examples = training_file.file_data
-            initial_examples = examples.to_dict()
+            # Convertendo os exemplos para uma lista de dicionários compatível com o formset
+            initial_examples = []
+            if examples and hasattr(examples, 'items'):
+                for example_id, example in examples.items():
+                    if hasattr(example, 'to_dict'):
+                        example_dict = example.to_dict()
+                        initial_examples.append({
+                            'system_message': example_dict.get('system_message', ''),
+                            'user_message': example_dict.get('user_message', ''),
+                            'response': example_dict.get('response', '')
+                        })
+                    else:
+                        # Caso o exemplo não tenha método to_dict
+                        initial_examples.append({
+                            'system_message': getattr(example, 'system_message', ''),
+                            'user_message': getattr(example, 'user_message', ''),
+                            'response': getattr(example, 'response', '')
+                        })
+            logger.debug(f"Carregados {len(initial_examples)} exemplos para o editor")
         except Exception as e:
             logger.error(f"Erro ao carregar dados do arquivo {file_id}: {e}", exc_info=True)
             messages.error(request, f"Erro ao carregar o arquivo: {e}")
@@ -145,7 +202,7 @@ def training_file_form(request: HttpRequest, file_id: Optional[int] = None) -> H
                 examples = []
                 for form in example_formset:
                     if form.cleaned_data and not form.cleaned_data.get('DELETE', False):
-                        examples.append(AITrainingExample(
+                        examples.append(AIExample(
                             system_message=form.cleaned_data.get('system_message', ''),
                             user_message=form.cleaned_data.get('user_message'),
                             response=form.cleaned_data.get('response')
@@ -164,7 +221,13 @@ def training_file_form(request: HttpRequest, file_id: Optional[int] = None) -> H
                             'capture_form': TrainingCaptureForm(user=request.user)
                         })
                     training_file.name = new_name
-                    training_file.file_data.examples = examples
+                    
+                    # Cria um AIExampleDict a partir da lista de exemplos
+                    example_dict = AIExampleDict()
+                    for i, example in enumerate(examples):
+                        example_dict.put_item(str(i), example)
+                    
+                    training_file.file_data = example_dict
                     training_file.save()
                     messages.success(request, f"Arquivo '{training_file.name}' atualizado com sucesso.")
                 else:
@@ -177,10 +240,16 @@ def training_file_form(request: HttpRequest, file_id: Optional[int] = None) -> H
                             'active_capture': TrainingCapture.objects.filter(token__user=request.user, is_active=True).first(),
                             'capture_form': TrainingCaptureForm(user=request.user)
                         })
+                    
+                    # Cria um AIExampleDict a partir da lista de exemplos
+                    example_dict = AIExampleDict()
+                    for i, example in enumerate(examples):
+                        example_dict.put_item(str(i), example)
+                    
                     training_file = AITrainingFile.objects.create(
                         user=request.user,
                         name=new_name,
-                        file_data=AITrainingExampleCollection(examples=examples)
+                        file_data=example_dict
                     )
                     logger.info(f"Novo arquivo de treinamento criado: {new_name}")
                     messages.success(request, f"Arquivo '{new_name}' criado com sucesso.")
@@ -248,7 +317,13 @@ def training_file_delete(request: HttpRequest, file_id: int) -> HttpResponse:
     """
     if request.method not in ['POST', 'DELETE']:
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse(APIResponse.error_response(error_message="Método não suportado").to_dict())
+            error = APPError(
+                message="Método não suportado",
+                code="method_not_allowed",
+                status_code=405
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=405)
         else:
             messages.error(request, "Método não suportado")
             return redirect('ai_config:training_center')
@@ -258,14 +333,23 @@ def training_file_delete(request: HttpRequest, file_id: int) -> HttpResponse:
         training_file.delete()
         logger.info(f"Arquivo de treinamento {file_id} excluído pelo usuário {request.user.id}")
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse(APIResponse.success_response(data={"message": f"Arquivo '{file_name}' excluído com sucesso"}).to_dict())
+            response_data = {"message": f"Arquivo '{file_name}' excluído com sucesso"}
+            response = APPResponse(success=True, data=response_data)
+            return JsonResponse(response.to_dict())
         else:
             messages.success(request, f"Arquivo '{file_name}' excluído com sucesso.")
             return redirect('ai_config:training_center')
     except Exception as e:
         logger.error(f"Erro ao excluir arquivo de treinamento: {e}", exc_info=True)
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse(APIResponse.error_response(error_message=f"Erro ao excluir arquivo: {e}").to_dict())
+            error = APPError(
+                message=f"Erro ao excluir arquivo: {e}",
+                code="delete_error",
+                status_code=500,
+                error_id=str(uuid.uuid4())
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=500)
         else:
             messages.error(request, f"Erro ao excluir arquivo: {e}")
             return redirect('ai_config:training_center')
@@ -282,16 +366,31 @@ def capture_toggle(request: HttpRequest) -> JsonResponse:
         JsonResponse: Status da operação.
     """
     if request.method != 'POST':
-        return JsonResponse(APIResponse.error_response(error_message="Método não suportado").to_dict())
+        error = APPError(
+            message="Método não suportado",
+            code="method_not_allowed",
+            status_code=405
+        )
+        response = APPResponse(success=False, error=error)
+        return JsonResponse(response.to_dict(), status=405)
+        
     action = request.POST.get('action')
     if action == 'activate':
         token_id = request.POST.get('token')
         ai_config_id = request.POST.get('ai_client_config')
         if not token_id or not ai_config_id:
-            return JsonResponse(APIResponse.error_response(error_message="Token e configuração de IA são obrigatórios").to_dict(), status=400)
+            error = APPError(
+                message="Token e configuração de IA são obrigatórios",
+                code="missing_required_fields",
+                status_code=400
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=400)
+            
         try:
             token = get_object_or_404(UserToken, id=token_id, user=request.user)
             ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id, user=request.user)
+            
             TrainingCapture.objects.filter(token__user=request.user, is_active=True).update(is_active=False)
             capture, created = TrainingCapture.objects.get_or_create(
                 token=token,
@@ -301,12 +400,41 @@ def capture_toggle(request: HttpRequest) -> JsonResponse:
                 capture.ai_client_config = ai_config
                 capture.is_active = True
                 capture.save()
-            return JsonResponse(APIResponse.success_response(data={"message": "Captura desativada com sucesso"}).to_dict())
+                
+            response_data = {"message": "Captura ativada com sucesso"}
+            response = APPResponse(success=True, data=response_data)
+            return JsonResponse(response.to_dict())
+        except Exception as e:
+            logger.error(f"Erro ao ativar captura: {e}", exc_info=True)
+            error = APPError(
+                message=f"Erro ao ativar captura: {e}",
+                code="activation_error",
+                status_code=500,
+                error_id=str(uuid.uuid4())
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=500)
+    else:
+        # Desativar a captura
+        try:
+            captures = TrainingCapture.objects.filter(token__user=request.user, is_active=True)
+            for capture in captures:
+                capture.is_active = False
+                capture.save()
+            
+            response_data = {"message": "Captura desativada com sucesso"}
+            response = APPResponse(success=True, data=response_data)
+            return JsonResponse(response.to_dict())
         except Exception as e:
             logger.error(f"Erro ao desativar captura: {e}", exc_info=True)
-            return JsonResponse(APIResponse.error_response(error_message=f"Erro ao desativar captura: {e}").to_dict(), status=500)
-    else:
-        return JsonResponse(APIResponse.error_response(error_message="Ação inválida").to_dict())
+            error = APPError(
+                message=f"Erro ao desativar captura: {e}",
+                code="deactivation_error",
+                status_code=500,
+                error_id=str(uuid.uuid4())
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=500)
 
 
 @login_required
@@ -324,7 +452,14 @@ def capture_get_examples(request: HttpRequest, token_id: uuid.UUID, ai_id: int) 
         JsonResponse: Lista de exemplos capturados ou mensagem de erro.
     """
     if request.method != 'GET':
-        return JsonResponse(APIResponse.error_response(error_message="Método não suportado").to_dict())
+        error = APPError(
+            message="Método não suportado",
+            code="method_not_allowed",
+            status_code=405
+        )
+        response = APPResponse(success=False, error=error)
+        return JsonResponse(response.to_dict(), status=405)
+        
     try:
         token = get_object_or_404(UserToken, id=token_id, user=request.user)
         ai_config = get_object_or_404(AIClientConfiguration, id=ai_id, user=request.user)
@@ -332,21 +467,47 @@ def capture_get_examples(request: HttpRequest, token_id: uuid.UUID, ai_id: int) 
             capture = TrainingCapture.objects.get(token=token, ai_client_config=ai_config)
             collection = capture.file_data
             # Limpa a coleção após leitura
-            capture.file_data = AITrainingExampleCollection()
+            capture.file_data = AIExampleDict()
             capture.save()
             logger.info(f"Retornados {len(collection.examples)} exemplos para token {token.name}")
-            response = APIResponse.success_response(data={"examples": collection.to_dict(), "count": len(collection.examples)})
+            
+            response_data = {
+                "examples": collection.to_dict(), 
+                "count": len(collection.examples)
+            }
+            response = APPResponse(success=True, data=response_data)
             return JsonResponse(response.to_dict())
         except TrainingCapture.DoesNotExist:
-            response = APIResponse.success_response(data={"examples": [], "count": 0, "message": "Não há captura configurada para este token."})
+            response_data = {
+                "examples": [], 
+                "count": 0, 
+                "message": "Não há captura configurada para este token."
+            }
+            response = APPResponse(success=True, data=response_data)
             return JsonResponse(response.to_dict())
     except UserToken.DoesNotExist:
-        response = APIResponse.error_response(error_message='Token não encontrado.')
+        error = APPError(
+            message='Token não encontrado',
+            code='token_not_found',
+            status_code=404
+        )
+        response = APPResponse(success=False, error=error)
         return JsonResponse(response.to_dict(), status=404)
     except AIClientConfiguration.DoesNotExist:
-        response = APIResponse.error_response(error_message='Configuração de IA não encontrada.')
+        error = APPError(
+            message='Configuração de IA não encontrada',
+            code='ai_config_not_found',
+            status_code=404
+        )
+        response = APPResponse(success=False, error=error)
         return JsonResponse(response.to_dict(), status=404)
     except Exception as e:
         logger.exception(f"Erro ao obter exemplos capturados: {e}")
-        response = APIResponse.error_response(error_message=str(e))
+        error = APPError(
+            message=str(e),
+            code='example_retrieval_error',
+            status_code=500,
+            error_id=str(uuid.uuid4())
+        )
+        response = APPResponse(success=False, error=error)
         return JsonResponse(response.to_dict(), status=500)

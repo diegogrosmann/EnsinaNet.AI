@@ -11,3 +11,4 @@ media/
 staticfiles/
 _build/
 celerybeat-schedule
+test_media/

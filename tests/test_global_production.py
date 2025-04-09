@@ -17,7 +17,7 @@ from django.http import JsonResponse, HttpRequest, HttpResponse, HttpResponseRed
 from unittest.mock import patch, MagicMock
 
 # Importações dos módulos a serem testados
-from core.document import extract_metadata
+from core.utils.document import extract_metadata
 from core.exceptions import FileProcessingError, APIError, ApplicationError, MissingAPIKeyError
 from core.utils.doc_extractor import extract_text, _get_file_extension
 from core.utils.docling_doc_converter import (
@@ -40,7 +40,7 @@ from core.validators import (
 from core.types.base import JSONDict, Result
 from core.types.ai import AIMessage, AISuccess, AIPromptConfig, AIConfig
 from core.types.comparison import AIComparisonData, AISingleComparisonData, AIComparisonResponse
-from core.types.api_response import APPResponse, APIComparisonResponse
+from core.types.app_response import APPResponse, APIComparisonResponse
 from core.types.validation import ValidationResult
 from core.types.circuit_breaker import CircuitState, CircuitBreakerConfig, CircuitBreakerMetrics
 

@@ -6,12 +6,12 @@ que previne falhas em cascata em sistemas distribuídos, detectando falhas
 e redirecionando chamadas que provavelmente falhariam.
 """
 import logging
-from typing import Optional, Set, Dict, Any, Callable, TypeVar, Generic
+from typing import Optional, Set, Dict, Any, Callable, TypeVar, Generic, Type, Union
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-from .result import OperationResult
-from core.exceptions import CircuitOpenError
+from .base import T, BaseModel, JSONDict, ResultModel, DataModel, TDataModel, DataModelDict
+from .errors import CircuitBreakerError  # Usar o erro centralizado
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class CircuitState(Enum):
         return self.value.upper()
 
 @dataclass
-class CircuitBreakerConfig:
+class CircuitBreakerConfig(BaseModel):
     """Configuração do Circuit Breaker.
     
     Define os parâmetros que controlam o comportamento do Circuit Breaker,
@@ -91,9 +91,44 @@ class CircuitBreakerConfig:
             bool: True se a exceção deve ser ignorada, False caso contrário.
         """
         return any(isinstance(exception, exc_type) for exc_type in self.excluded_exceptions)
+    
+    def to_dict(self) -> JSONDict:
+        """Converte a configuração em um dicionário.
+        
+        Returns:
+            JSONDict: Representação da configuração como dicionário.
+        """
+        return {
+            "failure_threshold": self.failure_threshold,
+            "reset_timeout": self.reset_timeout,
+            "half_open_timeout": self.half_open_timeout,
+            "success_threshold": self.success_threshold,
+            "service_name": self.service_name,
+            # Não podemos serializar diretamente o set de exceções
+            "excluded_exceptions_types": [exc.__name__ for exc in self.excluded_exceptions]
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'CircuitBreakerConfig':
+        """Cria uma instância a partir de um dicionário.
+        
+        Args:
+            data: Dicionário contendo os dados de configuração.
+        
+        Returns:
+            CircuitBreakerConfig: Nova instância criada a partir dos dados.
+        """
+        # Removemos excluded_exceptions_types para tratar separadamente
+        excluded_exception_names = data.pop('excluded_exceptions_types', [])
+        # Criamos a instância com os dados restantes
+        instance = cls(**data)
+        
+        # Opcionalmente, poderia carregar as exceções pelo nome, mas isso requer
+        # uma lógica mais complexa para localizar as classes de exceção
+        return instance
 
 @dataclass
-class CircuitBreakerMetrics:
+class CircuitBreakerMetrics(BaseModel):
     """Métricas do Circuit Breaker.
     
     Armazena informações sobre o estado atual do circuit breaker,
@@ -209,11 +244,126 @@ class CircuitBreakerMetrics:
             "last_failure": self.last_failure_time.isoformat() if self.last_failure_time else None,
             "last_success": self.last_success_time.isoformat() if self.last_success_time else None
         }
+    
+    def to_dict(self) -> JSONDict:
+        """Converte as métricas em um dicionário.
+        
+        Returns:
+            JSONDict: Representação das métricas como dicionário.
+        """
+        return {
+            "failure_count": self.failure_count,
+            "success_count": self.success_count,
+            "last_failure_time": self.last_failure_time.isoformat() if self.last_failure_time else None,
+            "last_success_time": self.last_success_time.isoformat() if self.last_success_time else None,
+            "last_state_change": self.last_state_change.isoformat() if self.last_state_change else None,
+            "state": self.state.value,
+            "total_failures": self.total_failures,
+            "total_successes": self.total_successes,
+            "total_rejected": self.total_rejected,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'CircuitBreakerMetrics':
+        """Cria uma instância a partir de um dicionário.
+        
+        Args:
+            data: Dicionário contendo os dados das métricas.
+        
+        Returns:
+            CircuitBreakerMetrics: Nova instância criada a partir dos dados.
+        """
+        # Clone os dados para não modificar o original
+        data_copy = data.copy()
+        
+        # Converter strings ISO para objetos datetime
+        for date_field in ['last_failure_time', 'last_success_time', 'last_state_change']:
+            if date_field in data_copy and data_copy[date_field]:
+                data_copy[date_field] = datetime.fromisoformat(data_copy[date_field])
+        
+        # Converter string de estado para enum
+        if 'state' in data_copy:
+            data_copy['state'] = CircuitState(data_copy['state'])
+        
+        return cls(**data_copy)
 
-T = TypeVar('T')
+class CircuitBreakerResult(ResultModel[TDataModel, CircuitBreakerError]):
+    """Resultado de operações protegidas por Circuit Breaker.
+    
+    Encapsula o resultado de operações executadas através do Circuit Breaker,
+    fornecendo informações sobre o sucesso/falha da operação e dados adicionais
+    sobre o estado do circuito quando relevante.
+    
+    Attributes:
+        circuit_metrics: Métricas atuais do circuit breaker após a operação, quando disponíveis.
+    """
+    circuit_metrics: Optional[Dict[str, Any]] = None
+    
+    @classmethod
+    def error_model_class(cls) -> Type[CircuitBreakerError]:
+        """Retorna a classe ErrorModel associada a este CircuitBreakerResult.
+        
+        Returns:
+            Type[CircuitBreakerError]: A classe CircuitBreakerError a ser utilizada.
+        """
+        return CircuitBreakerError
+    
+    @classmethod
+    def create_success(cls, data: TDataModel, metrics: Optional[CircuitBreakerMetrics] = None) -> 'CircuitBreakerResult[TDataModel]':
+        """Cria um resultado de sucesso com dados e métricas opcionais do circuit breaker.
+        
+        Args:
+            data: Dados a serem incluídos no resultado.
+            metrics: Métricas atuais do circuit breaker, se disponíveis.
+            
+        Returns:
+            CircuitBreakerResult: Instância com indicação de sucesso.
+        """
+        result = super().create_success(data)
+        if metrics:
+            result.circuit_metrics = metrics.get_summary()
+        return result
+    
+    @classmethod
+    def create_failure(cls, error: Union[str, CircuitBreakerError], 
+                      service_name: str = None, circuit_state: CircuitState = None,
+                      metrics: Optional[CircuitBreakerMetrics] = None) -> 'CircuitBreakerResult[TDataModel]':
+        """Cria um resultado de falha com informações do circuit breaker.
+        
+        Args:
+            error: Mensagem de erro ou objeto CircuitBreakerError.
+            service_name: Nome do serviço associado ao circuit breaker.
+            circuit_state: Estado atual do circuit breaker.
+            metrics: Métricas atuais do circuit breaker, se disponíveis.
+            
+        Returns:
+            CircuitBreakerResult: Instância com indicação de falha.
+        """
+        if isinstance(error, str):
+            error_obj = CircuitBreakerError.create_from(
+                error, service_name=service_name, circuit_state=circuit_state
+            )
+        else:
+            error_obj = error
+            
+        result = super().create_failure(error_obj)
+        if metrics:
+            result.circuit_metrics = metrics.get_summary()
+        return result
+    
+    def to_dict(self) -> JSONDict:
+        """Converte o resultado em um dicionário.
+        
+        Returns:
+            JSONDict: Representação do resultado como dicionário.
+        """
+        result = super().to_dict()
+        if self.circuit_metrics:
+            result['circuit_metrics'] = self.circuit_metrics
+        return result
 
 @dataclass
-class CircuitBreaker(Generic[T]):
+class CircuitBreaker(BaseModel, Generic[T]):
     """Implementação do padrão Circuit Breaker.
     
     Esta classe implementa o padrão Circuit Breaker para proteger
@@ -231,7 +381,7 @@ class CircuitBreaker(Generic[T]):
         """Inicializa valores padrão se necessário."""
         logger.info(f"Circuit Breaker criado para serviço '{self.config.service_name}'")
     
-    def execute(self, func: Callable[..., T], *args, **kwargs) -> OperationResult[T]:
+    def execute(self, func: Callable[..., T], *args, **kwargs) -> CircuitBreakerResult[T]:
         """Executa uma função protegida pelo circuit breaker.
         
         Args:
@@ -240,34 +390,50 @@ class CircuitBreaker(Generic[T]):
             **kwargs: Argumentos nomeados para a função.
             
         Returns:
-            OperationResult: Resultado da operação.
-            
-        Raises:
-            CircuitOpenError: Se o circuito estiver aberto.
+            CircuitBreakerResult: Resultado da operação.
         """
         if not self.metrics.should_allow_request(self.config):
             self.metrics.record_rejection()
             error_msg = f"Circuito aberto para o serviço '{self.config.service_name}'"
             logger.warning(error_msg)
-            return OperationResult.failed(error_msg)
+            return CircuitBreakerResult.create_failure(
+                error_msg, 
+                service_name=self.config.service_name,
+                circuit_state=self.metrics.state,
+                metrics=self.metrics
+            )
         
         try:
             result = func(*args, **kwargs)
             self.on_success()
             
-            # Se a função retornar um OperationResult, verificamos se é sucesso
-            if isinstance(result, OperationResult):
+            # Se a função retornar um ResultModel, verificamos se é sucesso
+            if isinstance(result, ResultModel):
                 if not result.success:
                     self.on_failure()
-                return result
+                # Criar um CircuitBreakerResult com base no ResultModel retornado
+                if result.success:
+                    return CircuitBreakerResult.create_success(result.data, self.metrics)
+                else:
+                    return CircuitBreakerResult.create_failure(
+                        result.error, 
+                        service_name=self.config.service_name,
+                        circuit_state=self.metrics.state,
+                        metrics=self.metrics
+                    )
                 
-            return OperationResult.succeeded(result)
+            return CircuitBreakerResult.create_success(result, self.metrics)
             
         except Exception as e:
             if not self.config.is_excluded_exception(e):
                 self.on_failure()
             logger.error(f"Erro na execução protegida por Circuit Breaker: {str(e)}", exc_info=True)
-            return OperationResult.failed(str(e))
+            return CircuitBreakerResult.create_failure(
+                str(e),
+                service_name=self.config.service_name,
+                circuit_state=self.metrics.state,
+                metrics=self.metrics
+            )
     
     def on_success(self):
         """Chamado quando uma operação é bem-sucedida."""
@@ -292,3 +458,30 @@ class CircuitBreaker(Generic[T]):
         elif self.metrics.state == CircuitState.HALF_OPEN:
             self.metrics.change_state(CircuitState.OPEN)
             logger.warning(f"Circuit breaker '{self.config.service_name}' reaberto após falha em half-open")
+    
+    def to_dict(self) -> JSONDict:
+        """Converte o circuit breaker em um dicionário.
+        
+        Returns:
+            JSONDict: Representação do circuit breaker como dicionário.
+        """
+        return {
+            "config": self.config.to_dict(),
+            "metrics": self.metrics.to_dict()
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'CircuitBreaker':
+        """Cria uma instância a partir de um dicionário.
+        
+        Args:
+            data: Dicionário contendo os dados do circuit breaker.
+        
+        Returns:
+            CircuitBreaker: Nova instância criada a partir dos dados.
+        """
+        config = CircuitBreakerConfig.from_dict(data.get("config", {}))
+        metrics = CircuitBreakerMetrics.from_dict(data.get("metrics", {}))
+        
+        return cls(config=config, metrics=metrics)
+

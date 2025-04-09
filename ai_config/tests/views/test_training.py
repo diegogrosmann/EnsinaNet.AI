@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 
 from ai_config.models import AITraining, AITrainingFile, AIClientConfiguration, AIClientGlobalConfiguration
-from core.types import APPResponse, AITrainingStatus
+from core1.types import APPResponse, AITrainingStatus
 
 User = get_user_model()
 

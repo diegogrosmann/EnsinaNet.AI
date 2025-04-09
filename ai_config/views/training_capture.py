@@ -6,7 +6,6 @@ a captura de exemplos de interação para treinamento de modelos de IA.
 """
 
 import logging
-import json
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, JsonResponse
@@ -15,8 +14,7 @@ from django.db import transaction
 
 from accounts.models import UserToken
 from ai_config.models import AIClientConfiguration, TrainingCapture
-from core.types.api_response import APIResponse
-from core.types.training import AITrainingExampleCollection, AITrainingCaptureConfig
+from core.types import APPResponse, APPError, AIExampleDict
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +33,8 @@ def capture_toggle(request: HttpRequest) -> JsonResponse:
         JsonResponse: Status da operação com mensagem e código HTTP apropriado.
     """
     if request.method != 'POST':
-        response = APIResponse(
-            success=False,
-            error='Método não permitido'
-        )
+        error = APPError(message='Método não permitido')
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=405)
         
     data = request.POST
@@ -53,10 +49,8 @@ def capture_toggle(request: HttpRequest) -> JsonResponse:
         ai_config_id = data.get('ai_client_config')
         
         if not token_id or not ai_config_id:
-            response = APIResponse(
-                success=False,
-                error='Token e configuração de IA são obrigatórios para ativação'
-            )
+            error = APPError(message='Token e configuração de IA são obrigatórios para ativação')
+            response = APPResponse.create_failure(error)
             return JsonResponse(response.to_dict(), status=400)
     else:
         # Se estamos desativando, não precisamos dos IDs específicos
@@ -72,19 +66,15 @@ def capture_toggle(request: HttpRequest) -> JsonResponse:
                     token = UserToken.objects.get(id=token_id, user=request.user)
                 except UserToken.DoesNotExist:
                     logger.error(f"Token {token_id} não encontrado para o usuário {request.user.email}")
-                    response = APIResponse(
-                        success=False,
-                        error='Token não encontrado'
-                    )
+                    error = APPError(message='Token não encontrado')
+                    response = APPResponse.create_failure(error)
                     return JsonResponse(response.to_dict(), status=404)
                 
                 try:
                     ai_config = AIClientConfiguration.objects.get(id=ai_config_id, user=request.user)
                 except AIClientConfiguration.DoesNotExist:
-                    response = APIResponse(
-                        success=False,
-                        error='Configuração de IA não encontrada.'
-                    )
+                    error = APPError(message='Configuração de IA não encontrada.')
+                    response = APPResponse.create_failure(error)
                     return JsonResponse(response.to_dict(), status=404)
                 
                 # Desativa qualquer captura ativa existente para este usuário
@@ -130,18 +120,13 @@ def capture_toggle(request: HttpRequest) -> JsonResponse:
             
             response_data['message'] = f"Captura {status} com sucesso"
             
-            response = APIResponse(
-                success=True,
-                data=response_data
-            )
+            response = APPResponse.create_success(response_data)
             return JsonResponse(response.to_dict())
             
     except Exception as e:
         logger.exception(f"Erro ao alternar captura: {e}")
-        response = APIResponse(
-            success=False,
-            error=str(e)
-        )
+        error = APPError(message=str(e))
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=500)
 
 @login_required
@@ -171,46 +156,36 @@ def capture_get_examples(request: HttpRequest, token_id: str, ai_id: int) -> Jso
             collection = capture.file_data
 
             # Limpa a coleção após leitura
-            capture.file_data = AITrainingExampleCollection()
+            capture.file_data = AIExampleDict()
             capture.save()
                 
-            logger.info(f"Retornados {len(collection.examples)} exemplos para token {token.name}")
-            response = APIResponse(
-                success=True,
-                data={
-                    'examples': collection.to_dict(),
-                    'count': len(collection.examples),
-                }
-            )
+            logger.info(f"Retornados {len(list(collection.items()))} exemplos para token {token.name}")
+            response_data = {
+                'examples': collection.to_dict(),
+                'count': len(list(collection.items())),
+            }
+            response = APPResponse.create_success(response_data)
             return JsonResponse(response.to_dict())
             
         except TrainingCapture.DoesNotExist:
-            response = APIResponse(
-                success=True, 
-                data={
-                    'examples': [], 
-                    'count': 0,
-                    'message': 'Não há captura configurada para este token.'
-                }
-            )
+            response_data = {
+                'examples': [], 
+                'count': 0,
+                'message': 'Não há captura configurada para este token.'
+            }
+            response = APPResponse.create_success(response_data)
             return JsonResponse(response.to_dict())
             
     except UserToken.DoesNotExist:
-        response = APIResponse(
-            success=False,
-            error='Token não encontrado.'
-        )
+        error = APPError(message='Token não encontrado.')
+        response = APPResponse(success=False, error=error)
         return JsonResponse(response.to_dict(), status=404)
     except AIClientConfiguration.DoesNotExist:
-        response = APIResponse(
-            success=False,
-            error='Configuração de IA não encontrada.'
-        )
+        error = APPError(message='Configuração de IA não encontrada.')
+        response = APPResponse(success=False, error=error)
         return JsonResponse(response.to_dict(), status=404)
     except Exception as e:
         logger.exception(f"Erro ao obter exemplos: {e}")
-        response = APIResponse(
-            success=False,
-            error=str(e)
-        )
+        error = APPError(message=str(e))
+        response = APPResponse(success=False, error=error)
         return JsonResponse(response.to_dict(), status=500)

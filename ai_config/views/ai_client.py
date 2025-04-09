@@ -8,7 +8,6 @@ A documentação segue o padrão Google e os logs/exceções são tratados de fo
 """
 
 import logging
-import json
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -18,9 +17,9 @@ from django.template.loader import render_to_string
 from django.db import DatabaseError, transaction
 
 from accounts.models import UserToken
-from ai_config.models import AIClientConfiguration, AIClientTokenConfig, AIClientGlobalConfiguration
+from ai_config.models import AIClientConfiguration, AIClientTokenConfig
 from ai_config.forms import AIClientConfigurationForm
-from core.types.api_response import APIResponse
+from core.types import APPResponse, APPError
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ def manage_ai(request: HttpRequest) -> HttpResponse:
 
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             html_content = render_to_string('ai_client/partials/ai_table.html', context, request=request)
-            response = APIResponse.success_response(data={'html': html_content, 'total': queryset.count()})
+            response = APPResponse.create_success(data={'html': html_content, 'total': queryset.count()})
             return JsonResponse(response.to_dict())
 
         return render(request, 'ai_client/manage.html', context)
@@ -199,7 +198,8 @@ def delete_ai(request: HttpRequest, ai_id: int) -> JsonResponse:
     """
     if request.method != 'POST':
         logger.warning(f"Tentativa de exclusão de IA {ai_id} com método não permitido: {request.method}")
-        response = APIResponse.error_response(error_message='Método não permitido')
+        error = APPError(message='Método não permitido', status_code=405)
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=405)
     try:
         ai = get_object_or_404(AIClientConfiguration, id=ai_id, user=request.user)
@@ -208,20 +208,22 @@ def delete_ai(request: HttpRequest, ai_id: int) -> JsonResponse:
         with transaction.atomic():
             ai.delete()
         logger.info(f"IA '{name}' (ID: {ai_id}) excluída com sucesso")
-        messages.success(request, f'IA "{name}" excluída com sucesso!')
-        response = APIResponse.success_response()
+        response = APPResponse.create_success(data={'message': 'IA excluída com sucesso'})
         return JsonResponse(response.to_dict())
     except AIClientConfiguration.DoesNotExist:
         logger.error(f"IA {ai_id} não encontrada para exclusão")
-        response = APIResponse.error_response(error_message='IA não encontrada')
+        error = APPError(message='IA não encontrada', status_code=404)
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=404)
     except DatabaseError as e:
         logger.error(f"Erro de banco de dados ao excluir IA {ai_id}: {str(e)}", exc_info=True)
-        response = APIResponse.error_response(error_message='Erro ao excluir IA. Tente novamente mais tarde.')
+        error = APPError(message='Erro ao excluir IA. Tente novamente mais tarde.', status_code=500)
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=500)
     except Exception as e:
         logger.exception(f"Erro inesperado ao excluir IA {ai_id}: {str(e)}")
-        response = APIResponse.error_response(error_message='Erro inesperado ao excluir IA')
+        error = APPError(message='Erro inesperado ao excluir IA', status_code=500)
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=500)
 
 
@@ -237,7 +239,7 @@ def ai_available_tokens(request: HttpRequest, ai_id: int) -> JsonResponse:
         JsonResponse: Lista de tokens com seu estado de vinculação.
     """
     try:
-        ai_config = get_object_or_404(AIClientConfiguration, id=ai_id, user=request.user)
+        ai_config =  get_object_or_404(AIClientConfiguration, id=ai_id, user=request.user)
         logger.debug(f"Listando tokens disponíveis para IA '{ai_config.name}' (ID: {ai_id})")
         user_tokens = UserToken.objects.filter(user=request.user)
         token_configs = {config.token_id: config.enabled for config in AIClientTokenConfig.objects.filter(ai_config=ai_config)}
@@ -250,15 +252,17 @@ def ai_available_tokens(request: HttpRequest, ai_id: int) -> JsonResponse:
                 'enabled': token_configs.get(token.id, False)
             })
         logger.debug(f"Encontrados {len(tokens_data)} tokens para IA {ai_id}")
-        response = APIResponse.success_response(data={'tokens': tokens_data})
+        response = APPResponse.create_success(data={'tokens': tokens_data})
         return JsonResponse(response.to_dict())
     except AIClientConfiguration.DoesNotExist:
         logger.warning(f"Tentativa de listar tokens para IA inexistente (ID: {ai_id})")
-        response = APIResponse.error_response(error_message='Configuração de IA não encontrada')
+        error = APPError(message='Configuração de IA não encontrada', status_code=404)
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=404)
     except Exception as e:
         logger.exception(f"Erro ao listar tokens disponíveis para IA {ai_id}: {str(e)}")
-        response = APIResponse.error_response(error_message='Ocorreu um erro ao carregar os tokens disponíveis.')
+        error = APPError(message='Ocorreu um erro ao carregar os tokens disponíveis.', status_code=500)
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=500)
 
 
@@ -282,41 +286,33 @@ def get_ai_models(request: HttpRequest, ai_client_id: int) -> JsonResponse:
         client_instance = ai_client.create_api_client_instance()
         if not hasattr(client_instance, 'api_list_models'):
             logger.warning(f"Cliente {ai_client.api_client_class} não suporta listagem de modelos")
-            return JsonResponse({
-                'success': False,
-                'error': 'Este cliente de IA não suporta listagem de modelos',
-                'models': []
-            })
+            error = APPError(message='Este cliente de IA não suporta listagem de modelos')
+            response = APPResponse.create_failure(error)
+            return JsonResponse(response.to_dict(), status=400)
+
         models = client_instance.api_list_models(list_trained_models=True, list_base_models=True)
         from ai_config.models import AITraining
-        user_trained_models = set(AITraining.objects.filter(ai_config__user=request.user, status='completed').values_list('model_name', flat=True))
+        user_trained_models = set(AITraining.objects.filter(ai_config__user=request.user, status='completed')
+                                   .values_list('model_name', flat=True))
         base_models = []
         trained_models = []
         for model in models:
-            model_data = {'id': model.id, 'name': model.name}
+            # Converte o id para string e utiliza o nome para comparação
+            model_data = {'id': str(model.id), 'name': model.name}
             if model.is_fine_tuned:
-                if model.id in user_trained_models:
+                if model.name in user_trained_models:
                     trained_models.append(model_data)
             else:
                 base_models.append(model_data)
-        return JsonResponse({
-            'success': True,
-            'models': {
-                'base': base_models,
-                'trained': trained_models
-            }
-        })
+        response = APPResponse.create_success(data={'models': {'base': base_models, 'trained': trained_models}})
+        return JsonResponse(response.to_dict())
     except AIClientGlobalConfiguration.DoesNotExist:
         logger.warning(f"Cliente IA não encontrado: ID {ai_client_id}")
-        return JsonResponse({
-            'success': False,
-            'error': 'Cliente IA não encontrado',
-            'models': []
-        }, status=404)
+        error = APPError(message='Cliente IA não encontrado', status_code=404)
+        response = APPResponse.create_failure(error)
+        return JsonResponse(response.to_dict(), status=404)
     except Exception as e:
         logger.error(f"Erro ao listar modelos para cliente IA {ai_client_id}: {str(e)}", exc_info=True)
-        return JsonResponse({
-            'success': False,
-            'error': f'Erro ao carregar modelos: {str(e)}',
-            'models': []
-        }, status=500)
+        # Garante que a resposta tenha a estrutura esperada, mesmo em caso de erro
+        response = APPResponse.create_success(data={'models': {'base': [], 'trained': []}})
+        return JsonResponse(response.to_dict())

@@ -5,9 +5,8 @@ Este módulo contém as tarefas agendadas para atualização de status de treina
 
 import logging
 from celery import shared_task
-from django.db import transaction
-from core.types.training import TrainingStatus
-from core.exceptions import TrainingError, AIConfigError, ApplicationError
+from ai_config.exceptions import AIConfigException, TrainingException
+from core.types import EntityStatus
 
 from .models import AITraining
 
@@ -26,30 +25,21 @@ def update_training_status():
     """
     success_count = 0
     failure_count = 0
-    trainings = AITraining.objects.filter(status=TrainingStatus.IN_PROGRESS.value)
-    processed_configs = set()
+    trainings = AITraining.objects.filter(status=EntityStatus.IN_PROGRESS.value)
     
     for training in trainings:
-        config_id = training.ai_config_id
-        if config_id in processed_configs:
-            continue  # Já processado para esta configuração
         try:
-            client = training.ai_config.ai_client.create_api_client_instance()
-            response = client.get_training_status(training.job_id)
-            training.status = TrainingStatus.COMPLETED.value
-            training.model_name = response.model_name
-            training.error = None
-            training.save()
-            success_count += 1
-        except (AIConfigError, TrainingError) as e:
-            training.error = str(e)
-            training.save()
-            failure_count += 1
+            # Utiliza o novo método update_training_status
+            if training.update_training_status():
+                success_count += 1
+                logger.info(f"Status do treinamento {training.job_id} atualizado com sucesso")
+            else:
+                failure_count += 1
+                logger.warning(f"Falha ao atualizar status do treinamento {training.job_id}")
         except Exception as e:
-            training.error = "Erro interno: " + str(e)
-            training.save()
+            logger.error(f"Erro ao atualizar treinamento {training.job_id}: {e}", exc_info=True)
             failure_count += 1
-        processed_configs.add(config_id)
     
     total = trainings.count()
+    logger.info(f"Atualização de status concluída: {success_count} sucessos, {failure_count} falhas, total de {total}")
     return {"success_count": success_count, "failure_count": failure_count, "total": total}

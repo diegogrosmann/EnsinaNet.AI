@@ -606,7 +606,7 @@
                 const aCell = a.querySelectorAll('td')[2];
                 const bCell = b.querySelectorAll('td')[2]; // Corrigido: era a.querySelectorAll em vez de b.querySelectorAll
                 aValue = aCell ? parseInt(aCell.getAttribute('data-value') || '0') : 0;
-                bValue = bCell ? parseInt(bCell.getAttribute('data-value') || '0') : 0;
+                bValue = bCell ? parseInt(b.getAttribute('data-value') || '0') : 0;
             } else {
                 aValue = '';
                 bValue = '';
@@ -714,45 +714,36 @@
     let filteredTrainingsStatus = [];
 
     function updateStatusFromServer() {
-        fetch("{% url 'ai_config:training_monitor' %}")
-            .then(response => response.json())
-            .then(responseObj => {
-                // Extrair dados do objeto APPResponse
-                if (!responseObj.success) {
-                    console.error('Erro na resposta do servidor:', responseObj.error);
-                    // Removi showMessage e substituí pela indicação visual
-                    showStatusLoadError();
-                    return;
-                }
-                
-                const data = responseObj.data;
-                
-                // Atualizar contadores de status
-                document.getElementById('queuedCount').textContent = data.queue_status.queued;
-                document.getElementById('completedCount').textContent = data.queue_status.finished;
-                document.getElementById('processingCount').textContent = data.queue_status.started;
-                
-                // Atualizar dados dos treinamentos
-                trainingsData = data.trainings || [];
-                renderTrainingsTable();
-            })
-            .catch(error => {
-                console.error('Erro ao buscar status:', error);
-                // Removi showMessage e substituí pela indicação visual
-                showStatusLoadError();
-            });
+        ajaxAPI("{% url 'ai_config:training_monitor' %}", "GET", null, { showLoading: false, showSuccess: false })
+        .then(response => {
+            // Extrair dados do objeto APPResponse
+            const responseData = response.getData();
+            
+            // Verificar se é um array e extrair o primeiro item
+            const data = Array.isArray(responseData) && responseData.length > 0 
+                ? responseData[0] 
+                : responseData || {};
+            
+            // Verificar se temos os dados na estrutura esperada
+            const queueStatus = data.queue_status || { queued: 0, finished: 0, started: 0 };
+            
+            // Atualizar contadores de status com verificações de segurança
+            document.getElementById('queuedCount').textContent = queueStatus.queued || 0;
+            document.getElementById('completedCount').textContent = queueStatus.finished || 0;
+            document.getElementById('processingCount').textContent = queueStatus.started || 0;
+            
+            // Atualizar dados dos treinamentos
+            trainingsData = data.trainings || [];
+            renderTrainingsTable();
+        })
+        .catch(error => {
+            console.error('Erro ao buscar status:', error);
+            showStatusLoadError();
+        });
     }
     
     // Função para indicar visualmente erro no carregamento de status
     function showStatusLoadError() {
-        // Adiciona indicação visual aos cards de contador
-        ['queuedCount', 'completedCount', 'processingCount'].forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.innerHTML = '<i class="bi bi-exclamation-triangle text-danger"></i>';
-                element.title = 'Erro ao carregar dados';
-            }
-        });
         
         // Adiciona indicação visual à tabela de status
         const statusBody = document.getElementById('trainingStatusBody');
@@ -1120,47 +1111,37 @@
             url = buildUrl("{% url 'ai_config:training_delete' '999999999' %}", "999999999", id);
         }
         
-        // Adicionar no_loader=true para evitar o loader de transição
         url += "?no_loader=true";
         
-        fetch(url, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
+        ajaxAPI(url, 'POST', null, {
+            showLoading: false
         })
-        .then(response => response.json())
-        .then(data => {
-            // Restaurar o botão ao estado normal em todos os casos
+        .then(response => {
             hideLoading('confirmDelete');
             
             const modal = bootstrap.Modal.getInstance(document.getElementById('deleteModal'));
             if (modal) modal.hide();
             
-            if (data.success) {
-                showMessage('success', data.data?.message || (type === 'file' ? 'Arquivo excluído com sucesso' : 'Treinamento excluído com sucesso'));
-                
-                // Atualizar dados após curto delay
-                setTimeout(() => {
-                    if (type === 'training') {
-                        updateStatusFromServer();
-                    } else {
-                        location.reload();
-                    }
-                }, 500);
-            } else {
-                showMessage('error', data.error || 'Erro ao excluir item');
-                
-                setTimeout(() => {
+            // Exibir mensagem de sucesso usando o método da classe APIResponse
+            response.showMessage();
+            
+            // Atualizar dados após curto delay
+            setTimeout(() => {
+                if (type === 'training') {
                     updateStatusFromServer();
-                }, 500);
-            }
+                } else {
+                    location.reload();
+                }
+            }, 500);
         })
         .catch(error => {
             hideLoading('confirmDelete');
-            showMessage('error', 'Erro ao processar solicitação: ' + error.message);
+            
+            if (error instanceof APIResponse) {
+                error.showMessage();
+            } else {
+                showMessage('error', 'Erro ao processar solicitação: ' + error.message);
+            }
             
             setTimeout(() => {
                 updateStatusFromServer();
@@ -1227,7 +1208,7 @@
     document.addEventListener('DOMContentLoaded', function() {
         // 5.1) Atualização do Status - fetch periódico
         updateStatusFromServer();
-        setInterval(updateStatusFromServer, 5000);
+        setInterval(updateStatusFromServer, 30000);
 
         // 5.2) Upload de Arquivo - Refatorado
         const uploadForm = document.getElementById('uploadForm');

@@ -34,12 +34,6 @@
 
 <!-- Script para suporte a teclas de atalho -->
 <script>
-    // Função auxiliar para construir URLs
-    function buildTokenUrl(baseUrl, tokenId) {
-        // Certifica-se de construir a URL corretamente, evitando barras duplas
-        return baseUrl.replace('ffffffff-ffff-ffff-ffff-ffffffffffff', tokenId);
-    }
-
     // Corrigido o código para verificar se o elemento existe
     document.addEventListener('keydown', function(e) {
         const deleteConfirmationModal = document.getElementById('deleteConfirmationModal');
@@ -64,33 +58,24 @@
         const formData = new FormData(form);
         const tokenId = formData.get('token_id');
         
-        // Usar a função auxiliar para construir a URL corretamente
-        const url = buildTokenUrl("{% url 'accounts:token_delete' 'ffffffff-ffff-ffff-ffff-ffffffffffff' %}", tokenId);
+        // Usar a função buildUrl da biblioteca de utils.js
+        const url = buildUrl("{% url 'accounts:token_delete' 'ffffffff-ffff-ffff-ffff-ffffffffffff' %}", 'ffffffff-ffff-ffff-ffff-ffffffffffff', tokenId);
 
-        fetch(url, {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-            }
-        })
+        // Substituir o fetch por ajaxAPI
+        ajaxAPI(url, 'POST', formData)
         .then(response => {
-            if (!response.ok) {
-                throw new Error('Erro ao deletar token');
-            }
-            return response.json().catch(() => ({})); 
-        })
-        .then(data => {
-            if (!data.success) {
-                showMessage('danger', data.error || 'Erro ao deletar token');
-                console.error('Erro do servidor:', data.error);
-            } else {
-                window.location.reload();
-            }
+            // Usar o método showMessage da APIResponse
+            response.showMessage();
+            // Recarregar a página após sucesso
+            window.location.reload();
         })
         .catch(error => {
-            showMessage('danger', 'Erro ao deletar token. Tente novamente.');
-            console.error('Erro ao deletar token:', error);
+            if (error instanceof APIResponse) {
+                error.showMessage();
+            } else {
+                showMessage('error', 'Erro ao deletar token. Tente novamente.');
+                console.error('Erro ao deletar token:', error);
+            }
         })
         .finally(() => {
             // Restaurar estado do botão

@@ -222,9 +222,16 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentPage = 1;
     let totalPages = 1;
     let filters = {
-        token: '',
-        startDate: '',
-        endDate: ''
+        token_id: '',  // Alterado de 'token' para 'token_id'
+        start_date: '',
+        end_date: ''
+    };
+    
+    // URL nomeadas para APIs
+    const URLS = {
+        stats: "{% url 'api:monitoring_stats' %}",
+        requests: "{% url 'api:monitoring_requests' %}",
+        requestDetails: "{% url 'api:monitoring_request_details' 0 %}".replace('0', '') // Base URL para detalhes
     };
     
     // Charts
@@ -295,58 +302,83 @@ document.addEventListener('DOMContentLoaded', function() {
     function loadDashboardData() {
         showLoading();
         
-        // Construir a string de consulta com os filtros
-        const params = new URLSearchParams();
-        if (filters.token) params.append('token', filters.token);
-        if (filters.startDate) params.append('start_date', filters.startDate);
-        if (filters.endDate) params.append('end_date', filters.endDate);
+        // Construir parâmetros para a requisição
+        let params = {};
+        if (filters.token_id) params.token_id = filters.token_id;
+        if (filters.start_date) params.start_date = filters.start_date;
+        if (filters.end_date) params.end_date = filters.end_date;
         
-        const queryString = params.toString() ? `?${params.toString()}` : '';
-        
-        fetch(`/api/monitoring/stats${queryString}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Preencher indicadores
-                    document.getElementById('total-requests').textContent = data.data.total_requests || 0;
-                    document.getElementById('success-count').textContent = data.data.success_count || 0;
-                    document.getElementById('error-count').textContent = data.data.error_count || 0;
-                    document.getElementById('avg-time').textContent = `${data.data.avg_time || 0}ms`;
-                    
-                    // Atualizar gráficos
-                    updateCharts(data.data);
-                    
-                    // Carregar lista de tokens para o filtro se não houver filtro aplicado
-                    if (!filters.token) {
-                        loadTokenOptions(data.data.tokens || []);
-                    }
-                } else {
-                    showMessage('error', data.error || 'Erro ao carregar estatísticas');
+        ajaxAPI(URLS.stats, 'GET', params, {
+            successMessage: null,
+            showLoading: true
+        })
+        .then(apiResponse => {
+            if (apiResponse.isSuccess()) {
+                // Obter dados do primeiro elemento do array
+                const responseData = apiResponse.getData()[0];
+                
+                // Preencher indicadores
+                document.getElementById('total-requests').textContent = responseData.total_calls || 0;
+                
+                // Calcular contagens de sucesso e erro a partir da distribuição de status
+                let successCount = 0;
+                let errorCount = 0;
+                
+                if (responseData.status_distribution) {
+                    responseData.status_distribution.forEach(status => {
+                        if (status.status_code < 400) {
+                            successCount += status.count;
+                        } else {
+                            errorCount += status.count;
+                        }
+                    });
                 }
-            })
-            .catch(error => {
-                console.error('Erro ao carregar dados:', error);
-                showMessage('error', 'Erro ao carregar dados do dashboard');
-            })
-            .finally(() => {
-                loadRequestsTable(1);
-            });
+                
+                document.getElementById('success-count').textContent = successCount;
+                document.getElementById('error-count').textContent = errorCount;
+                document.getElementById('avg-time').textContent = `${Math.round(responseData.avg_time || 0)}ms`;
+                
+                // Atualizar gráficos
+                updateCharts(responseData, successCount, errorCount);
+                
+                // Carregar lista de tokens para o filtro se não houver filtro aplicado
+                if (!filters.token_id) {
+                    loadTokenOptions(responseData.tokens || []);
+                }
+            } else {
+                const error = apiResponse.getError();
+                showMessage('error', error?.message || 'Erro ao carregar estatísticas');
+            }
+        })
+        .catch(error => {
+            console.error('Erro ao carregar dados:', error);
+            showMessage('error', 'Erro ao carregar dados do dashboard');
+        })
+        .finally(() => {
+            loadRequestsTable(1);
+        });
     }
 
     // Atualizar os gráficos com novos dados
-    function updateCharts(data) {
-        // Atualizar gráfico de requisições
+    function updateCharts(data, successCount, errorCount) {
+        // Atualizar gráfico de requisições por hora (usando daily_calls)
         if (requestsChart) {
-            const timeData = data.requests_by_hour || { labels: [], values: [] };
-            requestsChart.data.labels = timeData.labels;
-            requestsChart.data.datasets[0].data = timeData.values;
+            const dailyData = { labels: [], values: [] };
+            
+            if (data.daily_calls && Array.isArray(data.daily_calls)) {
+                data.daily_calls.forEach(item => {
+                    dailyData.labels.push(item.day);
+                    dailyData.values.push(item.count);
+                });
+            }
+            
+            requestsChart.data.labels = dailyData.labels;
+            requestsChart.data.datasets[0].data = dailyData.values;
             requestsChart.update();
         }
         
         // Atualizar gráfico de taxa de sucesso
         if (successRateChart) {
-            const successCount = data.success_count || 0;
-            const errorCount = data.error_count || 0;
             successRateChart.data.datasets[0].data = [successCount, errorCount];
             successRateChart.update();
         }
@@ -369,51 +401,53 @@ document.addEventListener('DOMContentLoaded', function() {
     function loadRequestsTable(page = 1) {
         currentPage = page;
         
-        // Construir a string de consulta com os filtros e paginação
-        const params = new URLSearchParams();
-        params.append('page', page);
-        if (filters.token) params.append('token', filters.token);
-        if (filters.startDate) params.append('start_date', filters.startDate);
-        if (filters.endDate) params.append('end_date', filters.endDate);
+        // Construir parâmetros para a requisição
+        let params = { page: page };
+        if (filters.token_id) params.token_id = filters.token_id;
+        if (filters.start_date) params.start_date = filters.start_date;
+        if (filters.end_date) params.end_date = filters.end_date;
         
-        const queryString = `?${params.toString()}`;
-        
-        fetch(`/api/monitoring/requests${queryString}`)
-            .then(response => response.json())
-            .then(data => {
-                hideLoading();
-                
-                if (data.success) {
-                    renderRequestsTable(data.data);
-                } else {
-                    showMessage('error', data.error || 'Erro ao carregar requisições');
-                    document.querySelector('#requests-table tbody').innerHTML = `
-                        <tr>
-                            <td colspan="6" class="text-center">Erro ao carregar dados</td>
-                        </tr>
-                    `;
-                }
-            })
-            .catch(error => {
-                hideLoading();
-                console.error('Erro ao carregar requisições:', error);
-                showMessage('error', 'Erro ao carregar tabela de requisições');
+        ajaxAPI(URLS.requests, 'GET', params, {
+            successMessage: null,
+            showLoading: true
+        })
+        .then(apiResponse => {
+            hideLoading();
+            
+            if (apiResponse.isSuccess()) {
+                // Obter dados do primeiro elemento do array
+                const responseData = apiResponse.getData()[0];
+                renderRequestsTable(responseData);
+            } else {
+                const error = apiResponse.getError();
+                showMessage('error', error?.message || 'Erro ao carregar requisições');
                 document.querySelector('#requests-table tbody').innerHTML = `
                     <tr>
                         <td colspan="6" class="text-center">Erro ao carregar dados</td>
                     </tr>
                 `;
-            });
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Erro ao carregar requisições:', error);
+            showMessage('error', 'Erro ao carregar tabela de requisições');
+            document.querySelector('#requests-table tbody').innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center">Erro ao carregar dados</td>
+                </tr>
+            `;
+        });
     }
 
     // Renderizar tabela de requisições
     function renderRequestsTable(data) {
         const tableBody = document.querySelector('#requests-table tbody');
         const requests = data.requests || [];
-        totalPages = data.pagination?.total_pages || 1;
+        totalPages = data.total_pages || 1;
         
         // Atualizar informação de paginação
-        document.getElementById('table-info').textContent = `Mostrando ${data.pagination?.from || 0} a ${data.pagination?.to || 0} de ${data.pagination?.total || 0} registros`;
+        document.getElementById('table-info').textContent = `Mostrando ${data.page > 0 ? ((data.page-1) * data.per_page) + 1 : 0} a ${Math.min(data.page * data.per_page, data.total)} de ${data.total || 0} registros`;
         
         // Atualizar controles de paginação
         updatePagination();
@@ -437,10 +471,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             row.innerHTML = `
                 <td>${formatDateTime(req.timestamp)}</td>
-                <td>${req.token_name}</td>
-                <td>${req.endpoint || '-'}</td>
+                <td>${req.token?.name || '-'}</td>
+                <td>${req.path || '-'}</td>
                 <td><span class="${statusClass}">${req.status_code}</span></td>
-                <td>${req.response_time}ms</td>
+                <td>${req.execution_time}ms</td>
                 <td>
                     <button class="btn btn-sm btn-info view-details" data-id="${req.id}">
                         <i class="bi bi-eye"></i>
@@ -525,40 +559,48 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Mostrar detalhes da requisição
     function showRequestDetails(requestId) {
-        fetch(`/api/monitoring/requests/${requestId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const request = data.data;
-                    
-                    // Preencher o modal com os detalhes
-                    document.getElementById('detail-id').textContent = request.id;
-                    document.getElementById('detail-timestamp').textContent = formatDateTime(request.timestamp);
-                    document.getElementById('detail-token').textContent = request.token_name;
-                    document.getElementById('detail-endpoint').textContent = request.endpoint || '-';
-                    
-                    const statusElement = document.getElementById('detail-status');
-                    statusElement.textContent = request.status_code;
-                    statusElement.className = request.status_code < 400 ? 'text-success' : 'text-danger';
-                    
-                    document.getElementById('detail-time').textContent = `${request.response_time}ms`;
-                    
-                    // Formatar os dados JSON para exibição
-                    document.getElementById('detail-headers').textContent = formatJSON(request.headers);
-                    document.getElementById('detail-request').textContent = formatJSON(request.request_body);
-                    document.getElementById('detail-response').textContent = formatJSON(request.response_body);
-                    
-                    // Exibir o modal
-                    const detailsModal = new bootstrap.Modal(document.getElementById('detailsModal'));
-                    detailsModal.show();
-                } else {
-                    showMessage('error', data.error || 'Erro ao carregar detalhes da requisição');
-                }
-            })
-            .catch(error => {
-                console.error('Erro ao carregar detalhes:', error);
-                showMessage('error', 'Erro ao carregar detalhes da requisição');
-            });
+        const url = URLS.requestDetails + requestId + '/';
+        
+        ajaxAPI(url, 'GET', {}, {
+            successMessage: null,
+            showLoading: true
+        })
+        .then(apiResponse => {
+            if (apiResponse.isSuccess()) {
+                // Obter dados do primeiro elemento do array se for array
+                const request = Array.isArray(apiResponse.getData()) 
+                    ? apiResponse.getData()[0] 
+                    : apiResponse.getData();
+                
+                // Preencher o modal com os detalhes
+                document.getElementById('detail-id').textContent = request.id;
+                document.getElementById('detail-timestamp').textContent = formatDateTime(request.timestamp);
+                document.getElementById('detail-token').textContent = request.token?.name || '-';
+                document.getElementById('detail-endpoint').textContent = request.path || '-';
+                
+                const statusElement = document.getElementById('detail-status');
+                statusElement.textContent = request.status_code;
+                statusElement.className = request.status_code < 400 ? 'text-success' : 'text-danger';
+                
+                document.getElementById('detail-time').textContent = `${request.execution_time}ms`;
+                
+                // Formatar os dados JSON para exibição
+                document.getElementById('detail-headers').textContent = formatJSON(request.headers);
+                document.getElementById('detail-request').textContent = formatJSON(request.request_body);
+                document.getElementById('detail-response').textContent = formatJSON(request.response_body);
+                
+                // Exibir o modal
+                const detailsModal = new bootstrap.Modal(document.getElementById('detailsModal'));
+                detailsModal.show();
+            } else {
+                const error = apiResponse.getError();
+                showMessage('error', error?.message || 'Erro ao carregar detalhes da requisição');
+            }
+        })
+        .catch(error => {
+            console.error('Erro ao carregar detalhes:', error);
+            showMessage('error', 'Erro ao carregar detalhes da requisição');
+        });
     }
 
     // Funções auxiliares
@@ -586,9 +628,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     document.getElementById('apply-filters').addEventListener('click', function() {
         filters = {
-            token: document.getElementById('filter-token').value,
-            startDate: document.getElementById('filter-date-start').value,
-            endDate: document.getElementById('filter-date-end').value
+            token_id: document.getElementById('filter-token').value,  // Nome corrigido
+            start_date: document.getElementById('filter-date-start').value,
+            end_date: document.getElementById('filter-date-end').value
         };
         loadDashboardData();
     });

@@ -7,8 +7,9 @@ exceções centralizadas para uniformizar os erros.
 """
 
 from datetime import datetime
-import time
 import io
+import json
+import os
 from typing import Any, Dict, TypeVar, Tuple
 import uuid
 import anthropic
@@ -19,35 +20,37 @@ from azure.ai.inference import ChatCompletionsClient
 from azure.core.credentials import AzureKeyCredential
 from llamaapi import LlamaAPI
 from openai import AsyncOpenAI, AzureOpenAI, OpenAI
-import html
-import json
-import logging
-import os
-import tempfile
-from dotenv import load_dotenv
 from openai.types import FileObject
 from openai.types.fine_tuning import FineTuningJob
+import html
+import logging
+from dotenv import load_dotenv
+
+from api.exceptions import (
+    APICommunicationException, 
+    MissingAPIKeyException
+)
 
 from core.types import (
-    AIComparisonResponse,
     AIConfig,
-    AIMessage,
-    AISingleComparisonData,
-    AISuccess,
-    AITrainingFileData,
-    AITrainingResponse,
-    APIModel,
+    AIResponse, 
+    AIPrompt,
+    SingleComparisonRequestData, 
+    AIFile, 
+    TrainingResponse,
     JSONDict,
-    TrainingStatus,
+    APIError
 )
-from core.exceptions import APICommunicationError, MissingAPIKeyError
+
 from django.template import engines
 from api.utils.circuit_breaker import (
     attempt_call,
     record_failure,
     record_success,
 )
-from core.types.api import APIFile, APIFileCollection, APIModelCollection
+from core.types.ai import AIExampleDict, AIResult
+from core.types.api import APIFile, APIFileCollection, APIModel, APIModelCollection
+from core.types.status import EntityStatus
 
 # Configuração do logger e carregamento do .env
 logger = logging.getLogger(__name__)
@@ -93,7 +96,7 @@ class APIClient:
             config (AIConfig): Configuração da API de IA.
 
         Raises:
-            MissingAPIKeyError: Se a chave de API não estiver configurada.
+            MissingAPIKeyException: Se a chave de API não estiver configurada.
         """
         # Configura atributos básicos
         self.api_key = config.api_key
@@ -103,18 +106,13 @@ class APIClient:
         self.use_system_message = config.use_system_message
         self.training_configurations = config.training_configurations or {}
 
-        # Configura dados de prompt se disponíveis
-        if config.prompt_config:
-            self.base_instruction = config.prompt_config.system_message
-            self.prompt = config.prompt_config.user_message
-            self.responses = config.prompt_config.response
-        else:
-            self.base_instruction = ''
-            self.prompt = ''
-            self.responses = ''
+        # Configura dados de prompt diretamente dos campos de config
+        self.base_instruction = config.base_instruction or ''
+        self.prompt = config.prompt or ''
+        self.responses = config.responses or ''
 
         if not self.api_key:
-            raise MissingAPIKeyError(f"{self.name}: Chave de API não configurada.")
+            raise MissingAPIKeyException(f"{self.name}: Chave de API não configurada.")
 
         logger.debug(f"[{self.name}] {self.__class__.__name__}.__init__: Inicializado com configurações: {self.configurations}")
 
@@ -129,7 +127,7 @@ class APIClient:
             str: Template renderizado.
 
         Raises:
-            APICommunicationError: Se ocorrer erro na renderização.
+            APICommunicationException: Se ocorrer erro na renderização.
         """
         try:
             django_engine = engines['django']
@@ -137,19 +135,19 @@ class APIClient:
             return template_engine.render(context)
         except Exception as e:
             logger.error(f"[{self.name}] Erro ao renderizar template: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro ao processar template: {e}")
+            raise APICommunicationException(f"Erro ao processar template: {e}")
 
-    def _prepare_prompts(self, data: AISingleComparisonData) -> AIMessage:
+    def _prepare_prompts(self, data: SingleComparisonRequestData) -> AIPrompt:
         """Prepara os prompts para envio à API.
 
         Args:
-            data (AISingleComparisonData): Dados para comparação.
+            data (SingleComparisonRequestData): Dados para comparação.
 
         Returns:
-            AIMessage: Objeto contendo 'system_message' e 'user_message' preparados.
+            AIPrompt: Objeto contendo 'system_message' e 'user_message' preparados.
 
         Raises:
-            APICommunicationError: Se ocorrer erro na preparação dos prompts.
+            APICommunicationException: Se ocorrer erro na preparação dos prompts.
         """
         try:
             data_dict = data.__dict__ if hasattr(data, '__dict__') else data._asdict()
@@ -160,31 +158,31 @@ class APIClient:
             prompt = html.unescape(self._render_template(self.prompt, data_dict))
 
             if self.use_system_message and self.supports_system_message:
-                return AIMessage(
+                return AIPrompt(
                     system_message=base_instruction,
                     user_message=prompt
                 )
             else:
                 combined_prompt = (base_instruction + "\n" + prompt).strip()
-                return AIMessage(
+                return AIPrompt(
                     system_message='',
                     user_message=combined_prompt
                 )
         except Exception as e:
             logger.error(f"[{self.name}] Erro ao preparar prompts: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro ao preparar prompts: {e}")
+            raise APICommunicationException(f"Erro ao preparar prompts: {e}")
 
-    def compare(self, data: AISingleComparisonData) -> Tuple[AIComparisonResponse, AIMessage]:
+    def compare(self, data: SingleComparisonRequestData) -> Tuple[AIResponse, AIPrompt]:
         """Compara dados utilizando a API de IA.
 
         Args:
-            data (AISingleComparisonData): Dados para comparação.
+            data (SingleComparisonRequestData): Dados para comparação.
 
         Returns:
-            Tuple[AIComparisonResponse, AIMessage]: Tupla contendo a resposta da API e os prompts utilizados.
+            Tuple[AIResponse, AIPrompt]: Tupla contendo a resposta da API e os prompts utilizados.
 
         Raises:
-            APICommunicationError: Se ocorrer erro durante a comparação.
+            APICommunicationException: Se ocorrer erro durante a comparação.
         """
         try:
             logger.debug(f"[{self.name}] Iniciando comparação de dados")
@@ -193,27 +191,27 @@ class APIClient:
             return (response, message)
         except Exception as e:
             logger.error(f"[{self.name}] Erro ao comparar dados: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro na comparação: {e}")
+            raise APICommunicationException(f"Erro na comparação: {e}")
 
-    def _call_api(self, prompts: AIMessage) -> AIComparisonResponse:
+    def _call_api(self, prompts: AIPrompt) -> AIResponse:
         """Método abstrato para chamar a API específica.
 
         Args:
-            prompts (AIMessage): Objeto com os prompts preparados.
+            prompts (AIPrompt): Objeto com os prompts preparados.
 
         Returns:
-            AIComparisonResponse: Resposta da API com metadados.
+            AIResponse: Resposta da API com metadados.
 
         Raises:
             NotImplementedError: Se não implementado pela subclasse.
         """
         raise NotImplementedError(f"[{self.name}] Subclasses devem implementar _call_api")
 
-    def _prepare_train(self, file: AITrainingFileData) -> Any:
+    def _prepare_train(self, file: AIFile) -> Any:
         """Prepara os dados para treinamento no formato esperado pela API.
 
         Args:
-            file (AITrainingFileData): Dados do arquivo de treinamento.
+            file (AIFile): Dados do arquivo de treinamento.
 
         Returns:
             Any: Dados preparados para treinamento.
@@ -223,14 +221,14 @@ class APIClient:
         """
         raise NotImplementedError(f"[{self.name}] Subclasses devem implementar _prepare_train")
 
-    def train(self, file: AITrainingFileData) -> AITrainingResponse:
+    def train(self, file: AIFile) -> TrainingResponse:
         """Prepara e inicia o treinamento utilizando os dados do arquivo.
 
         Args:
-            file (AITrainingFileData): Dados do arquivo de treinamento.
+            file (AIFile): Dados do arquivo de treinamento.
 
         Returns:
-            AITrainingResponse: Resultado inicial do treinamento com job_id.
+            TrainingResponse: Resultado inicial do treinamento com job_id.
 
         Raises:
             NotImplementedError: Se a IA não suportar treinamento.
@@ -242,49 +240,49 @@ class APIClient:
         prepared_file_data = self._prepare_train(file)
         return self._start_training(prepared_file_data)
 
-    def _start_training(self, training_data: Any) -> AITrainingResponse:
+    def _start_training(self, training_data: Any) -> TrainingResponse:
         """Método abstrato para iniciar o treinamento.
 
         Args:
             training_data (Any): Dados preparados para treinamento.
 
         Returns:
-            AITrainingResponse: Resultado inicial do treinamento.
+            TrainingResponse: Resultado inicial do treinamento.
 
         Raises:
             NotImplementedError: Se não implementado pela subclasse.
         """
         raise NotImplementedError(f"[{self.name}] Subclasses devem implementar _start_training")
 
-    def get_training_status(self, job_id: str) -> AITrainingResponse:
+    def get_training_status(self, job_id: str) -> TrainingResponse:
         """Verifica o status atual do treinamento.
 
         Args:
             job_id (str): ID do job de treinamento.
 
         Returns:
-            AITrainingResponse: Status atual do treinamento.
+            TrainingResponse: Status atual do treinamento.
 
         Raises:
             NotImplementedError: Se não implementado pela subclasse.
         """
         raise NotImplementedError(f"[{self.name}] Subclasses devem implementar get_training_status.")
 
-    def _call_train_api(self, training_data: str) -> APIModel:
+    def _call_train_api(self, training_data: str) -> AIResponse:
         """Método abstrato para chamar a API de treinamento.
 
         Args:
             training_data (str): Dados de treinamento preparados.
 
         Returns:
-            APIModel: Objeto representando o modelo treinado.
+            AIResponse: Objeto representando o modelo treinado.
 
         Raises:
             NotImplementedError: Se não implementado pela subclasse.
         """
         raise NotImplementedError(f"[{self.name}] Subclasses devem implementar o método _call_train_api.")
 
-    def api_list_models(self, list_trained_models: bool = True, list_base_models: bool = True) -> APIModelCollection:
+    def api_list_models(self, list_trained_models: bool = True, list_base_models: bool = True) -> AIResponse:
         """Lista os modelos disponíveis na API.
 
         Args:
@@ -299,35 +297,35 @@ class APIClient:
         """
         raise NotImplementedError(f"[{self.name}] Subclasses devem implementar list_trained_models.")
 
-    def cancel_training(self, id: str) -> AISuccess:
+    def cancel_training(self, id: str) -> AIResponse:
         """Cancela um job de treinamento em andamento.
 
         Args:
             id (str): ID do job a ser cancelado.
 
         Returns:
-            AISuccess: Objeto indicando sucesso ou falha da operação.
+            AIResponse: Objeto indicando sucesso ou falha da operação.
 
         Raises:
             NotImplementedError: Se não implementado pela subclasse.
         """
         raise NotImplementedError(f"[{self.name}] Subclasses devem implementar cancel_training.")
 
-    def delete_trained_model(self, model_name: str) -> AISuccess:
+    def delete_trained_model(self, model_name: str) -> AIResponse:
         """Remove um modelo treinado.
 
         Args:
             model_name (str): Nome ou ID do modelo a ser removido.
 
         Returns:
-            AISuccess: Objeto indicando sucesso ou falha da operação.
+            AIResponse: Objeto indicando sucesso ou falha da operação.
 
         Raises:
             NotImplementedError: Se não implementado pela subclasse.
         """
         raise NotImplementedError(f"[{self.name}] Subclasses devem implementar delete_trained_model.")
 
-    def api_list_files(self) -> APIFileCollection:
+    def api_list_files(self) -> AIResponse:
         """Lista todos os arquivos disponíveis na API.
 
         Returns:
@@ -338,14 +336,14 @@ class APIClient:
         """
         raise NotImplementedError(f"[{self.name}] Subclasses devem implementar list_training_files.")
 
-    def delete_file(self, file_id: str) -> AISuccess:
+    def delete_file(self, file_id: str) -> AIResponse:
         """Remove um arquivo da API.
 
         Args:
             file_id (str): ID do arquivo a ser removido.
 
         Returns:
-            AISuccess: Objeto indicando sucesso ou falha da operação.
+            AIResponse: Objeto indicando sucesso ou falha da operação.
 
         Raises:
             NotImplementedError: Se não implementado pela subclasse.
@@ -372,14 +370,14 @@ class OpenAiClient(APIClient):
         self.client = OpenAI(**args)
         self.async_client = AsyncOpenAI(**args)
 
-    def _call_api(self, message: AIMessage) -> AIComparisonResponse:
+    def _call_api(self, message: AIPrompt) -> AIResponse:
         """Realiza a chamada à API da OpenAI para comparação.
 
         Args:
-            message (AIMessage): Prompts preparados para a chamada.
+            message (AIPrompt): Prompts preparados para a chamada.
 
         Returns:
-            AIComparisonResponse: Resposta da API com metadados.
+            AIResponse: Resposta da API com metadados.
         """
         logger.debug(f"[{self.name}] Iniciando chamada para OpenAI")
         attempt_call(self.name)
@@ -398,7 +396,17 @@ class OpenAiClient(APIClient):
             response = self.client.chat.completions.create(**request_config)
             if not response:
                 logger.error(f"[{self.name}] _call_api: Nenhuma mensagem retornada do OpenAI.", exc_info=True)
-                raise APICommunicationError("Nenhuma mensagem retornada do OpenAI.")
+                error = APIError(
+                    message="Nenhuma mensagem retornada do OpenAI.",
+                    endpoint="chat/completions",
+                    resource=f"ai/{self.model_name}"
+                )
+                return AIResponse(
+                    model_name=self.model_name,
+                    error=error,
+                    configurations=self.configurations,
+                    processing_time=0.0
+                )
 
             processing_time = (datetime.now() - start_time).total_seconds()
 
@@ -406,7 +414,7 @@ class OpenAiClient(APIClient):
                 record_success(self.name)
                 logger.debug(f"[{self.name}] Chamada concluída com sucesso")
                 reasoning_content = getattr(response.choices[0].message, 'reasoning_content', None)
-                return AIComparisonResponse(
+                return AIResponse(
                     response=response.choices[0].message.content,
                     thinking=reasoning_content,
                     model_name=self.model_name,
@@ -415,45 +423,64 @@ class OpenAiClient(APIClient):
                 )
             else:
                 logger.error(f"[{self.name}] _call_api: Resposta do OpenAI inválida: {response}", exc_info=True)
-                raise APICommunicationError("Resposta do OpenAI inválida.")
-        except APICommunicationError as e:
+                error = APIError(
+                    message="Resposta do OpenAI inválida.",
+                    endpoint="chat/completions",
+                    resource=f"ai/{self.model_name}"
+                )
+                return AIResponse(
+                    model_name=self.model_name,
+                    error=error,
+                    configurations=self.configurations,
+                    processing_time=processing_time
+                )
+        except APICommunicationException as e:
             record_failure(self.name)
             processing_time = (datetime.now() - start_time).total_seconds()
-            return AIComparisonResponse(
-                response="",
+            error = APIError(
+                message=str(e),
+                endpoint="chat/completions",
+                resource=f"ai/{self.model_name}"
+            )
+            return AIResponse(
                 model_name=self.model_name,
+                error=error,
                 configurations=self.configurations,
-                processing_time=processing_time,
-                error=str(e)
+                processing_time=processing_time
             )
         except Exception as e:
             record_failure(self.name)
             processing_time = (datetime.now() - start_time).total_seconds()
             logger.error(f"[{self.name}] _call_api: Erro ao comunicar com OpenAI: {e}", exc_info=True)
-            return AIComparisonResponse(
-                response="",
+            error = APIError(
+                message=str(e),
+                endpoint="chat/completions",
+                resource=f"ai/{self.model_name}"
+            )
+            return AIResponse(
                 model_name=self.model_name,
+                error=error,
                 configurations=self.configurations,
-                processing_time=processing_time,
-                error=f"Erro ao comunicar com a API: {e}"
+                processing_time=processing_time
             )
 
-    def _prepare_train(self, file: AITrainingFileData) -> Any:
-        """Prepara os dados de treinamento no formato JSONL em memória.
+    def _prepare_train(self, file: AIFile) -> Any:
+        """Prepara os dados de treinamento no formato esperado pela API.
 
         Args:
-            file (AITrainingFileData): Dados do arquivo de treinamento.
+            file (AIFile): Dicionário contendo exemplos de treinamento.
 
         Returns:
-            str: Dados preparados no formato JSONL.
+            Any: Dados preparados para treinamento.
 
         Raises:
-            APICommunicationError: Se ocorrer erro durante o preparo dos dados.
+            APICommunicationException: Se ocorrer erro durante o preparo dos dados.
         """
         try:
-            training_data = file.file.examples
+            # Usar file.data.items() como o Gemini faz
+            training_data = file.data.items()
             jsonl_data = []
-            for example in training_data:
+            for key, example in training_data:
                 msgs = []
                 if example.system_message:
                     msgs.append({
@@ -473,16 +500,16 @@ class OpenAiClient(APIClient):
             return "\n".join(jsonl_data)
         except Exception as e:
             logger.error(f"[{self.name}] Erro ao preparar dados de treinamento: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro ao preparar dados: {e}")
+            raise APICommunicationException(f"Erro ao preparar dados: {e}")
 
-    def _start_training(self, training_data: str) -> AITrainingResponse:
+    def _start_training(self, training_data: str) -> TrainingResponse:
         """Inicia o treinamento utilizando os dados preparados.
 
         Args:
             training_data (str): Dados de treinamento no formato JSONL.
 
         Returns:
-            AITrainingResponse: Resultado inicial do treinamento com job_id.
+            TrainingResponse: Resultado inicial do treinamento com job_id.
         """
         attempt_call(self.name)
         try:
@@ -505,9 +532,9 @@ class OpenAiClient(APIClient):
                 hyperparameters=training_params
             )
             record_success(self.name)
-            return AITrainingResponse(
+            return TrainingResponse(
                 job_id=job.id,
-                status=TrainingStatus.IN_PROGRESS,
+                status=EntityStatus.IN_PROGRESS,
                 model_name=None,
                 error=None,
                 completed_at=None,
@@ -518,9 +545,9 @@ class OpenAiClient(APIClient):
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] _start_training: {e}", exc_info=True)
-            return AITrainingResponse(
+            return TrainingResponse(
                 job_id="",
-                status=TrainingStatus.FAILED,
+                status=EntityStatus.FAILED,
                 model_name=None,
                 error=str(e),
                 completed_at=None,
@@ -535,22 +562,22 @@ class OpenAiClient(APIClient):
             except Exception as e:
                 logger.warning(f"[{self.name}] Não foi possível remover arquivo temporário {training_data}: {e}", exc_info=True)
 
-    def get_training_status(self, job_id: str) -> AITrainingResponse:
+    def get_training_status(self, job_id: str) -> TrainingResponse:
         """Obtém o status atual do treinamento.
 
         Args:
             job_id (str): ID do job de treinamento.
 
         Returns:
-            AITrainingResponse: Status atual do treinamento.
+            TrainingResponse: Status atual do treinamento.
         """
         attempt_call(self.name)
         try:
             status_obj = self.client.fine_tuning.jobs.retrieve(job_id)
             if status_obj.status == 'succeeded':
-                return AITrainingResponse(
+                return TrainingResponse(
                     job_id=job_id,
-                    status=TrainingStatus.COMPLETED,
+                    status=EntityStatus.COMPLETED,
                     model_name=status_obj.fine_tuned_model,
                     error=None,
                     completed_at=datetime.now(),
@@ -563,9 +590,9 @@ class OpenAiClient(APIClient):
                 if (hasattr(status_obj, 'trained_tokens') and hasattr(status_obj, 'training_file_tokens') 
                         and status_obj.training_file_tokens):
                     progress = status_obj.trained_tokens / status_obj.training_file_tokens
-                return AITrainingResponse(
+                return TrainingResponse(
                     job_id=job_id,
-                    status=TrainingStatus.FAILED,
+                    status=EntityStatus.FAILED,
                     model_name=None,
                     error=getattr(status_obj, 'error', 'Falha desconhecida'),
                     completed_at=datetime.now(),
@@ -578,9 +605,9 @@ class OpenAiClient(APIClient):
                 if (hasattr(status_obj, 'trained_tokens') and hasattr(status_obj, 'training_file_tokens') 
                         and status_obj.training_file_tokens):
                     progress = status_obj.trained_tokens / status_obj.training_file_tokens
-                return AITrainingResponse(
+                return TrainingResponse(
                     job_id=job_id,
-                    status=TrainingStatus.IN_PROGRESS,
+                    status=EntityStatus.IN_PROGRESS,
                     model_name=None,
                     error=None,
                     completed_at=None,
@@ -588,22 +615,22 @@ class OpenAiClient(APIClient):
                     updated_at=datetime.now(),
                     progress=progress
                 )
-        except APICommunicationError:
+        except APICommunicationException:
             record_failure(self.name)
             raise
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] get_training_status: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro ao verificar status: {e}")
+            raise APICommunicationException(f"Erro ao verificar status: {e}")
 
-    def delete_trained_model(self, model_name: str) -> AISuccess:
+    def delete_trained_model(self, model_name: str) -> AIResult:
         """Remove um modelo treinado (fine-tuned) da OpenAI.
 
         Args:
             model_name (str): Nome ou ID do modelo a ser removido.
 
         Returns:
-            AISuccess: Objeto indicando sucesso ou falha da operação.
+            AIResult: Objeto indicando sucesso ou falha da operação.
         """
         attempt_call(self.name)
         try:
@@ -611,11 +638,11 @@ class OpenAiClient(APIClient):
             self.client.models.delete(model_name)
             record_success(self.name)
             logger.debug(f"[{self.name}] Modelo {model_name} removido com sucesso")
-            return AISuccess(success=True)
+            return AIResult(success=True)
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] delete_trained_model: Erro ao remover modelo {model_name}: {e}", exc_info=True)
-            return AISuccess(success=False, error=str(e))
+            return AIResult(success=False, error=str(e))
 
     def api_list_models(self, list_trained_models: bool = True, list_base_models: bool = True) -> APIModelCollection:
         """Lista os modelos disponíveis na API da OpenAI.
@@ -628,7 +655,7 @@ class OpenAiClient(APIClient):
             APIModelCollection: Lista de objetos APIModel.
 
         Raises:
-            APICommunicationError: Se ocorrer erro ao listar os modelos.
+            APICommunicationException: Se ocorrer erro ao listar os modelos.
         """
         attempt_call(self.name)
         try:
@@ -649,7 +676,7 @@ class OpenAiClient(APIClient):
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] api_list_models: Erro ao listar modelos: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro ao listar modelos: {e}")
+            raise APICommunicationException(f"Erro ao listar modelos: {e}")
 
     def api_list_files(self) -> APIFileCollection:
         """Lista todos os arquivos disponíveis na API da OpenAI.
@@ -658,7 +685,7 @@ class OpenAiClient(APIClient):
             APIFileCollection: Lista de objetos APIFile.
 
         Raises:
-            APICommunicationError: Se ocorrer erro na comunicação com a API.
+            APICommunicationException: Se ocorrer erro na comunicação com a API.
         """
         attempt_call(self.name)
         try:
@@ -679,16 +706,16 @@ class OpenAiClient(APIClient):
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] api_list_files: Erro ao listar arquivos: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro ao listar arquivos: {e}")
+            raise APICommunicationException(f"Erro ao listar arquivos")
 
-    def delete_file(self, file_id: str) -> AISuccess:
+    def delete_file(self, file_id: str) -> AIResult:
         """Remove um arquivo da API da OpenAI.
 
         Args:
             file_id (str): ID do arquivo a ser removido.
 
         Returns:
-            AISuccess: Objeto indicando sucesso ou falha da operação.
+            AIResult: Objeto indicando sucesso ou falha da operação.
         """
         attempt_call(self.name)
         try:
@@ -696,11 +723,11 @@ class OpenAiClient(APIClient):
             self.client.files.delete(file_id=file_id)
             record_success(self.name)
             logger.debug(f"[{self.name}] Arquivo {file_id} removido com sucesso")
-            return AISuccess(success=True)
+            return AIResult(success=True)
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] delete_file: Erro ao remover arquivo {file_id}: {e}", exc_info=True)
-            return AISuccess(success=False, error=str(e))
+            return AIResult(success=False, error=str(e))
 
 
 @register_ai_client
@@ -718,14 +745,14 @@ class GeminiClient(APIClient):
         super().__init__(config)
         self.client = genai.Client(api_key=self.api_key)
 
-    def _call_api(self, message: AIMessage) -> AIComparisonResponse:
+    def _call_api(self, message: AIPrompt) -> AIResponse:
         """Realiza a chamada à API do Gemini para comparação.
 
         Args:
-            message (AIMessage): Prompts preparados para a chamada.
+            message (AIPrompt): Prompts preparados para a chamada.
 
         Returns:
-            AIComparisonResponse: Resposta da API do Gemini.
+            AIResponse: Resposta da API do Gemini.
         """
         attempt_call(self.name)
         logger.debug(f"[{self.name}] Iniciando chamada para Gemini")
@@ -749,50 +776,49 @@ class GeminiClient(APIClient):
             processing_time = (datetime.now() - start_time).total_seconds()
             record_success(self.name)
             logger.debug(f"[{self.name}] Chamada concluída com sucesso")
-            return AIComparisonResponse(
+            return AIResponse(
                 response=response.text,
                 model_name=self.model_name,
                 configurations=self.configurations,
                 processing_time=processing_time
             )
-        except APICommunicationError as e:
-            record_failure(self.name)
-            processing_time = (datetime.now() - start_time).total_seconds()
-            return AIComparisonResponse(
-                response="",
-                model_name=self.model_name,
-                configurations=self.configurations,
-                processing_time=processing_time,
-                error=str(e)
-            )
         except Exception as e:
             record_failure(self.name)
             processing_time = (datetime.now() - start_time).total_seconds()
-            logger.error(f"[{self.name}] _call_api: Erro ao comunicar com Gemini: {e}", exc_info=True)
-            return AIComparisonResponse(
-                response="",
+            
+            # Verificação se os atributos existem na exceção
+            error_message = getattr(e, 'message', str(e))
+            error_code = getattr(e, 'code', None)
+            
+            error = APIError(
+                message=error_message,
+                code=error_code,
+                endpoint="generateContent",
+                resource=f"ai/{self.model_name}"
+            )
+            return AIResponse(
                 model_name=self.model_name,
                 configurations=self.configurations,
                 processing_time=processing_time,
-                error=f"Erro ao comunicar com a API: {e}"
+                error=error
             )
 
-    def _prepare_train(self, file: AITrainingFileData) -> google_types.TuningDataset:
+    def _prepare_train(self, file: AIFile) -> google_types.TuningDataset:
         """Prepara os dados de treinamento para o Gemini.
 
         Args:
-            file (AITrainingFileData): Dados do arquivo de treinamento.
+            file (AIFile): Dados do arquivo de treinamento.
 
         Returns:
             google_types.TuningDataset: Dataset preparado para tuning.
 
         Raises:
-            APICommunicationError: Se ocorrer erro na preparação dos dados.
+            APICommunicationException: Se ocorrer erro na preparação dos dados.
         """
         try:
-            training_data = file.file.examples
+            training_data = file.data.items()
             examples = []
-            for item in training_data:
+            for key, item in training_data: 
                 text_input = item.user_message
                 if item.system_message:
                     text_input = f"{item.system_message}\n {text_input}"
@@ -805,16 +831,16 @@ class GeminiClient(APIClient):
             return google_types.TuningDataset(examples=examples)
         except Exception as e:
             logger.error(f"[{self.name}] _prepare_train: Erro ao preparar dados: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro ao preparar dados de treinamento: {e}")
+            raise APICommunicationException(f"Erro ao preparar dados de treinamento: {e}")
 
-    def _start_training(self, training_data: Any) -> AITrainingResponse:
+    def _start_training(self, training_data: Any) -> TrainingResponse:
         """Inicia o treinamento no Gemini.
 
         Args:
             training_data (Any): Dados de treinamento preparados.
 
         Returns:
-            AITrainingResponse: Resultado inicial do treinamento.
+            TrainingResponse: Resultado inicial do treinamento.
         """
         attempt_call(self.name)
         try:
@@ -830,9 +856,9 @@ class GeminiClient(APIClient):
                 config=config_obj
             )
             record_success(self.name)
-            return AITrainingResponse(
+            return TrainingResponse(
                 job_id=tuning_job.name,
-                status=TrainingStatus.IN_PROGRESS,
+                status=EntityStatus.IN_PROGRESS,
                 model_name=None,
                 error=None,
                 completed_at=None,
@@ -843,9 +869,9 @@ class GeminiClient(APIClient):
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] _start_training: {e}", exc_info=True)
-            return AITrainingResponse(
+            return TrainingResponse(
                 job_id="",
-                status=TrainingStatus.FAILED,
+                status=EntityStatus.FAILED,
                 model_name=None,
                 error=str(e),
                 completed_at=None,
@@ -854,23 +880,23 @@ class GeminiClient(APIClient):
                 progress=0.0
             )
 
-    def get_training_status(self, job_id: str) -> AITrainingResponse:
+    def get_training_status(self, job_id: str) -> TrainingResponse:
         """Obtém o status do treinamento no Gemini.
 
         Args:
             job_id (str): ID do job de treinamento.
 
         Returns:
-            AITrainingResponse: Status atual do treinamento.
+            TrainingResponse: Status atual do treinamento.
         """
         attempt_call(self.name)
         try:
             operation = self.client.tunings.get(name=job_id)
             if operation.has_ended:
                 if operation.has_succeeded:
-                    return AITrainingResponse(
+                    return TrainingResponse(
                         job_id=job_id,
-                        status=TrainingStatus.COMPLETED,
+                        status=EntityStatus.COMPLETED,
                         model_name=operation.name,
                         error=None,
                         completed_at=operation.end_time,
@@ -879,9 +905,9 @@ class GeminiClient(APIClient):
                         progress=1.0
                     )
                 else:
-                    return AITrainingResponse(
+                    return TrainingResponse(
                         job_id=job_id,
-                        status=TrainingStatus.FAILED,
+                        status=EntityStatus.FAILED,
                         model_name=None,
                         error=str(operation.error),
                         completed_at=datetime.now(),
@@ -893,9 +919,9 @@ class GeminiClient(APIClient):
                 progress = 0.0
                 if hasattr(operation, 'trained_tokens') and hasattr(operation, 'training_file_tokens') and operation.training_file_tokens:
                     progress = operation.trained_tokens / operation.training_file_tokens
-                return AITrainingResponse(
+                return TrainingResponse(
                     job_id=job_id,
-                    status=TrainingStatus.IN_PROGRESS,
+                    status=EntityStatus.IN_PROGRESS,
                     model_name=None,
                     error=None,
                     completed_at=None,
@@ -903,14 +929,14 @@ class GeminiClient(APIClient):
                     updated_at=datetime.now(),
                     progress=progress
                 )
-        except APICommunicationError:
+        except APICommunicationException:
             record_failure(self.name)
             raise
         except Exception as e:
             logger.error(f"[{self.name}] get_training_status: {e}", exc_info=True)
-            return AITrainingResponse(
+            return TrainingResponse(
                 job_id=job_id,
-                status=TrainingStatus.FAILED,
+                status=EntityStatus.FAILED,
                 model_name=None,
                 error=str(e),
                 completed_at=datetime.now(),
@@ -930,7 +956,7 @@ class GeminiClient(APIClient):
             APIModelCollection: Lista de objetos APIModel.
 
         Raises:
-            APICommunicationError: Se ocorrer erro ao listar os modelos.
+            APICommunicationException: Se ocorrer erro ao listar os modelos.
         """
         attempt_call(self.name)
         try:
@@ -959,16 +985,16 @@ class GeminiClient(APIClient):
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] list_trained_models: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro ao listar modelos: {e}")
+            raise APICommunicationException(f"Erro ao listar modelos: {e}")
 
-    def delete_trained_model(self, model_name: str) -> AISuccess:
+    def delete_trained_model(self, model_name: str) -> AIResult:
         """Remove um modelo treinado no Gemini.
 
         Args:
             model_name (str): Nome ou ID completo do modelo a ser removido.
 
         Returns:
-            AISuccess: Objeto indicando sucesso ou falha da operação.
+            AIResult: Objeto indicando sucesso ou falha da operação.
         """
         attempt_call(self.name)
         try:
@@ -978,30 +1004,30 @@ class GeminiClient(APIClient):
             self.client.models.delete(model=model_name)
             record_success(self.name)
             logger.debug(f"[{self.name}] Modelo {model_name} removido com sucesso")
-            return AISuccess(success=True)
+            return AIResult(success=True)
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] delete_trained_model: Erro ao remover modelo {model_name}: {e}", exc_info=True)
-            return AISuccess(success=False, error=str(e))
+            return AIResult(success=False, error=str(e))
 
-    def cancel_training(self, id: str) -> AISuccess:
+    def cancel_training(self, id: str) -> AIResult:
         """Cancela um job de treinamento em andamento no Gemini.
 
         Args:
             id (str): ID do job a ser cancelado.
 
         Returns:
-            AISuccess: Objeto indicando sucesso ou falha da operação.
+            AIResult: Objeto indicando sucesso ou falha da operação.
         """
         attempt_call(self.name)
         try:
             operation = self.client.tunings.cancel(name=id)
             record_success(self.name)
-            return AISuccess(success=True)
+            return AIResult(success=True)
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] cancel_training: {e}", exc_info=True)
-            return AISuccess(success=False, error=str(e))
+            return AIResult(success=False, error=str(e))
 
     def api_list_files(self) -> APIFileCollection:
         """Lista todos os arquivos disponíveis na API do Gemini.
@@ -1010,7 +1036,7 @@ class GeminiClient(APIClient):
             APIFileCollection: Lista de objetos APIFile.
 
         Raises:
-            APICommunicationError: Se ocorrer erro ao listar os arquivos.
+            APICommunicationException: Se ocorrer erro ao listar os arquivos.
         """
         attempt_call(self.name)
         try:
@@ -1032,16 +1058,16 @@ class GeminiClient(APIClient):
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] api_list_files: Erro ao listar arquivos: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro ao listar arquivos: {e}")
+            raise APICommunicationException(f"Erro ao listar arquivos: {e}")
 
-    def delete_file(self, file_id: str) -> AISuccess:
+    def delete_file(self, file_id: str) -> AIResult:
         """Remove um arquivo da API do Gemini.
 
         Args:
             file_id (str): ID do arquivo a ser removido.
 
         Returns:
-            AISuccess: Objeto indicando sucesso ou falha da operação.
+            AIResult: Objeto indicando sucesso ou falha da operação.
         """
         attempt_call(self.name)
         try:
@@ -1053,11 +1079,11 @@ class GeminiClient(APIClient):
             self.client.files.delete(name=file_name)
             record_success(self.name)
             logger.debug(f"[{self.name}] Arquivo {file_id} removido com sucesso")
-            return AISuccess(success=True)
+            return AIResult(success=True)
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] delete_file: Erro ao remover arquivo {file_id}: {e}", exc_info=True)
-            return AISuccess(success=False, error=str(e))
+            return AIResult(success=False, error=str(e))
 
 
 @register_ai_client
@@ -1073,23 +1099,23 @@ class AnthropicClient(APIClient):
             config (AIConfig): Configuração da API Anthropic.
 
         Raises:
-            APICommunicationError: Se ocorrer erro ao inicializar o cliente.
+            APICommunicationException: Se ocorrer erro ao inicializar o cliente.
         """
         super().__init__(config)
         try:
             self.client = anthropic.Anthropic(api_key=self.api_key)
         except Exception as e:
             logger.error(f"[{self.name}] __init__: Erro ao inicializar cliente Anthropic: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro ao inicializar cliente Anthropic: {e}")
+            raise APICommunicationException(f"Erro ao inicializar cliente Anthropic: {e}")
 
-    def _call_api(self, message: AIMessage) -> AIComparisonResponse:
+    def _call_api(self, message: AIPrompt) -> AIResponse:
         """Realiza a chamada à API do Anthropic para comparação.
 
         Args:
-            message (AIMessage): Prompts preparados para a chamada.
+            message (AIPrompt): Prompts preparados para a chamada.
 
         Returns:
-            AIComparisonResponse: Resposta da API do Anthropic.
+            AIResponse: Resposta da API do Anthropic.
         """
         attempt_call(self.name)
         start_time = datetime.now()
@@ -1113,46 +1139,62 @@ class AnthropicClient(APIClient):
                 request_config['system'] = message.system_message
             response = self.client.messages.create(**request_config)
             if not response or not response.content:
-                raise APICommunicationError("Nenhuma mensagem retornada de Anthropic.")
+                error = APIError(
+                    message="Nenhuma mensagem retornada de Anthropic.",
+                    endpoint="messages",
+                    resource=f"ai/{self.model_name}"
+                )
+                return AIResponse(
+                    model_name=self.model_name,
+                    error=error,
+                    configurations=self.configurations,
+                    processing_time=0.0
+                )
             
-            # Extrair texto da resposta, considerando diferentes tipos de blocos de conteúdo
             extracted_text = ""
             extracted_thinking = ""
             for content_block in response.content:
                 if content_block.type == "thinking":
                     extracted_thinking += content_block.thinking
                 if content_block.type == "text":
-                    # Bloco direto do tipo texto
                     extracted_text += content_block.text            
             processing_time = (datetime.now() - start_time).total_seconds()
             record_success(self.name)
-            return AIComparisonResponse(
+            return AIResponse(
                 response=extracted_text,
                 thinking=extracted_thinking if extracted_thinking.strip() else None,
                 model_name=self.model_name,
                 configurations=self.configurations,
                 processing_time=processing_time
             )
-        except APICommunicationError as e:
+        except APICommunicationException as e:
             record_failure(self.name)
             processing_time = (datetime.now() - start_time).total_seconds()
-            return AIComparisonResponse(
-                response="",
+            error = APIError(
+                message=str(e),
+                endpoint="messages",
+                resource=f"ai/{self.model_name}"
+            )
+            return AIResponse(
                 model_name=self.model_name,
+                error=error,
                 configurations=self.configurations,
-                processing_time=processing_time,
-                error=str(e)
+                processing_time=processing_time
             )
         except Exception as e:
             record_failure(self.name)
             processing_time = (datetime.now() - start_time).total_seconds()
             logger.error(f"[{self.name}] _call_api: {e}", exc_info=True)
-            return AIComparisonResponse(
-                response="",
+            error = APIError(
+                message=str(e),
+                endpoint="messages",
+                resource=f"ai/{self.model_name}"
+            )
+            return AIResponse(
                 model_name=self.model_name,
+                error=error,
                 configurations=self.configurations,
-                processing_time=processing_time,
-                error=f"Erro ao comunicar com Anthropic: {e}"
+                processing_time=processing_time
             )
 
     def api_list_models(self, list_trained_models: bool = True, list_base_models: bool = True) -> APIModelCollection:
@@ -1166,7 +1208,7 @@ class AnthropicClient(APIClient):
             APIModelCollection: Lista de objetos APIModel.
 
         Raises:
-            APICommunicationError: Se ocorrer erro ao listar os modelos.
+            APICommunicationException: Se ocorrer erro ao listar os modelos.
         """
         attempt_call(self.name)
         try:
@@ -1187,7 +1229,7 @@ class AnthropicClient(APIClient):
         except Exception as e:
             record_failure(self.name)
             logger.error(f"[{self.name}] api_list_models: Erro ao listar modelos: {e}", exc_info=True)
-            raise APICommunicationError(f"Erro ao listar modelos: {e}")
+            raise APICommunicationException(f"Erro ao listar modelos: {e}")
 
 
 @register_ai_client
@@ -1204,14 +1246,14 @@ class PerplexityClient(APIClient):
         """
         super().__init__(config)
 
-    def _call_api(self, message: AIMessage) -> AIComparisonResponse:
+    def _call_api(self, message: AIPrompt) -> AIResponse:
         """Realiza a chamada à API da Perplexity para comparação.
 
         Args:
-            message (AIMessage): Prompts preparados para a chamada.
+            message (AIPrompt): Prompts preparados para a chamada.
 
         Returns:
-            AIComparisonResponse: Resposta da API da Perplexity.
+            AIResponse: Resposta da API da Perplexity.
         """
         attempt_call(self.name)
         start_time = datetime.now()
@@ -1231,40 +1273,69 @@ class PerplexityClient(APIClient):
                 "Content-Type": "application/json"
             }
             response = requests.post(url, json=request_config, headers=headers)
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
             if response.status_code != 200:
-                raise APICommunicationError(f"API Perplexity retornou código {response.status_code}.")
+                error = APIError(
+                    message=f"API Perplexity retornou código {response.status_code}.",
+                    endpoint=url,
+                    resource=f"ai/{self.model_name}"
+                )
+                return AIResponse(
+                    model_name=self.model_name,
+                    error=error,
+                    configurations=self.configurations,
+                    processing_time=processing_time
+                )
             resp_json = response.json()
             generated_text = resp_json['choices'][0]['message'].get('content', '')
             if not generated_text:
-                raise APICommunicationError("Nenhum texto retornado pela Perplexity.")
-            processing_time = (datetime.now() - start_time).total_seconds()
+                error = APIError(
+                    message="Nenhum texto retornado pela Perplexity.",
+                    endpoint=url,
+                    resource=f"ai/{self.model_name}"
+                )
+                return AIResponse(
+                    model_name=self.model_name,
+                    error=error,
+                    configurations=self.configurations,
+                    processing_time=processing_time
+                )
             record_success(self.name)
-            return AIComparisonResponse(
+            return AIResponse(
                 response=generated_text,
                 model_name=self.model_name,
                 configurations=self.configurations,
                 processing_time=processing_time
             )
-        except APICommunicationError as e:
+        except APICommunicationException as e:
             record_failure(self.name)
             processing_time = (datetime.now() - start_time).total_seconds()
-            return AIComparisonResponse(
-                response="",
+            error = APIError(
+                message=str(e),
+                endpoint="chat/completions",
+                resource=f"ai/{self.model_name}"
+            )
+            return AIResponse(
                 model_name=self.model_name,
+                error=error,
                 configurations=self.configurations,
-                processing_time=processing_time,
-                error=str(e)
+                processing_time=processing_time
             )
         except Exception as e:
             record_failure(self.name)
             processing_time = (datetime.now() - start_time).total_seconds()
             logger.error(f"[{self.name}] _call_api: {e}", exc_info=True)
-            return AIComparisonResponse(
-                response="",
+            error = APIError(
+                message=str(e),
+                endpoint="chat/completions",
+                resource=f"ai/{self.model_name}"
+            )
+            return AIResponse(
                 model_name=self.model_name,
+                error=error,
                 configurations=self.configurations,
-                processing_time=processing_time,
-                error=f"Erro Perplexity: {e}"
+                processing_time=processing_time
             )
 
 
@@ -1283,14 +1354,14 @@ class LlamaClient(APIClient):
         super().__init__(config)
         self.client = LlamaAPI(self.api_key)
 
-    def _call_api(self, message: AIMessage) -> AIComparisonResponse:
+    def _call_api(self, message: AIPrompt) -> AIResponse:
         """Realiza a chamada à API do Llama para comparação.
 
         Args:
-            message (AIMessage): Prompts preparados para a chamada.
+            message (AIPrompt): Prompts preparados para a chamada.
 
         Returns:
-            AIComparisonResponse: Resposta da API do Llama.
+            AIResponse: Resposta da API do Llama.
         """
         attempt_call(self.name)
         start_time = datetime.now()
@@ -1307,9 +1378,22 @@ class LlamaClient(APIClient):
             }
             logger.debug(f"[{self.name}] Enviando requisição para a API Llama")
             response = self.client.run(request_config)
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
             if not response:
                 logger.warning(f"[{self.name}] A API retornou uma resposta vazia")
-                raise APICommunicationError(f"[{self.name}] Nenhum texto retornado de Llama.")
+                error = APIError(
+                    message=f"[{self.name}] Nenhum texto retornado de Llama.",
+                    endpoint="run",
+                    resource=f"ai/{self.model_name}"
+                )
+                return AIResponse(
+                    model_name=self.model_name,
+                    error=error,
+                    configurations=self.configurations,
+                    processing_time=processing_time
+                )
+                
             response_json = response.json()
             if "choices" not in response_json:
                 error_str = ""
@@ -1323,36 +1407,53 @@ class LlamaClient(APIClient):
                 else:
                     error_str = f"[{self.name}] Formato de resposta desconhecido: {response_json}"
                 logger.error(f"[{self.name}] Erro na API: {error_str}", exc_info=True)
-                raise APICommunicationError(error_str)
-            processing_time = (datetime.now() - start_time).total_seconds()
+                error = APIError(
+                    message=error_str,
+                    endpoint="run",
+                    resource=f"ai/{self.model_name}"
+                )
+                return AIResponse(
+                    model_name=self.model_name,
+                    error=error,
+                    configurations=self.configurations,
+                    processing_time=processing_time
+                )
             record_success(self.name)
             logger.debug(f"[{self.name}] Resposta recebida com sucesso")
-            return AIComparisonResponse(
+            return AIResponse(
                 response=response_json["choices"][0]["message"]["content"],
                 model_name=self.model_name,
                 configurations=self.configurations,
                 processing_time=processing_time
             )
-        except APICommunicationError as e:
+        except APICommunicationException as e:
             record_failure(self.name)
             processing_time = (datetime.now() - start_time).total_seconds()
-            return AIComparisonResponse(
-                response="",
+            error = APIError(
+                message=str(e),
+                endpoint="run",
+                resource=f"ai/{self.model_name}"
+            )
+            return AIResponse(
                 model_name=self.model_name,
+                error=error,
                 configurations=self.configurations,
-                processing_time=processing_time,
-                error=str(e)
+                processing_time=processing_time
             )
         except Exception as e:
             record_failure(self.name)
             processing_time = (datetime.now() - start_time).total_seconds()
             logger.error(f"[{self.name}] _call_api: {e}", exc_info=True)
-            return AIComparisonResponse(
-                response="",
+            error = APIError(
+                message=str(e),
+                endpoint="run",
+                resource=f"ai/{self.model_name}"
+            )
+            return AIResponse(
                 model_name=self.model_name,
+                error=error,
                 configurations=self.configurations,
-                processing_time=processing_time,
-                error=f"[{self.name}] Erro: {e}"
+                processing_time=processing_time
             )
 
 
@@ -1398,14 +1499,14 @@ class AzureClient(APIClient):
             credential=AzureKeyCredential(self.api_key),
         )
 
-    def _call_api(self, message: AIMessage) -> AIComparisonResponse:
+    def _call_api(self, message: AIPrompt) -> AIResponse:
         """Realiza a chamada à API do Azure para comparação.
 
         Args:
-            message (AIMessage): Prompts preparados para a chamada.
+            message (AIPrompt): Prompts preparados para a chamada.
 
         Returns:
-            AIComparisonResponse: Resposta da API do Azure.
+            AIResponse: Resposta da API do Azure.
         """
         attempt_call(self.name)
         start_time = datetime.now()
@@ -1419,34 +1520,53 @@ class AzureClient(APIClient):
                 **self.configurations
             }
             response = self.client.complete(**request_config)
-            if not response or not hasattr(response, 'choices') or not response.choices:
-                raise APICommunicationError("Resposta inválida da Azure API")
             processing_time = (datetime.now() - start_time).total_seconds()
+            
+            if not response or not hasattr(response, 'choices') or not response.choices:
+                error = APIError(
+                    message="Resposta inválida da Azure API",
+                    endpoint="chat/completions",
+                    resource=f"ai/{self.model_name}"
+                )
+                return AIResponse(
+                    model_name=self.model_name,
+                    error=error,
+                    configurations=self.configurations,
+                    processing_time=processing_time
+                )
             record_success(self.name)
-            return AIComparisonResponse(
+            return AIResponse(
                 response=response.choices[0].message.content,
                 model_name=self.model_name,
                 configurations=self.configurations,
                 processing_time=processing_time
             )
-        except APICommunicationError as e:
+        except APICommunicationException as e:
             record_failure(self.name)
             processing_time = (datetime.now() - start_time).total_seconds()
-            return AIComparisonResponse(
-                response="",
+            error = APIError(
+                message=str(e),
+                endpoint="chat/completions",
+                resource=f"ai/{self.model_name}"
+            )
+            return AIResponse(
                 model_name=self.model_name,
+                error=error,
                 configurations=self.configurations,
-                processing_time=processing_time,
-                error=str(e)
+                processing_time=processing_time
             )
         except Exception as e:
             record_failure(self.name)
             processing_time = (datetime.now() - start_time).total_seconds()
             logger.error(f"[{self.name}] _call_api: {e}", exc_info=True)
-            return AIComparisonResponse(
-                response="",
+            error = APIError(
+                message=str(e),
+                endpoint="chat/completions",
+                resource=f"ai/{self.model_name}"
+            )
+            return AIResponse(
                 model_name=self.model_name,
+                error=error,
                 configurations=self.configurations,
-                processing_time=processing_time,
-                error=f"Erro Azure: {e}"
+                processing_time=processing_time
             )

@@ -11,9 +11,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
-from core.types.api_response import APIResponse
+from core.types.app_response import APPResponse
 from core.types.base import JSONDict
 from core.exceptions import APIError
+from core.types.errors import APPError
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class BaseAPIView(APIView):
         Returns:
             Response: Resposta formatada para o cliente.
         """
-        api_response = APIResponse.success_response(data)
+        api_response = APPResponse.create_success(data)
         return Response(api_response.to_dict(), status=status_code)
     
     def error_response(self, message: str, status_code: int = status.HTTP_400_BAD_REQUEST) -> Response:
@@ -49,7 +50,8 @@ class BaseAPIView(APIView):
         Returns:
             Response: Resposta formatada para o cliente.
         """
-        api_response = APIResponse.error_response(message)
+        error = APPError(message=message)
+        api_response = APPResponse.create_failure(error)
         return Response(api_response.to_dict(), status=status_code)
     
     def exception_response(self, exception: Exception, status_code: Optional[int] = None) -> Response:
@@ -62,7 +64,7 @@ class BaseAPIView(APIView):
         Returns:
             Response: Resposta formatada para o cliente.
         """
-        api_response = APIResponse.from_exception(exception)
+        api_response = APPResponse.from_exception(exception)
         
         # Determinar o status code apropriado
         response_status = status_code

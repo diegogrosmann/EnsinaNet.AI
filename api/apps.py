@@ -8,7 +8,8 @@ durante a inicialização do Django.
 import logging
 import sys
 from django.apps import AppConfig
-from core.exceptions import ApplicationError
+from api.exceptions import APIClientException
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ class ApiConfig(AppConfig):
             if not settings.DEBUG:
                 logger.error("API pode estar parcialmente funcional devido a erro de inicialização")
             else:
-                raise ApplicationError(f"Falha na inicialização da API: {str(e)}")
+                raise APIClientException(f"Falha na inicialização da API: {str(e)}")
     
     def _initialize_ai_clients(self) -> None:
         """Inicializa e configura clientes de IA.
@@ -90,5 +91,20 @@ class ApiConfig(AppConfig):
         # ...
         
         # Caso necessário, podem ser adicionadas outras inicializações aqui
-        
-from django.conf import settings
+        self.configure_rest_framework()
+
+    def configure_rest_framework(self):
+        """Configura o REST Framework."""
+        settings.REST_FRAMEWORK = {
+            'DEFAULT_AUTHENTICATION_CLASSES': (
+                'accounts.authentication.CustomTokenAuthentication',
+            ),
+            'DEFAULT_PERMISSION_CLASSES': (
+                'rest_framework.permissions.IsAuthenticated',
+            ),
+            'EXCEPTION_HANDLER': 'api.exception_handlers.custom_exception_handler',
+            'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.URLPathVersioning',
+            'DEFAULT_VERSION': 'v1',
+            'ALLOWED_VERSIONS': ['v1'],  # Defina aqui todas as versões que sua API suportará
+        }
+        logger.info("Configurações do REST Framework carregadas")

@@ -8,11 +8,10 @@ do modelo de dados e do ciclo de vida da aplicação.
 
 import logging
 from django.db.models.signals import post_save, post_delete
-from django.dispatch import receiver
-from typing import Any, Dict, Type, Optional
+from typing import Any, Dict, Type
 from django.db.models import Model
 
-from core.exceptions import ApplicationError
+from api.exceptions import APIClientException
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +49,7 @@ def register_signal(model: Type[Model], signal_type: str, handler: Any) -> None:
         logger.debug(f"Sinal registrado: {signal_type} para {model.__name__}")
     except Exception as e:
         logger.error(f"Erro ao registrar sinal {signal_type} para {model.__name__}: {str(e)}")
-        raise ApplicationError(f"Falha ao configurar sinal: {str(e)}")
+        raise APIClientException(f"Falha ao configurar sinal: {str(e)}")
 
 def get_registered_signals() -> Dict[str, int]:
     """Retorna um dicionário de sinais registrados.

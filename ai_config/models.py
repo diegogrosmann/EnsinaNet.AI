@@ -18,11 +18,11 @@ from django.dispatch import receiver
 
 from accounts.models import UserToken
 from api.utils.clientsIA import AI_CLIENT_MAPPING, APIClient
-from core.types.ai import AIConfig, AIPromptConfig, AISuccess
-from core.types.training import AITrainingResponse, AITrainingExampleCollection, TrainingStatus
-from core.types.training import AITrainingCaptureConfig, AITrainingFileData
-from .storage import OverwriteStorage
+from core.types.ai import AIConfig, AIExample, AIExampleDict, AIPrompt, AIResponseDict
+from core.types.status import EntityStatus
+from core.types.training import TrainingCaptureConfig, TrainingResponse
 from django.db.models.signals import post_delete
+from core.types.ai_file import AIFileDict, AIFile
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -176,11 +176,15 @@ class AIClientConfiguration(models.Model):
         try:
             client_class = self.ai_client.get_client_class()
 
-            prompt_config = None
+            base_instruction = ''
+            prompt = ''
+            responses = ''
             if token:
                 try:
                     token_config = token.ai_configuration
-                    prompt_config = token_config.to_prompt_config()  # Utiliza método específico para prompt
+                    base_instruction = token_config.base_instruction or ''
+                    prompt = token_config.prompt or ''
+                    responses = token_config.responses or ''
                 except Exception as e:
                     logger.warning(f"Erro ao obter configuração de prompt para token {token.id}: {e}", exc_info=True)
 
@@ -191,7 +195,9 @@ class AIClientConfiguration(models.Model):
                 configurations=self.configurations,
                 use_system_message=self.use_system_message,
                 training_configurations=self.training_configurations,
-                prompt_config=prompt_config
+                base_instruction=base_instruction,
+                prompt=prompt,
+                responses=responses
             ))
         except Exception as e:
             logger.error(f"Erro ao criar instância do cliente de API: {e}", exc_info=True)
@@ -304,14 +310,14 @@ class AITrainingFile(models.Model):
     _file_data_cache = None
 
     @property
-    def file_data(self) -> AITrainingExampleCollection:
+    def file_data(self) -> AIFileDict:
         """Retorna a coleção de exemplos de treinamento a partir do arquivo.
 
         Returns:
-            AITrainingExampleCollection: Coleção de dados do arquivo de treinamento.
+            AIFileDict: Coleção de dados do arquivo de treinamento.
         """
         if self._file_data_cache is None and self.file_path:
-            self._file_data_cache = AITrainingExampleCollection.create(self.get_full_path())
+            self._file_data_cache = AIExampleDict.from_file(self.get_full_path())
         return self._file_data_cache
 
     @file_data.setter
@@ -321,12 +327,12 @@ class AITrainingFile(models.Model):
         Args:
             value: Nova coleção de exemplos de treinamento ou caminho para criação.
         """
-        if isinstance(value, AITrainingExampleCollection):
+        if isinstance(value, AIExampleDict):
             self._file_data_cache = value
         else:
-            self._file_data_cache = AITrainingExampleCollection.create(value)
+            self._file_data_cache = AIExampleDict.from_file(value)
 
-    def to_data(self) -> 'AITrainingFileData':
+    def to_data(self) -> 'AIFile':
         """Converte o modelo em uma estrutura de dados para o arquivo de treinamento.
 
         Returns:
@@ -336,14 +342,14 @@ class AITrainingFile(models.Model):
         full_path = self.get_full_path()
         if os.path.exists(full_path):
             file_size = os.path.getsize(full_path)
-        return AITrainingFileData(
+        return AIFile(
             id=self.id,
             user_id=self.user.id,
             name=self.name,
             uploaded_at=self.uploaded_at,
-            file=self.file_data,
+            data=self.file_data,
             file_size=file_size,
-            example_count=len(self.file_data.examples) if self.file_data else 0
+            example_count=len(self.file_data.items()) if self.file_data else 0
         )
 
     def save(self, *args: Any, **kwargs: Any) -> None:
@@ -359,7 +365,7 @@ class AITrainingFile(models.Model):
             ValidationError: Se o arquivo não contiver exemplos.
         """
         # Valida que o arquivo possui exemplos antes de salvar
-        if self._file_data_cache and len(self._file_data_cache.examples) == 0:
+        if self._file_data_cache and len(self._file_data_cache.items()) == 0:
             raise ValidationError("Não é possível salvar um arquivo de treinamento sem exemplos.")
 
         full_path = self.get_full_path()
@@ -367,10 +373,10 @@ class AITrainingFile(models.Model):
         file_existed = os.path.exists(full_path)
 
         try:
-            # Salva os dados em um arquivo temporário
+            # Salva os dados em um arquivo temporário usando o novo método save_file
             if self._file_data_cache:
-                with open(temp_path, 'w', encoding='utf-8') as f:
-                    json.dump(self._file_data_cache.to_dict(), f, indent=2)
+                self._file_data_cache.save_file(temp_path)
+                
             # Salva o modelo no banco de dados
             super().save(*args, **kwargs)
             # Substitui o arquivo original pelo novo, se existir
@@ -463,13 +469,13 @@ class TokenAIConfiguration(models.Model):
         if not self.prompt:
             raise ValidationError("O prompt é obrigatório")
 
-    def to_prompt_config(self) -> AIPromptConfig:
+    def to_prompt_config(self) -> AIPrompt:
         """Converte a configuração do token para um objeto de configuração de prompt.
 
         Returns:
             AIPromptConfig: Configuração de prompt estruturada.
         """
-        return AIPromptConfig(
+        return AIPrompt(
             system_message=self.base_instruction or "",
             user_message=self.prompt,
             response=self.responses or ""
@@ -548,18 +554,18 @@ class TrainingCapture(models.Model):
             self.temp_file = self._generate_file_path()
 
     @property
-    def file_data(self) -> AITrainingExampleCollection:
+    def file_data(self) -> AIExampleDict:
         """Retorna a coleção de exemplos de treinamento a partir do arquivo temporário.
 
         Returns:
-            AITrainingExampleCollection: Coleção de exemplos de treinamento.
+            AIExampleDict: Coleção de exemplos de treinamento.
         """
         if self._file_data_cache is None and self.temp_file:
             full_path = self.get_full_path()
             if os.path.exists(full_path):
-                self._file_data_cache = AITrainingExampleCollection.create(full_path)
+                self._file_data_cache = AIExampleDict.from_file(full_path)
             else:
-                self._file_data_cache = AITrainingExampleCollection()
+                self._file_data_cache = AIExampleDict()  # Retornar AIExampleDict vazio, não AIFileDict
         return self._file_data_cache
 
     @file_data.setter
@@ -569,23 +575,36 @@ class TrainingCapture(models.Model):
         Args:
             value: Nova coleção de exemplos ou caminho para criação da coleção.
         """
-        if isinstance(value, AITrainingExampleCollection):
+        if isinstance(value, AIExampleDict):
             self._file_data_cache = value
         else:
-            self._file_data_cache = AITrainingExampleCollection.create(value)
+            self._file_data_cache = AIExampleDict.from_file(value)
 
-    def to_data(self) -> 'AITrainingCaptureConfig':
+    def add_example(self, example: AIExample) -> None:
+        """Adiciona um exemplo de treinamento à captura.
+        
+        Args:
+            example: O exemplo de treinamento a ser adicionado.
+        """
+        if self.file_data is None:
+            self.file_data = AIExampleDict()
+        
+        example_id = str(uuid.uuid4())  # Gerar um ID único para o exemplo
+        self.file_data.put_item(example_id, example)
+        self.save()  # Salvar para persistir as mudanças no arquivo
+
+    def to_data(self) -> 'TrainingCaptureConfig':
         """Converte o modelo de captura em uma estrutura de dados.
 
         Returns:
             AITrainingCaptureConfig: Objeto estruturado com os dados da captura.
         """
-        return AITrainingCaptureConfig(
+        return TrainingCaptureConfig(
             id=self.id,
             token_id=self.token.id,
             ai_client_config_id=self.ai_client_config.id,
             is_active=self.is_active,
-            file=self.file_data,
+            data=self.file_data,
             create_at=self.create_at,
             last_activity=self.last_activity
         )
@@ -599,17 +618,29 @@ class TrainingCapture(models.Model):
         Args:
             *args: Argumentos posicionais.
             **kwargs: Argumentos nomeados.
+            
+        Raises:
+            TypeError: Se o cache de dados não for do tipo AIExampleDict.
         """
         full_path = self.get_full_path()
         temp_path = f"{full_path}.new"
         file_existed = os.path.exists(full_path)
 
         try:
-            # Salva os dados da captura em um arquivo temporário
-            if self._file_data_cache:
-                os.makedirs(os.path.dirname(full_path), exist_ok=True)
-                with open(temp_path, 'w', encoding='utf-8') as f:
-                    json.dump(self._file_data_cache.to_dict(), f, indent=2)
+            # Garantir que o diretório exista
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            
+            # Inicializar cache vazio se for None
+            if self._file_data_cache is None:
+                self._file_data_cache = AIExampleDict()
+                
+            # Verificar se o cache é do tipo esperado
+            if not isinstance(self._file_data_cache, AIExampleDict):
+                raise TypeError(f"O cache de dados deve ser do tipo AIExampleDict, não {type(self._file_data_cache).__name__}")
+            
+            # Sempre salvar o arquivo, mesmo que esteja vazio
+            self._file_data_cache.save_file(temp_path)
+                
             # Salva o modelo no banco de dados
             super().save(*args, **kwargs)
             # Substitui ou move o arquivo temporário para o caminho final
@@ -717,21 +748,13 @@ class AITraining(models.Model):
         updated_at (datetime): Data da última atualização.
         progress (float): Progresso do treinamento.
     """
-    STATUS_CHOICES = [
-        (TrainingStatus.NOT_STARTED.value, 'Não Iniciado'),
-        (TrainingStatus.IN_PROGRESS.value, 'Em Andamento'),
-        (TrainingStatus.COMPLETED.value, 'Concluído'),
-        (TrainingStatus.FAILED.value, 'Falhou'),
-        (TrainingStatus.CANCELLED.value, 'Cancelado')
-    ]
-
     ai_config = models.ForeignKey('AIClientConfiguration', on_delete=models.CASCADE)
     file = models.ForeignKey('AITrainingFile', on_delete=models.SET_NULL, null=True)
     job_id = models.CharField(max_length=255)
     status = models.CharField(
         max_length=20,
-        choices=STATUS_CHOICES,
-        default=TrainingStatus.NOT_STARTED.value
+        choices=[(status.value, status.name) for status in EntityStatus],
+        default=EntityStatus.NOT_STARTED.value
     )
     model_name = models.CharField(max_length=255, null=True, blank=True)
     error = models.TextField(null=True, blank=True)
@@ -749,7 +772,7 @@ class AITraining(models.Model):
         Returns:
             str: Representação contendo o job ID e o status.
         """
-        status_display = dict(self.STATUS_CHOICES).get(self.status, self.status)
+        status_display = dict((status.value, status.name) for status in EntityStatus).get(self.status, self.status)
         return f"Treinamento {self.job_id} - {status_display}"
 
     def get_global_client(self) -> AIClientGlobalConfiguration:
@@ -783,28 +806,60 @@ class AITraining(models.Model):
             logger.error(f"Erro ao cancelar treinamento {self.job_id}: {e}", exc_info=True)
             return False
 
-    def get_training_data(self) -> AITrainingResponse:
+    def get_training_data(self) -> TrainingResponse:
         """Obtém os dados atualizados do treinamento.
 
         Returns:
-            AITrainingResponse: Objeto contendo os dados do status do treinamento.
+            TrainingResponse: Objeto contendo os dados do status do treinamento.
         """
         try:
             client = self.ai_config.create_api_client_instance()
             if not client.can_train:
-                return AITrainingResponse(
+                return TrainingResponse(
                     job_id=self.job_id,
-                    status=TrainingStatus.FAILED,
+                    status=EntityStatus.FAILED,
                     error="Cliente não suporta treinamento"
                 )
             return client.get_training_status(self.job_id)
         except Exception as e:
             logger.error(f"Erro ao obter status de treinamento {self.job_id}: {e}", exc_info=True)
-            return AITrainingResponse(
+            return TrainingResponse(
                 job_id=self.job_id,
-                status=TrainingStatus.FAILED,
+                status=EntityStatus.FAILED,
                 error=str(e)
             )
+
+    def update_training_status(self) -> bool:
+        """Atualiza e salva o status do treinamento com base nos dados da API.
+
+        Este método consulta o status atual do treinamento na API e atualiza 
+        os campos do objeto AITraining de acordo.
+
+        Returns:
+            bool: True se o status foi atualizado com sucesso, False caso contrário.
+        """
+        try:
+            training_response = self.get_training_data()
+            
+            # Atualiza os campos do objeto com base no status retornado
+            self.status = training_response.status.value
+            self.progress = training_response.progress
+            
+            # Se o treinamento foi concluído com sucesso, armazena o nome do modelo
+            if training_response.status == EntityStatus.COMPLETED:
+                self.model_name = training_response.model_name
+            
+            # Se o treinamento falhou, armazena o erro
+            if training_response.status == EntityStatus.FAILED:
+                self.error = training_response.error
+            
+            # Salva as alterações no banco de dados
+            self.save()
+            logger.info(f"Status do treinamento {self.job_id} atualizado: {self.status}, progresso: {self.progress}")
+            return True
+        except Exception as e:
+            logger.error(f"Erro ao atualizar status do treinamento {self.job_id}: {e}", exc_info=True)
+            return False
 
 
 @receiver(post_delete, sender=AITraining)

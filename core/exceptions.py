@@ -1,170 +1,131 @@
-"""
-Exceções customizadas para o projeto.
+from abc import ABC
+from myproject.exceptions import AppException
 
-Define a hierarquia de exceções específicas para cada aplicação,
-permitindo um tratamento de erros mais granular e informativo.
-"""
-
-import logging
-import traceback
-from typing import Optional
-
-logger = logging.getLogger(__name__)
+class BaseCoreException(AppException, ABC):
+    """Exceção base para o módulo core."""
+    default_message = "Erro no módulo core."
+    pass
 
 
-class ApplicationError(Exception):
-    """Exceção base para toda a aplicação.
-
-    Esta classe fornece a base para todas as exceções específicas da aplicação,
-    permitindo um tratamento unificado de erros e logging centralizado.
-
-    Args:
-        message (Optional[str]): Mensagem descritiva do erro.
-        log_traceback (bool): Se True, registra o traceback completo no log.
-    """
-    def __init__(self, message: Optional[str] = None, log_traceback: bool = False):
-        self.message = message or "Erro na aplicação"
-        # Registra o erro com ou sem traceback conforme o parâmetro
-        if log_traceback:
-            logger.error(f"ApplicationError: {self.message}\n{traceback.format_exc()}")
-        else:
-            logger.error(f"ApplicationError: {self.message}")
-        super().__init__(self.message)
+class CoreException(BaseCoreException):
+    """Exceção para erros genéricos no módulo core."""
+    default_message = "Erro genérico no módulo core."
+    pass
 
 
-class AccountsError(ApplicationError):
-    """Exceção para erros relacionados à gestão de contas de usuário.
-
-    Args:
-        message (Optional[str]): Mensagem descritiva do erro.
-        log_traceback (bool): Se True, registra o traceback completo no log.
-    """
-    def __init__(self, message: Optional[str] = None, log_traceback: bool = False):
-        self.default_message = "Erro na gestão de contas"
-        super().__init__(message or self.default_message, log_traceback)
-
-
-class AccountsAuthenticationError(AccountsError):
-    """Exceção para erros específicos de autenticação.
-
-    Args:
-        message (Optional[str]): Mensagem descritiva do erro.
-        log_traceback (bool): Se True, registra o traceback completo no log.
-    """
-    def __init__(self, message: Optional[str] = None, log_traceback: bool = False):
-        self.default_message = "Erro de autenticação"
-        super().__init__(message or self.default_message, log_traceback)
-
-
-class APIError(ApplicationError):
-    """Exceção base para operações da API.
-
-    Args:
-        message (Optional[str]): Mensagem descritiva do erro.
-        status_code (int): Código HTTP associado ao erro.
-        log_traceback (bool): Se True, registra o traceback completo no log.
-    """
-    def __init__(self, message: Optional[str] = None, status_code: int = 500, log_traceback: bool = False):
-        self.status_code = status_code
-        self.default_message = "Erro interno da API"
-        if log_traceback:
-            logger.error(f"APIError ({status_code}): {message or self.default_message}\n{traceback.format_exc()}")
-        else:
-            logger.error(f"APIError ({status_code}): {message or self.default_message}")
-        super().__init__(message or self.default_message, False)  # Evita registro duplo do traceback
-
-
-class APIClientError(APIError):
-    """Exceção para erros relacionados aos clientes de API.
-
-    Args:
-        message (Optional[str]): Mensagem descritiva do erro.
-        status_code (int): Código HTTP associado ao erro (padrão 400).
-        log_traceback (bool): Se True, registra o traceback completo no log.
-    """
-    def __init__(self, message: Optional[str] = None, status_code: int = 400, log_traceback: bool = False):
-        self.default_message = "Erro no uso da API"
-        super().__init__(message or self.default_message, status_code, log_traceback)
-
-
-class APICommunicationError(APIClientError):
-    """Exceção para erros de comunicação com APIs externas.
-
-    Args:
-        message (Optional[str]): Mensagem descritiva do erro.
-        log_traceback (bool): Se True, registra o traceback completo no log.
-    """
-    def __init__(self, message: Optional[str] = None, log_traceback: bool = False):
-        self.default_message = "Erro de comunicação com serviço externo"
-        super().__init__(message or self.default_message, status_code=503, log_traceback=log_traceback)
-
-
-class FileProcessingError(APIClientError):
+class FileProcessingException(BaseCoreException):
     """Exceção para erros no processamento de arquivos.
-
+    
     Args:
-        message (Optional[str]): Mensagem descritiva do erro.
-        log_traceback (bool): Se True, registra o traceback completo no log.
+        message: Mensagem descrevendo o erro
+        filepath: Caminho do arquivo que gerou o erro (opcional)
+        details: Detalhes adicionais sobre o erro (opcional)
+        additional_data: Dados adicionais relacionados ao erro (opcional)
     """
-    def __init__(self, message: Optional[str] = None, log_traceback: bool = False):
-        self.default_message = "Erro no processamento do arquivo"
-        super().__init__(message or self.default_message, status_code=400, log_traceback=log_traceback)
+    default_message = "Erro ao processar o arquivo."
+    def __init__(self, message: str = None, filepath: str = None, details: dict = None, **kwargs):
+        additional_data = kwargs.pop('additional_data', {})
+        
+        self.filepath = filepath
+        self.details = details or {}
+        
+        if filepath:
+            additional_data['filepath'] = filepath
+        if details:
+            additional_data['details'] = details
+            
+        detailed_msg = message or self.default_message
+        if filepath:
+            detailed_msg = f"{detailed_msg} (arquivo: {filepath})"
+            
+        super().__init__(message=detailed_msg, additional_data=additional_data, **kwargs)
 
 
-class MissingAPIKeyError(APIClientError):
-    """Exceção para chave de API ausente.
-
+class CoreValidationException(BaseCoreException):
+    """Exceção base para erros de validação.
+    
+    Esta classe serve como base para erros relacionados à validação de dados,
+    como tipos inválidos ou valores fora dos limites esperados.
+    
     Args:
-        log_traceback (bool): Se True, registra o traceback completo no log.
+        message: Mensagem descrevendo o erro de validação
+        field: Campo que falhou na validação (opcional)
+        type_name: Nome do tipo que teve validação falha (opcional)
+        additional_data: Dados adicionais relacionados ao erro (opcional)
     """
-    def __init__(self, log_traceback: bool = False):
-        self.default_message = "Chave de API não configurada"
-        super().__init__(self.default_message, status_code=401, log_traceback=log_traceback)
+    default_message = "Erro de validação."
+    def __init__(self, message: str = None, field: str = None, type_name: str = None, **kwargs):
+        additional_data = kwargs.pop('additional_data', {})
+        
+        self.field = field
+        self.type_name = type_name
+        
+        if field:
+            additional_data['field'] = field
+        if type_name:
+            additional_data['type_name'] = type_name
+        
+        detailed_msg = message or self.default_message
+        
+        if type_name:
+            detailed_msg = f"[{type_name}] {detailed_msg}"
+        if field:
+            detailed_msg = f"{detailed_msg} (campo: {field})"
+            
+        super().__init__(message=detailed_msg, additional_data=additional_data, **kwargs)
 
 
-class AIConfigError(ApplicationError):
-    """Exceção para erros na configuração de IA.
-
+class CoreValueException(CoreValidationException, ValueError):
+    """Exceção para valores inválidos em tipos personalizados.
+    
+    Usada quando um objeto de dados viola suas regras de validação.
+    Estende ValueError para manter compatibilidade com código existente.
+    
     Args:
-        message (Optional[str]): Mensagem descritiva do erro.
-        log_traceback (bool): Se True, registra o traceback completo no log.
+        message: Mensagem descrevendo a violação.
+        field: Campo que contém o valor inválido (opcional).
+        type_name: Nome do tipo que teve validação falha (opcional).
+        additional_data: Dados adicionais relacionados ao erro (opcional)
     """
-    def __init__(self, message: Optional[str] = None, log_traceback: bool = False):
-        self.default_message = "Erro de configuração de IA"
-        super().__init__(message or self.default_message, log_traceback)
+    default_message = "Valor inválido."
+    def __init__(self, message: str = None, field: str = None, type_name: str = None, **kwargs):
+        super().__init__(message=message or self.default_message, field=field, type_name=type_name, **kwargs)
+        ValueError.__init__(self, str(self))
 
 
-class TrainingError(AIConfigError):
-    """Exceção para erros durante o treinamento de modelos de IA.
-
+class CoreTypeException(CoreValidationException, TypeError):
+    """Exceção para erros de tipo inválido.
+    
+    Usada quando um valor tem um tipo incompatível com o esperado.
+    Estende TypeError para manter compatibilidade com código existente.
+    
     Args:
-        message (Optional[str]): Mensagem descritiva do erro.
-        log_traceback (bool): Se True, registra o traceback completo no log.
+        message: Mensagem descrevendo o erro de tipo.
+        expected_type: Tipo que era esperado (opcional).
+        received_type: Tipo que foi recebido (opcional).
+        field: Campo que contém o tipo inválido (opcional).
+        type_name: Nome do tipo que teve validação falha (opcional).
+        additional_data: Dados adicionais relacionados ao erro (opcional)
     """
-    def __init__(self, message: Optional[str] = None, log_traceback: bool = False):
-        self.default_message = "Erro durante o processo de treinamento"
-        super().__init__(message or self.default_message, log_traceback)
-
-
-class PublicError(ApplicationError):
-    """Exceção para erros que podem ser expostos diretamente ao usuário final.
-
-    Args:
-        message (Optional[str]): Mensagem descritiva do erro.
-        log_traceback (bool): Se True, registra o traceback completo no log.
-    """
-    def __init__(self, message: Optional[str] = None, log_traceback: bool = False):
-        self.default_message = "Erro na interface pública"
-        super().__init__(message or self.default_message, log_traceback)
-
-
-class CircuitOpenError(ApplicationError):
-    """Exceção para indicar que o circuito está aberto (Circuit Breaker).
-
-    Args:
-        message (Optional[str]): Mensagem descritiva do erro.
-        log_traceback (bool): Se True, registra o traceback completo no log.
-    """
-    def __init__(self, message: Optional[str] = None, log_traceback: bool = False):
-        self.default_message = "Circuit breaker aberto para esta API"
-        super().__init__(message or self.default_message, log_traceback)
+    default_message = "Tipo inválido."
+    def __init__(self, message: str = None, expected_type: str = None, received_type: str = None, 
+                field: str = None, type_name: str = None, **kwargs):
+        additional_data = kwargs.pop('additional_data', {})
+        
+        self.expected_type = expected_type
+        self.received_type = received_type
+        
+        if expected_type:
+            additional_data['expected_type'] = expected_type
+        if received_type:
+            additional_data['received_type'] = received_type
+        
+        detailed_msg = message or self.default_message
+        
+        if expected_type and received_type:
+            detailed_msg = f"{detailed_msg} (esperado: {expected_type}, recebido: {received_type})"
+        elif expected_type:
+            detailed_msg = f"{detailed_msg} (esperado: {expected_type})"
+            
+        super().__init__(message=detailed_msg, field=field, type_name=type_name, additional_data=additional_data, **kwargs)
+        TypeError.__init__(self, str(self))

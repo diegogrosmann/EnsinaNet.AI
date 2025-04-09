@@ -65,9 +65,9 @@
                                             </label>
                                             <div class="input-group">
                                                 {{ form.model_name }}
-                                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" 
+                                                <button class="btn btn-outline-btn-group dropdown-toggle" type="button" 
                                                         id="modelDropdownButton" data-bs-toggle="dropdown" 
-                                                        aria-expanded="false" disabled>
+                                                        aria-expanded="false">
                                                     Selecionar
                                                 </button>
                                                 <ul class="dropdown-menu dropdown-menu-end w-100" id="modelsList">
@@ -245,6 +245,22 @@
     </div>
 </div>
 
+<style>
+/* Correções para dropdown headers dentro do modelsList */
+#modelsList .dropdown-header {
+    color: var(--bs-body-color) !important;
+    font-weight: 600;
+    opacity: 0.8;
+}
+
+#modelsList .dropdown-header.text-danger {
+    color: var(--bs-danger) !important;
+    opacity: 1;
+}
+</style>
+
+
+
 <script>
 // Atalho para salvar formulário com Ctrl+S ou Cmd+S
 document.addEventListener('keydown', function(e) {
@@ -331,129 +347,123 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Mostrar indicador de carregamento
         loadingIndicator.classList.remove('d-none');
-        modelDropdownButton.disabled = true;
         
-        // Armazenar o valor atual do modelo antes de limpar
         const currentModelValue = modelNameInput.value;
         const isEditMode = {{ is_edit|yesno:"true,false" }};
         
-        // Limpar o campo de nome do modelo apenas se não estivermos em modo de edição
-        // ou se o cliente IA for alterado
         if (!isEditMode) {
             modelNameInput.value = '';
         }
         
-        // Fazer a requisição AJAX
-        fetch(`{% url 'ai_config:ai_manage' %}client/${clientId}/models/`, {
-            method: 'GET',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRFToken': getCookie('csrftoken')
-            }
+        // Fazer a requisição AJAX usando a classe APIResponse
+        ajaxAPI(buildUrl("{% url 'ai_config:ai_client_models' ai_client_id=0 %}", "0", clientId), 'GET', null, {
+            showSuccess: false,
+            showError: false
         })
-        .then(response => response.json())
-        .then(data => {
+        .then(response => {
             // Esconder indicador de carregamento
             loadingIndicator.classList.add('d-none');
             
-            if (data.success) {
-                // Limpar lista atual
-                modelsList.innerHTML = '';
-                
-                // Verificar se temos modelos para mostrar
-                const baseModels = data.models.base || [];
-                const trainedModels = data.models.trained || [];
-                
-                if (baseModels.length === 0 && trainedModels.length === 0) {
-                    modelsList.innerHTML = '<li><h6 class="dropdown-header">Nenhum modelo disponível</h6></li>';
-                    modelDropdownButton.disabled = true;
-                    
-                    // Restaurar o valor original se estamos em modo de edição
-                    if (isEditMode && currentModelValue) {
-                        modelNameInput.value = currentModelValue;
-                    }
-                    return;
-                }
-                
-                // Habilitar o botão dropdown
+            // Obter dados da resposta e checar se models existe
+            const data = response.getData();
+            if (!data || !data[0] || !data[0].models) {
+                modelsList.innerHTML = '<li><h6 class="dropdown-header">Nenhum modelo disponível</h6></li>';
                 modelDropdownButton.disabled = false;
-                
-                // Adicionar modelos base
-                if (baseModels.length > 0) {
-                    modelsList.innerHTML += '<li><h6 class="dropdown-header">Modelos Base</h6></li>';
-                    baseModels.forEach(model => {
-                        const item = document.createElement('li');
-                        const link = document.createElement('a');
-                        link.className = 'dropdown-item';
-                        link.href = '#';
-                        link.textContent = model.name;
-                        
-                        // Destacar o modelo selecionado se estamos em modo de edição
-                        if (isEditMode && (model.id === currentModelValue || model.name === currentModelValue)) {
-                            link.className += ' active';
-                        }
-                        
-                        link.onclick = function(e) {
-                            e.preventDefault();
-                            modelNameInput.value = model.id;
-                            markAsChanged();
-                        };
-                        item.appendChild(link);
-                        modelsList.appendChild(item);
-                    });
-                }
-                
-                // Adicionar divisor se tivermos ambos os tipos
-                if (baseModels.length > 0 && trainedModels.length > 0) {
-                    const divider = document.createElement('li');
-                    divider.innerHTML = '<hr class="dropdown-divider">';
-                    modelsList.appendChild(divider);
-                }
-                
-                // Adicionar modelos treinados do usuário
-                if (trainedModels.length > 0) {
-                    modelsList.innerHTML += '<li><h6 class="dropdown-header">Seus Modelos Treinados</h6></li>';
-                    trainedModels.forEach(model => {
-                        const item = document.createElement('li');
-                        const link = document.createElement('a');
-                        link.className = 'dropdown-item';
-                        link.href = '#';
-                        link.textContent = model.name;
-                        link.onclick = function(e) {
-                            e.preventDefault();
-                            modelNameInput.value = model.id;
-                            markAsChanged();
-                        };
-                        item.appendChild(link);
-                        modelsList.appendChild(item);
-                    });
-                }
-                
-                // Adicionar opção para entrada manual
-                const divider = document.createElement('li');
-                divider.innerHTML = '<hr class="dropdown-divider">';
-                modelsList.appendChild(divider);
-                
-                const manualItem = document.createElement('li');
-                manualItem.innerHTML = '<span class="dropdown-item-text text-muted small">Não encontrou o modelo? Digite manualmente no campo acima.</span>';
-                modelsList.appendChild(manualItem);
-                
-            } else {
-                // Em caso de erro
-                modelDropdownButton.disabled = true;
-                modelsList.innerHTML = `<li><h6 class="dropdown-header text-danger">Erro ao carregar modelos</h6></li>
-                                      <li><span class="dropdown-item-text">${data.error || 'Tente novamente ou digite o modelo manualmente'}</span></li>`;
-                
                 // Restaurar o valor original se estamos em modo de edição
                 if (isEditMode && currentModelValue) {
                     modelNameInput.value = currentModelValue;
                 }
+                return;
             }
+            
+            // Limpar lista atual
+            modelsList.innerHTML = '';
+            
+            // Verificar se temos modelos para mostrar
+            const baseModels = data[0].models.base || [];
+            const trainedModels = data[0].models.trained || [];
+            
+            if (baseModels.length === 0 && trainedModels.length === 0) {
+                modelsList.innerHTML = '<li><h6 class="dropdown-header">Nenhum modelo disponível</h6></li>';
+                modelDropdownButton.disabled = false;
+                
+                if (isEditMode && currentModelValue) {
+                    modelNameInput.value = currentModelValue;
+                }
+                return;
+            }
+            
+            // Habilitar o botão dropdown
+            modelDropdownButton.disabled = false;
+            
+            // Adicionar modelos base
+            if (baseModels.length > 0) {
+                modelsList.innerHTML += '<li><h6 class="dropdown-header">Modelos Base</h6></li>';
+                baseModels.forEach(model => {
+                    const item = document.createElement('li');
+                    const link = document.createElement('a');
+                    link.className = 'dropdown-item';
+                    link.href = '#';
+                    link.textContent = model.name;
+                    
+                    // Destacar o modelo selecionado se estamos em modo de edição
+                    if (isEditMode && (model.id === currentModelValue || model.name === currentModelValue)) {
+                        link.className += ' active';
+                    }
+                    
+                    link.onclick = function(e) {
+                        e.preventDefault();
+                        modelNameInput.value = model.name;  // Mostra o nome legível para o usuárioe; // Alterado de model.id para model.name
+                        // Se você tiver um campo oculto para o ID:
+                        // document.getElementById('model_id_input').value = model.id;
+                        markAsChanged();
+                    };
+                    item.appendChild(link);
+                    modelsList.appendChild(item);
+                });
+            }
+            
+            // Adicionar divisor se tivermos ambos os tipos
+            if (baseModels.length > 0 && trainedModels.length > 0) {
+                const divider = document.createElement('li');
+                divider.innerHTML = '<hr class="dropdown-divider">';
+                modelsList.appendChild(divider);
+            }
+            
+            // Adicionar modelos treinados do usuário
+            if (trainedModels.length > 0) {
+                modelsList.innerHTML += '<li><h6 class="dropdown-header">Seus Modelos Treinados</h6></li>';
+                trainedModels.forEach(model => {
+                    const item = document.createElement('li');
+                    const link = document.createElement('a');
+                    link.className = 'dropdown-item';
+                    link.href = '#';
+                    link.textContent = model.name;
+                    link.onclick = function(e) {
+                        e.preventDefault();
+                        modelNameInput.value = model.name; // Alterado de model.id para model.name
+                        markAsChanged();
+                    };
+                    item.appendChild(link);
+                    modelsList.appendChild(item);
+                });
+            }
+            
+            // Adicionar opção para entrada manual
+            const divider = document.createElement('li');
+            divider.innerHTML = '<hr class="dropdown-divider">';
+            modelsList.appendChild(divider);
+            
+            const manualItem = document.createElement('li');
+            manualItem.innerHTML = '<span class="dropdown-item-text text-muted small">Não encontrou o modelo? Digite manualmente no campo acima.</span>';
+            modelsList.appendChild(manualItem);
+            
         })
         .catch(error => {
             // Esconder indicador de carregamento
             loadingIndicator.classList.add('d-none');
-            modelDropdownButton.disabled = true;
+            // Garantir que o botão seja reativado mesmo em erro
+            modelDropdownButton.disabled = false;
             modelsList.innerHTML = '<li><h6 class="dropdown-header text-danger">Erro ao carregar modelos</h6></li>' +
                                   '<li><span class="dropdown-item-text">Tente novamente ou digite o modelo manualmente</span></li>';
             console.error('Erro ao carregar modelos:', error);

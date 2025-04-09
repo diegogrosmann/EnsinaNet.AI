@@ -6,12 +6,12 @@ usando o docling como backend de processamento.
 
 import base64
 import logging
-from typing import Dict
-from core.exceptions import FileProcessingError, APIError
+from api.exceptions import APIClientException
+from core.exceptions import FileProcessingException
 from core.validators import validate_document_input
 from core.utils.docling_doc_converter import convert_pdf_bytes_to_text, convert_word_bytes_to_text
-from core.types.validation import ValidationResult
-from core.types.base import JSONDict
+
+from core.types import JSONDict
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +48,7 @@ def extract_text(data: JSONDict) -> str:
     
     try:
         # Validar os dados de entrada
-        validation_result: ValidationResult = validate_document_input(data)
-        if not validation_result.is_valid:
-            raise FileProcessingError(validation_result.error_message)
+        validate_document_input(data)
         
         # Obter extensão do arquivo
         filename = data['name']
@@ -61,7 +59,7 @@ def extract_text(data: JSONDict) -> str:
             file_bytes = base64.b64decode(data['content'])
         except Exception as e:
             logger.error(f"Erro ao decodificar conteúdo base64: {str(e)}")
-            raise FileProcessingError(f"Conteúdo base64 inválido: {str(e)}")
+            raise FileProcessingException(f"Conteúdo base64 inválido: {str(e)}")
         
         # Processar conforme o tipo de arquivo
         if extension == 'pdf':
@@ -71,11 +69,11 @@ def extract_text(data: JSONDict) -> str:
             logger.info(f"Processando arquivo Word: {filename}")
             return convert_word_bytes_to_text(file_bytes, filename)
         else:
-            raise FileProcessingError(f"Formato de arquivo não suportado: {extension}")
+            raise FileProcessingException(f"Formato de arquivo não suportado: {extension}")
     
-    except FileProcessingError:
+    except FileProcessingException:
         # Repassa a exceção já formatada
         raise
     except Exception as e:
         logger.exception(f"Erro inesperado ao extrair texto: {str(e)}")
-        raise APIError(f"Erro ao processar documento: {str(e)}")
+        raise APIClientException(f"Erro ao processar documento: {str(e)}")

@@ -48,7 +48,8 @@ INSTALLED_APPS = [
     'api',
     'public',
     'ai_config',
-    'client_version'
+    'client_version',
+    'core'
 ]
 
 SITE_ID = 1
@@ -65,28 +66,28 @@ ACCOUNT_USERNAME_REQUIRED = False
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'accounts.authentication.CustomTokenAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated',
-    ),
-    'EXCEPTION_HANDLER': 'api.exception_handlers.custom_exception_handler',
-    'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.URLPathVersioning',
-    'DEFAULT_VERSION': 'v1',
-    'ALLOWED_VERSIONS': ['v1'],  # Defina aqui todas as versões que sua API suportará
-}
+# REST_FRAMEWORK = {
+#     'DEFAULT_AUTHENTICATION_CLASSES': (
+#         'accounts.authentication.CustomTokenAuthentication',
+#     ),
+#     'DEFAULT_PERMISSION_CLASSES': (
+#         'rest_framework.permissions.IsAuthenticated',
+#     ),
+#     'EXCEPTION_HANDLER': 'api.exception_handlers.custom_exception_handler',
+#     'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.URLPathVersioning',
+#     'DEFAULT_VERSION': 'v1',
+#     'ALLOWED_VERSIONS': ['v1'],  # Defina aqui todas as versões que sua API suportará
+# }
 
 # Ajustar redirecionamentos
-LOGIN_REDIRECT_URL = 'accounts:tokens'
-LOGOUT_REDIRECT_URL = 'accounts:login'
-LOGIN_URL = 'accounts:login'
-LOGOUT_URL = 'accounts:logout'
+# LOGIN_REDIRECT_URL = 'accounts:tokens'
+# LOGOUT_REDIRECT_URL = 'accounts:login'
+# LOGIN_URL = 'accounts:login'
+# LOGOUT_URL = 'accounts:logout'
 
 # URLs de redirecionamento após confirmação de email
-ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = 'accounts:login'
-ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = 'accounts:login'
+# ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = 'accounts:login'
+# ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = 'accounts:login'
 
 # Use a confirmação de email via GET
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True
@@ -174,7 +175,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'pt-br'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'America/Sao_Paulo'
 
 USE_I18N = True
 

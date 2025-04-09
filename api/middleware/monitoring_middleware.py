@@ -7,12 +7,11 @@ e informações do token do usuário, armazenando os dados em logs e no banco de
 
 import logging
 import time
-from typing import Optional, Callable
+from typing import Callable
 from django.http import HttpRequest, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
 from accounts.models import UserToken
 from api.models import APILog
-from core.types.monitoring import APILog as APILogType
 
 logger = logging.getLogger(__name__)
 

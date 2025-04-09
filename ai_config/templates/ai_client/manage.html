@@ -290,6 +290,9 @@ document.addEventListener('DOMContentLoaded', function() {
     deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
     linkTokenModal = new bootstrap.Modal(document.getElementById('linkTokenModal'));
     
+    // Primeiro restaurar as preferências do usuário
+    restoreUserPreferences();
+    
     // Restaurar estado dos filtros
     restoreFiltersState();
     
@@ -365,8 +368,7 @@ function setupEventListeners() {
         element.addEventListener('click', toggleFilters);
     });
     
-    // Restaurar preferências do usuário
-    restoreUserPreferences();
+    // Remover chamada para restoreUserPreferences pois agora é chamada no início do carregamento
 }
 
 function setupActionButtons() {
@@ -627,9 +629,6 @@ function restoreUserPreferences() {
         }
     }
     
-    // Restaurar estado dos filtros
-    restoreFiltersState();
-    
     // Restaurar ordenação
     const savedSortKey = sessionStorage.getItem('aiTableSortKey');
     const savedSortDirection = sessionStorage.getItem('aiTableSortDirection');
@@ -683,7 +682,7 @@ function confirmDelete(id, name) {
     if (deleteModal) deleteModal.show();
 }
 
-// Handler para confirmar exclusão
+// Corrigir função handleDeleteConfirm
 function handleDeleteConfirm() {
     if (!aiIdToDelete) return;
     
@@ -696,30 +695,18 @@ function handleDeleteConfirm() {
     // Mostrar indicador de carregamento no botão
     showButtonLoading(btnDelete, 'Excluindo...');
     
-    fetch(url, {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': getCookie('csrftoken'),
-            'Content-Type': 'application/json'
-        }
+    ajaxAPI(url, 'POST', null, {
+        showLoading: false
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            if (typeof showMessage === 'function') {
-                showMessage('success', `IA excluída com sucesso.`);
-            }
-            window.location.reload();
-        } else {
-            if (typeof showMessage === 'function') {
-                showMessage('error', data.error || 'Erro ao excluir IA');
-            }
-            hideButtonLoading(btnDelete);
-        }
+    .then(response => {
+        // Exibir mensagem usando o método da APIResponse e recarregar a página
+        response.showMessage();
+        window.location.reload();
     })
     .catch(error => {
-        console.error('Erro:', error);
-        if (typeof showMessage === 'function') {
+        if (error instanceof APIResponse) {
+            error.showMessage();
+        } else {
             showMessage('error', 'Erro ao excluir IA');
         }
         hideButtonLoading(btnDelete);
@@ -754,24 +741,20 @@ function openLinkModal(aiId, aiName) {
     loadTokensForAi(aiId);
 }
 
-// Função para carregar tokens disponíveis
+// Corrigir função loadTokensForAi
 async function loadTokensForAi(aiId) {
     try {
-        const response = await fetch(buildUrl(
+        const apiUrl = buildUrl(
             `{% url 'ai_config:ai_available_tokens' 9999999999 %}`,
             '9999999999',
             aiId
-        ), {
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
+        );
+        
+        const response = await ajaxAPI(apiUrl, 'GET', null, {
+            showLoading: false,
+            showSuccess: false,
+            showError: false
         });
-        
-        if (!response.ok) {
-            throw new Error('Falha ao carregar tokens');
-        }
-        
-        const data = await response.json();
         
         // Esconder o loading
         const loadingEl = document.querySelector('.modal-loading');
@@ -781,45 +764,70 @@ async function loadTokensForAi(aiId) {
         const tokensContainer = document.querySelector('.tokens-container');
         if (tokensContainer) tokensContainer.classList.remove('d-none');
         
+        // Verificar se a resposta é bem-sucedida
+        if (!response.isSuccess()) {
+            throw new Error(response.getError()?.message || 'Falha ao carregar tokens');
+        }
+        
         // Processar a resposta
         const tokenList = document.querySelector('.token-list');
+        const responseData = response.getData();
         
-        // Correção: Acessar tokens através de data.data.tokens em vez de data.tokens
-        if (tokenList && data.data && data.data.tokens && data.data.tokens.length > 0) {
-            let tokensHtml = '';
-            data.data.tokens.forEach(token => {
-                tokensHtml += `
-                <div class="list-group-item d-flex align-items-center justify-content-between">
-                    <div>
-                        <h6 class="mb-0">${token.name}</h6>
-                        <small class="text-muted">${token.description || 'Sem descrição'}</small>
+        console.log("Dados da resposta:", responseData);
+        
+        // Identificar a estrutura da resposta e extrair os tokens
+        let tokens = [];
+        
+        // Caso 1: { tokens: [...] }
+        if (responseData && responseData.tokens && Array.isArray(responseData.tokens)) {
+            tokens = responseData.tokens;
+        } 
+        // Caso 2: [ { tokens: [...] } ]
+        else if (Array.isArray(responseData) && responseData.length > 0 && responseData[0].tokens) {
+            tokens = responseData[0].tokens;
+        }
+        // Caso 3: Array direto de tokens
+        else if (Array.isArray(responseData)) {
+            tokens = responseData;
+        }
+        
+        if (tokenList) {
+            if (tokens && tokens.length > 0) {
+                let tokensHtml = '';
+                tokens.forEach(token => {
+                    tokensHtml += `
+                    <div class="list-group-item d-flex align-items-center justify-content-between">
+                        <div>
+                            <h6 class="mb-0">${token.name || 'Token sem nome'}</h6>
+                            <small class="text-muted">${token.id}</small>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input token-toggle" 
+                                   type="checkbox" 
+                                   id="token-${token.id}" 
+                                   data-token-id="${token.id}" 
+                                   data-ai-id="${aiId}"
+                                   ${token.linked && token.enabled ? 'checked' : ''}>
+                            <span class="status-badge ms-2 badge ${token.linked && token.enabled ? 'bg-success' : 'bg-secondary'}">
+                                ${token.linked && token.enabled ? 'Ativo' : 'Inativo'}
+                            </span>
+                        </div>
                     </div>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input token-toggle" 
-                               type="checkbox" 
-                               id="token-${token.id}" 
-                               data-token-id="${token.id}" 
-                               data-ai-id="${aiId}"
-                               ${token.enabled ? 'checked' : ''}>
-                        <span class="status-badge ms-2 badge ${token.enabled ? 'bg-success' : 'bg-secondary'}">
-                            ${token.enabled ? 'Ativo' : 'Inativo'}
-                        </span>
-                    </div>
-                </div>
-                `;
-            });
-            tokenList.innerHTML = tokensHtml;
-            
-            // Adicionar listeners aos switches
-            document.querySelectorAll('.token-toggle').forEach(toggle => {
-                toggle.addEventListener('change', function() {
-                    toggleTokenForAi(this.dataset.tokenId, this.dataset.aiId, this.checked);
+                    `;
                 });
-            });
-        } else {
-            const noTokensEl = document.querySelector('.no-tokens');
-            if (noTokensEl) noTokensEl.classList.remove('d-none');
-            if (tokenList) tokenList.innerHTML = '';
+                tokenList.innerHTML = tokensHtml;
+                
+                // Adicionar listeners aos switches
+                document.querySelectorAll('.token-toggle').forEach(toggle => {
+                    toggle.addEventListener('change', function() {
+                        toggleTokenForAi(this.dataset.tokenId, this.dataset.aiId, this.checked);
+                    });
+                });
+            } else {
+                const noTokensEl = document.querySelector('.no-tokens');
+                if (noTokensEl) noTokensEl.classList.remove('d-none');
+                if (tokenList) tokenList.innerHTML = '';
+            }
         }
     } catch (error) {
         console.error('Erro ao carregar tokens:', error);
@@ -827,11 +835,17 @@ async function loadTokensForAi(aiId) {
         const errorEl = document.querySelector('.modal-error');
         
         if (loadingEl) loadingEl.classList.add('d-none');
-        if (errorEl) errorEl.classList.remove('d-none');
+        if (errorEl) {
+            errorEl.classList.remove('d-none');
+            const errorMessage = errorEl.querySelector('p.mb-0');
+            if (errorMessage) {
+                errorMessage.textContent = error.message || 'Erro ao carregar tokens. Por favor, tente novamente.';
+            }
+        }
     }
 }
 
-// Função para ativar/desativar um token para uma IA
+// Função para ativar/desativar um token para uma IA usando ajaxAPI
 async function toggleTokenForAi(tokenId, aiId, isEnabled) {
     // Encontrar elementos de UI
     const toggle = document.getElementById(`token-${tokenId}`);
@@ -842,64 +856,45 @@ async function toggleTokenForAi(tokenId, aiId, isEnabled) {
     
     // Desabilitar o switch durante o processamento
     toggle.disabled = true;
-    const originalText = statusBadge.textContent;
+    const originalState = toggle.checked;
     statusBadge.innerHTML = `
         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
         Salvando...
     `;
     
     try {
-        // Preparar dados no formato esperado pela nova API
+        // Preparar dados no formato esperado pela API
         const payload = {};
         payload[tokenId] = {};
         payload[tokenId][aiId] = isEnabled;
         
-        // Enviar atualização para a nova URL do servidor
-        const response = await fetch("{% url 'ai_config:token_ai_toggle' %}", {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken'),
-                'X-Requested-With': 'XMLHttpRequest',
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
+        // Usar ajaxAPI em vez de fetch diretamente
+        const response = await ajaxAPI("{% url 'ai_config:token_ai_toggle' %}", 'POST', payload, {
+            showLoading: false,
+            contentType: 'application/json',
+            successMessage: `Token ${isEnabled ? 'ativado' : 'desativado'} com sucesso!`,
+            errorMessage: 'Falha ao alterar estado do token'
         });
-        
-        const data = await response.json();
         
         // Restaurar o switch e atualizar a interface
         toggle.disabled = false;
         
-        if (data.success) {
+        if (response.isSuccess()) {
             // Atualizar o badge de status
             statusBadge.className = isEnabled ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
             statusBadge.textContent = isEnabled ? 'Ativo' : 'Inativo';
-            
-            // Mostrar mensagem de sucesso
-            if (typeof showMessage === 'function') {
-                showMessage('success', `Token ${isEnabled ? 'ativado' : 'desativado'} para esta IA com sucesso!`);
-            }
         } else {
             // Reverter o estado do switch em caso de erro
             toggle.checked = !isEnabled;
             statusBadge.className = !isEnabled ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
             statusBadge.textContent = !isEnabled ? 'Ativo' : 'Inativo';
-            
-            // Mostrar mensagem de erro
-            if (typeof showMessage === 'function') {
-                showMessage('error', data.error || 'Ocorreu um erro ao processar sua solicitação.');
-            }
         }
     } catch (error) {
-        console.error('Erro:', error);
+        console.error('Erro ao alterar estado do token:', error);
         toggle.disabled = false;
-        toggle.checked = !isEnabled;
-        statusBadge.className = !isEnabled ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
-        statusBadge.textContent = !isEnabled ? 'Ativo' : 'Inativo';
-        
-        if (typeof showMessage === 'function') {
-            showMessage('error', 'Erro de conexão. Tente novamente.');
-        }
+        toggle.checked = originalState; // Reverter para o estado original em caso de erro
+        statusBadge.className = originalState ? 'status-badge ms-2 badge bg-success' : 'status-badge ms-2 badge bg-secondary';
+        statusBadge.textContent = originalState ? 'Ativo' : 'Inativo';
     }
 }
 

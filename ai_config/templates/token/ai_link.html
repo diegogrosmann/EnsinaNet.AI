@@ -233,37 +233,31 @@
                 Salvando...
             `;
             
-            // Preparar payload no formato esperado pela nova API
-            const payload = {};
+            // CORREÇÃO: Modificando a estrutura do payload para evitar problemas com UUIDs
             const tokenId = "{{ token.id }}";
-            payload[tokenId] = {};
-            payload[tokenId][aiId] = isActive;
+            const payload = {
+                "token_config": {
+                    "token_id": tokenId,
+                    "ai_configs": {
+                        [aiId]: isActive
+                    }
+                }
+            };
             
-            fetch("{% url 'ai_config:token_ai_toggle' %}", {
-                method: 'POST',
-                body: JSON.stringify(payload),
+            // Garantir que esteja enviando como JSON
+            const options = {
                 headers: {
-                    'X-CSRFToken': '{{ csrf_token }}',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
                 }
-            })
+            };
+            
+            ajaxAPI("{% url 'ai_config:token_ai_toggle' %}", 'POST', payload, options)
             .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    statusBadge.className = isActive
-                        ? 'badge ms-2 bg-success'
-                        : 'badge ms-2 bg-secondary';
-                    statusBadge.textContent = isActive ? 'Ativa' : 'Inativa';
-                    showMessage('success', 'IA ' + (isActive ? 'ativada' : 'desativada') + ' com sucesso!');
-                } else {
-                    throw new Error(data.error || 'Erro ao processar solicitação');
-                }
+                statusBadge.className = isActive
+                    ? 'badge ms-2 bg-success'
+                    : 'badge ms-2 bg-secondary';
+                statusBadge.textContent = isActive ? 'Ativa' : 'Inativa';
+                showMessage('success', 'IA ' + (isActive ? 'ativada' : 'desativada') + ' com sucesso!');
             })
             .catch(error => {
                 console.error('Erro:', error);
@@ -273,7 +267,12 @@
                     ? 'badge ms-2 bg-success'
                     : 'badge ms-2 bg-secondary';
                 statusBadge.textContent = !isActive ? 'Ativa' : 'Inativa';
-                showMessage('danger', 'Erro ao processar solicitação. Tente novamente.');
+                
+                if (error instanceof APIResponse) {
+                    error.showMessage();
+                } else {
+                    showMessage('error', 'Erro ao processar solicitação. Tente novamente.');
+                }
             })
             .finally(() => {
                 toggle.disabled = false;
@@ -320,33 +319,32 @@
                 // Resto do código original da função
                 const processToastId = showMessage('info', `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Processando ${actionText} todas as IAs...`, 0, false);
                 
-                // Preparar payload para a nova API
-                const payload = {};
+                // CORREÇÃO: Modificando a estrutura do payload para evitar problemas com UUIDs
                 const tokenId = "{{ token.id }}";
-                payload[tokenId] = {};
+                const aiConfigs = {};
                 
                 // Adicionar cada AI visível ao payload
                 visibleAIs.forEach(aiId => {
-                    payload[tokenId][aiId] = activate;
+                    aiConfigs[aiId] = activate;
                 });
                 
-                fetch("{% url 'ai_config:token_ai_toggle' %}", {
-                    method: 'POST',
-                    body: JSON.stringify(payload),
+                const payload = {
+                    "token_config": {
+                        "token_id": tokenId,
+                        "ai_configs": aiConfigs
+                    }
+                };
+                
+                // Garantir que esteja enviando como JSON
+                const options = {
                     headers: {
-                        'X-CSRFToken': '{{ csrf_token }}',
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
                     }
-                })
+                };
+                
+                ajaxAPI("{% url 'ai_config:token_ai_toggle' %}", 'POST', payload, options)
                 .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.success) {
+                    if (response.success) {
                         // Fechar o toast de processamento
                         closeMessage(processToastId);
                         
@@ -370,7 +368,7 @@
                         showMessage('success', `Todas as IAs foram ${activate ? 'ativadas' : 'desativadas'} com sucesso!`);
                         updateTable(); // Atualizar tabela para refletir as mudanças em filtros/ordenação
                     } else {
-                        throw new Error(data.error || `Erro ao ${actionText} IAs`);
+                        throw new Error(response.error || `Erro ao ${actionText} IAs`);
                     }
                 })
                 .catch(error => {

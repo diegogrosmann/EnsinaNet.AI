@@ -8,14 +8,13 @@ import os
 import tempfile
 import logging
 from pathlib import Path
-from typing import Optional
 
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
-from core.exceptions import FileProcessingError, ApplicationError
-from core.types.base import JSONDict
+
+from core.exceptions import FileProcessingException
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +87,7 @@ def _convert_file_to_text(input_path: Path, format: InputFormat) -> str:
         return result.document.export_to_markdown()
     except Exception as e:
         logger.exception(f"Erro ao converter arquivo para texto: {str(e)}")
-        raise FileProcessingError(f"Erro na conversão do documento: {str(e)}")
+        raise FileProcessingException(f"Erro na conversão do documento: {str(e)}")
 
 def _process_bytes_with_temp_file(file_bytes: bytes, extension: str, 
                                 converter_func: callable) -> str:
@@ -121,7 +120,7 @@ def _process_bytes_with_temp_file(file_bytes: bytes, extension: str,
             return converter_func(temp_path)
         except Exception as e:
             logger.exception(f"Erro ao processar arquivo temporário: {str(e)}")
-            raise FileProcessingError(f"Erro ao processar documento: {str(e)}")
+            raise FileProcessingException(f"Erro ao processar documento: {str(e)}")
         finally:
             # Garantir que o arquivo temporário seja removido
             try:
@@ -147,7 +146,7 @@ def convert_pdf_file_to_text(pdf_path: str) -> str:
     if not input_path.exists():
         error_msg = f"Arquivo PDF não encontrado: {pdf_path}"
         logger.error(error_msg)
-        raise FileProcessingError(error_msg)
+        raise FileProcessingException(error_msg)
         
     return _convert_file_to_text(input_path, InputFormat.PDF)
 
@@ -185,7 +184,7 @@ def convert_word_file_to_text(word_path: str) -> str:
     if not input_path.exists():
         error_msg = f"Arquivo Word não encontrado: {word_path}"
         logger.error(error_msg)
-        raise FileProcessingError(error_msg)
+        raise FileProcessingException(error_msg)
         
     return _convert_file_to_text(input_path, InputFormat.DOCX)
 

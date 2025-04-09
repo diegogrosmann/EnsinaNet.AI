@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from accounts.models import UserToken
 from ai_config.models import TokenAIConfiguration, AIClientConfiguration, AIClientGlobalConfiguration, AIClientTokenConfig
-from core.types import APPResponse
+from core1.types import APPResponse
 
 User = get_user_model()
 

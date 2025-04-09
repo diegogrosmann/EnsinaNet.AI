@@ -7,21 +7,20 @@ e logs detalhados de requisições.
 
 import logging
 import json
-import traceback
-from typing import List, Dict, Optional, Any, Union
+import dataclasses
 from django.http import JsonResponse, HttpRequest, HttpResponse
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, get_object_or_404
-from django.db.models import Count, Avg, Sum, Q, F
+from django.db.models import Count, Avg
 from django.utils import timezone
-from datetime import datetime, timedelta
+from datetime import timedelta, datetime
+from django.utils.dateparse import parse_date
+
+from core.types.errors import APPError
 
 from ..models import APILog
 from accounts.models import UserToken
-from core.types.api_response import APIResponse, APIResponseDict, APIResponseList
-from core.types.monitoring import TokenMetrics, UsageMetrics
-from core.types.base import JSONDict
-from core.exceptions import APIError, ApplicationError
+from core.types import APPResponse
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +136,7 @@ def monitoring_data(request: HttpRequest) -> JsonResponse:
             logs_data.append(log_data)
         
         # Construir resposta tipada
-        response = APIResponseDict.success_response({
+        response = APPResponse.create_success({
             'logs': logs_data,
             'total': total_logs,
             'page': page,
@@ -145,10 +144,11 @@ def monitoring_data(request: HttpRequest) -> JsonResponse:
             'total_pages': (total_logs + per_page - 1) // per_page
         })
         
-        return JsonResponse(response.to_dict())
+        return JsonResponse(response.to_dict(), status=200)
     except Exception as e:
         logger.exception(f"Erro ao obter dados de monitoramento: {str(e)}")
-        response = APIResponseDict.error_response(f"Erro ao obter logs: {str(e)}")
+        error = APPError(message=f"Erro ao obter logs: {str(e)}")
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=500)
 
 @login_required
@@ -172,14 +172,36 @@ def monitoring_stats(request: HttpRequest) -> JsonResponse:
         is_staff = request.user.is_staff
         
         # Parâmetros de filtro
-        days = int(request.GET.get('days', 7))
         token_id = request.GET.get('token_id')
         
-        # Data de início para o período de análise
-        start_date = timezone.now() - timedelta(days=days)
+        # Filtragem por data
+        start_date_str = request.GET.get('start_date')
+        end_date_str = request.GET.get('end_date')
+        days = int(request.GET.get('days', 7))
         
-        # Construir a query base
-        logs_query = APILog.objects.filter(timestamp__gte=start_date)
+        # Se as datas específicas foram fornecidas, usá-las; caso contrário, usar days
+        if start_date_str:
+            start_date = parse_date(start_date_str)
+            if not start_date:
+                start_date = timezone.now() - timedelta(days=days)
+        else:
+            start_date = timezone.now() - timedelta(days=days)
+            
+        # Adicionar a hora ao campo de data
+        start_datetime = datetime.combine(start_date, datetime.min.time())
+        start_datetime = timezone.make_aware(start_datetime)
+            
+        # Construir a query base com filtro de data inicial
+        logs_query = APILog.objects.filter(timestamp__gte=start_datetime)
+        
+        # Se uma data final foi fornecida, aplicar o filtro
+        if end_date_str:
+            end_date = parse_date(end_date_str)
+            if end_date:
+                # Adicionar um dia inteiro para incluir todo o dia final
+                end_datetime = datetime.combine(end_date, datetime.max.time())
+                end_datetime = timezone.make_aware(end_datetime)
+                logs_query = logs_query.filter(timestamp__lte=end_datetime)
         
         # Se não for staff, filtrar apenas logs do próprio usuário
         if not is_staff:
@@ -209,6 +231,13 @@ def monitoring_stats(request: HttpRequest) -> JsonResponse:
             select={'day': 'DATE(timestamp)'}
         ).values('day').annotate(count=Count('id')).order_by('day')
         
+        # Obter tokens disponíveis para o usuário
+        tokens_query = UserToken.objects.all()
+        if not is_staff:
+            tokens_query = tokens_query.filter(user=request.user)
+            
+        tokens = [{'id': token.id, 'name': token.name} for token in tokens_query]
+        
         # Construir resposta tipada
         stats_data = {
             'total_calls': total_calls,
@@ -216,15 +245,17 @@ def monitoring_stats(request: HttpRequest) -> JsonResponse:
             'status_distribution': list(status_distribution),
             'method_distribution': list(method_distribution),
             'daily_calls': list(daily_calls),
-            'period_days': days
+            'period_days': days,
+            'tokens': tokens
         }
         
-        response = APIResponseDict.success_response(stats_data)
-        return JsonResponse(response.to_dict())
+        response = APPResponse.create_success(stats_data)
+        return JsonResponse(response.to_dict(), status=200)
         
     except Exception as e:
         logger.exception(f"Erro ao gerar estatísticas: {str(e)}")
-        response = APIResponseDict.error_response(f"Erro ao processar estatísticas: {str(e)}")
+        error = APPError(message=f"Erro ao processar estatísticas: {str(e)}")
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=500)
 
 @login_required
@@ -253,7 +284,7 @@ def monitoring_requests(request: HttpRequest) -> JsonResponse:
         # Se não for staff, filtrar apenas logs do próprio usuário
         if not is_staff:
             user_tokens = UserToken.objects.filter(user=request.user).values_list('id', flat=True)
-            logs_query = logs_query.filter(user_tokens)
+            logs_query = logs_query.filter(user_token__in=user_tokens)
         
         # Aplicar filtros
         token_id = request.GET.get('token_id')
@@ -272,10 +303,34 @@ def monitoring_requests(request: HttpRequest) -> JsonResponse:
         if path:
             logs_query = logs_query.filter(path__icontains=path)
             
-        # Filtro de período
+        # Filtragem por data
+        start_date_str = request.GET.get('start_date')
+        end_date_str = request.GET.get('end_date')
         days = int(request.GET.get('days', 7))
-        start_date = timezone.now() - timedelta(days=days)
-        logs_query = logs_query.filter(timestamp__gte=start_date)
+        
+        # Se as datas específicas foram fornecidas, usá-las; caso contrário, usar days
+        if start_date_str:
+            start_date = parse_date(start_date_str)
+            if not start_date:
+                start_date = timezone.now() - timedelta(days=days)
+        else:
+            start_date = timezone.now() - timedelta(days=days)
+            
+        # Adicionar a hora ao campo de data
+        start_datetime = datetime.combine(start_date, datetime.min.time())
+        start_datetime = timezone.make_aware(start_datetime)
+            
+        # Aplicar filtro de data inicial
+        logs_query = logs_query.filter(timestamp__gte=start_datetime)
+        
+        # Se uma data final foi fornecida, aplicar o filtro
+        if end_date_str:
+            end_date = parse_date(end_date_str)
+            if end_date:
+                # Adicionar um dia inteiro para incluir todo o dia final
+                end_datetime = datetime.combine(end_date, datetime.max.time())
+                end_datetime = timezone.make_aware(end_datetime)
+                logs_query = logs_query.filter(timestamp__lte=end_datetime)
         
         # Paginação
         page = int(request.GET.get('page', 1))
@@ -317,16 +372,19 @@ def monitoring_requests(request: HttpRequest) -> JsonResponse:
                 'status_code': status_code,
                 'method': method,
                 'path': path,
-                'days': days
+                'days': days,
+                'start_date': start_date_str,
+                'end_date': end_date_str
             }
         }
         
-        response = APIResponseDict.success_response(response_data)
-        return JsonResponse(response.to_dict())
+        response = APPResponse.create_success(response_data)
+        return JsonResponse(response.to_dict(), status=200)
         
     except Exception as e:
         logger.exception(f"Erro ao listar requisições: {str(e)}")
-        response = APIResponseDict.error_response(f"Erro ao processar requisições: {str(e)}")
+        error = APPError(message=f"Erro ao processar requisições: {str(e)}")
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=500)
 
 @login_required
@@ -354,7 +412,8 @@ def monitoring_request_details(request: HttpRequest, request_id: int) -> JsonRes
         is_staff = request.user.is_staff
         if not is_staff and log.user_token and log.user_token.user != request.user:
             # Usuário não tem permissão para acessar este log
-            response = APIResponseDict.error_response("Sem permissão para acessar este log")
+            error = APPError(message="Sem permissão para acessar este log")
+            response = APPResponse.create_failure(error)
             return JsonResponse(response.to_dict(), status=403)
         
         # Formatar o request_body e response_body como JSON se possível
@@ -391,10 +450,11 @@ def monitoring_request_details(request: HttpRequest, request_id: int) -> JsonRes
             'response_body': response_body
         }
         
-        response = APIResponseDict.success_response(log_details)
-        return JsonResponse(response.to_dict())
+        response = APPResponse.create_success(log_details)
+        return JsonResponse(response.to_dict(), status=200)
         
     except Exception as e:
         logger.exception(f"Erro ao obter detalhes da requisição {request_id}: {str(e)}")
-        response = APIResponseDict.error_response(f"Erro ao processar detalhes: {str(e)}")
+        error = APPError(message=f"Erro ao processar detalhes: {str(e)}")
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=500)

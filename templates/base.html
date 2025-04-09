@@ -93,6 +93,13 @@
         <span class="sr-only">Carregando...</span>
     </div>
 
+    <!-- Mensagem de servidor indisponível -->
+    <div id="server-unavailable-message" class="alert alert-danger text-center mb-0" style="display: none;">
+        Serviço temporariamente indisponível.
+        <button id="retry-button" class="btn btn-light btn-sm ms-2">Tentar Novamente</button>
+        <span id="retry-countdown"></span>
+    </div>
+    
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg bg-dark sticky-top" data-bs-theme="dark">
         <div class="container-fluid">
@@ -217,10 +224,25 @@
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="{% static 'js/themes.js' %}"></script>
     <script src="{% static 'js/markdownx.js' %}"></script>
+    
+    <!-- Arquivos JS utilitários na ordem correta -->
+    <script src="{% static 'js/ui.js' %}"></script>
     <script src="{% static 'js/utils.js' %}"></script>
+    <script src="{% static 'js/api.js' %}"></script>
+    <script src="{% static 'js/models.js' %}"></script>
     
     <!-- Código específico do template base -->
     <script>
+        // Capturar promises rejeitadas não tratadas para melhor depuração
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('Promise não tratada:', event.reason);
+            if (event.reason instanceof APIResponse) {
+                event.reason.showMessage();
+            } else {
+                showMessage('error', 'Ocorreu um erro inesperado na aplicação.');
+            }
+        });
+    
         // Inicializações específicas do template base
         document.addEventListener('DOMContentLoaded', function() {
             // Tooltip

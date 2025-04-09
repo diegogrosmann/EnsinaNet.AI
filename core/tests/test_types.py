@@ -1,11 +1,11 @@
 import datetime
 from dataclasses import dataclass
 from django.test import TestCase
-from core.types.base import JSONDict, T, Result
-from core.types.ai import AIMessage, AISuccess, AIPromptConfig, AIConfig
-from core.types.comparison import AIComparisonData, AISingleComparisonData, AIComparisonResponse
-from core.types.api_response import APPResponse, APIComparisonResponse
-from core.types.validation import ValidationResult
+from core1.types.base import JSONDict, T, Result
+from core1.types.ai import AIMessage, AISuccess, AIPromptConfig, AIConfig
+from core1.types.comparison import AIComparisonData, AISingleComparisonData, AIComparisonResponse
+from core1.types.app_response import APPResponse, APIComparisonResponse
+from core1.types.validation import ValidationResult
 
 @dataclass
 class DummyData:

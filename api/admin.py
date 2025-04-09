@@ -7,17 +7,16 @@ de problemas relacionados ao uso da API.
 
 import logging
 import json
-from typing import Optional, Any, List, Tuple
+from typing import Optional, Any
 
 from django.contrib import admin
 from django.http import HttpRequest
 from django.db.models import QuerySet
 from django.utils.html import format_html
-from django.core.exceptions import PermissionDenied
 from django.contrib import messages
 
-from .models import APILog, AsyncTaskRecord
-from core.exceptions import ApplicationError
+from .models import APILog
+from core.models import AsyncTaskRecord
 
 logger = logging.getLogger(__name__)
 
@@ -205,29 +204,3 @@ class APILogAdmin(admin.ModelAdmin):
             return f"Erro ao formatar corpo: {str(e)}"
             
     formatted_response_body.short_description = "Corpo da Resposta (formatado)"
-
-@admin.register(AsyncTaskRecord)
-class AsyncTaskRecordAdmin(admin.ModelAdmin):
-    """Interface administrativa para tarefas assíncronas.
-    
-    Permite visualizar e gerenciar tarefas assíncronas,
-    facilitando o monitoramento e a depuração.
-    """
-    list_display = ('task_id', 'status', 'user', 'created_at', 'updated_at')
-    list_filter = ('status', 'created_at', 'updated_at')
-    search_fields = ('task_id', 'user__email', 'user_token__key')
-    readonly_fields = ('task_id', 'created_at', 'updated_at')
-    fieldsets = (
-        ('Identificação', {
-            'fields': ('task_id', 'status')
-        }),
-        ('Usuário', {
-            'fields': ('user', 'user_token')
-        }),
-        ('Dados', {
-            'fields': ('input_data', 'result', 'error')
-        }),
-        ('Datas', {
-            'fields': ('created_at', 'updated_at')
-        }),
-    )

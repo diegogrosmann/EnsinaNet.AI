@@ -9,7 +9,7 @@ são registrados com logs padronizados.
 """
 
 import logging
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict
 from datetime import datetime
 
 from django.shortcuts import render, redirect, get_object_or_404
@@ -22,15 +22,14 @@ from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.utils.safestring import mark_safe
 from django.db import transaction
-from django.views import View
+
 
 from allauth.account.views import ConfirmEmailView
 from allauth.account.utils import send_email_confirmation
 from allauth.account.models import EmailAddress
 
-from core.types.api_response import APIResponse
+from core.types import APPResponse, APPError
 
 from .forms import (
     CustomUserCreationForm,
@@ -435,7 +434,8 @@ def token_create(request: HttpRequest) -> HttpResponse:
         if is_ajax:
             errors = {field: [str(msg) for msg in msgs] for field, msgs in form.errors.items()}
             logger.debug(f"Erros de validação do token (AJAX): {errors}")
-            response = APIResponse(success=False, error='Formulário inválido', data={'errors': form.errors})
+            app_error = APPError(message='Formulário inválido', additional_data={'errors': errors})
+            response = APPResponse.create_failure(app_error)
             return JsonResponse(response.to_dict(), status=400)
         logger.warning(f"Validação falhou na criação do token: {form.errors}")
         messages.error(request, 'Formulário inválido.')
@@ -443,8 +443,10 @@ def token_create(request: HttpRequest) -> HttpResponse:
 
     if not user.profile.is_approved:
         if is_ajax:
+            app_error = APPError(message='Sua conta não foi aprovada.')
             logger.warning(f"Tentativa de criação de token sem aprovação (AJAX): {user.email}")
-            return JsonResponse({'success': False, 'errors': {'__all__': ['Sua conta não foi aprovada.']}}, status=403)
+            response = APPResponse.create_failure(app_error)
+            return JsonResponse(response.to_dict(), status=403)
         logger.warning(f"Tentativa de criação de token sem aprovação: {user.email}")
         messages.error(request, 'Sua conta não foi aprovada.')
         return redirect('accounts:tokens_manage')
@@ -455,14 +457,16 @@ def token_create(request: HttpRequest) -> HttpResponse:
         token.save()
         logger.info(f"Token criado com sucesso: {token.name} ({token.id}) para {user.email}")
         if is_ajax:
-            response = APIResponse(success=True, data={'message': 'Token criado com sucesso!', 'token_id': str(token.id)})
+            response = APPResponse.create_success(data={'message': 'Token criado com sucesso!', 'token_id': str(token.id)})
             return JsonResponse(response.to_dict())
         messages.success(request, 'Token criado com sucesso!')
         return redirect('accounts:token_config', token.id)
     except Exception as e:
         logger.exception(f"Erro ao criar token para {user.email}: {e}", exc_info=True)
         if is_ajax:
-            return JsonResponse({'success': False, 'errors': {'__all__': [f'Erro ao criar token: {str(e)}']}}, status=500)
+            app_error = APPError(message=f'Erro ao criar token: {str(e)}')
+            response = APPResponse.create_failure(app_error)
+            return JsonResponse(response.to_dict(), status=500)
         messages.error(request, 'Erro ao criar token.')
         return redirect('accounts:tokens_manage')
 
@@ -490,21 +494,25 @@ def token_delete(request: HttpRequest, token_id: str) -> HttpResponse:
                 logger.info(f"Token excluído com sucesso: {token_name} por {user_email}")
                 messages.success(request, 'Token excluído com sucesso!')
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    response = APIResponse(success=True, data={'message': 'Token excluído com sucesso!'})
+                    response = APPResponse.create_success(data={'message': 'Token excluído com sucesso!'})
                     return JsonResponse(response.to_dict())
                 return redirect('accounts:tokens_manage')
             except Exception as e:
                 logger.exception(f"Erro ao excluir token {token.name}: {e}", exc_info=True)
                 messages.error(request, f'Erro ao excluir token: {str(e)}')
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return JsonResponse({'success': False, 'error': str(e)}, status=500)
+                    app_error = APPError(message=str(e))
+                    response = APPResponse.create_failure(app_error)
+                    return JsonResponse(response.to_dict(), status=500)
         logger.debug(f"Exibindo página de confirmação para exclusão do token: {token.name}")
         return render(request, 'accounts/manage/delete_token.html', {'token': token})
     except Exception as e:
         logger.error(f"Erro ao processar solicitação de exclusão de token: {e}", exc_info=True)
         messages.error(request, 'Erro ao processar solicitação de exclusão.')
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({'success': False, 'error': str(e)}, status=404)
+            app_error = APPError(message=str(e))
+            response = APPResponse.create_failure(app_error)
+            return JsonResponse(response.to_dict(), status=404)
         return redirect('accounts:tokens_manage')
 
 

@@ -10,6 +10,7 @@ A documentação segue o padrão Google e os logs/exceções são tratados de fo
 
 import logging
 import json
+import uuid
 import base64
 from django.http import JsonResponse, HttpRequest, HttpResponse
 from django.views.decorators.http import require_http_methods
@@ -27,11 +28,12 @@ from ai_config.models import (
     TrainingCapture
 )
 from ai_config.forms import TrainingCaptureForm
-from core.types import APIResponse
-from core.types.training import (
-    AITrainingFileDataCollection,
-    TrainingStatus,
-    AITrainingResponse
+from core.types import (
+    APPResponse, 
+    APPError, 
+    AIFileDict, 
+    EntityStatus, 
+    TrainingResponse
 )
 
 logger = logging.getLogger(__name__)
@@ -58,7 +60,7 @@ def training_center(request: HttpRequest) -> HttpResponse:
         training_files_db = AITrainingFile.objects.filter(user=user)
 
         # Converte para coleção tipada AITrainingFileDataCollection
-        training_files: AITrainingFileDataCollection = []
+        training_files = []
         for file in training_files_db:
             try:
                 training_files.append(file.to_data())
@@ -66,6 +68,7 @@ def training_center(request: HttpRequest) -> HttpResponse:
                 logger.warning(f"Erro ao converter arquivo de treinamento {file.id} para formato de dados: {e}", exc_info=True)
                 continue
 
+        t = AIFileDict(training_files)
         logger.debug(f"Encontrados {len(training_files)} arquivos de treinamento para {user.email}")
 
         # Obtém todas as configurações de IA do usuário
@@ -134,12 +137,22 @@ def training_ai(request: HttpRequest) -> JsonResponse:
         JsonResponse: Resposta JSON com status da operação.
     """
     if request.method != 'POST':
-        response = APIResponse.error_response(error_message='Método não permitido')
+        error = APPError(
+            message='Método não permitido',
+            code='method_not_allowed',
+            status_code=405
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=405)
 
     # Verificar se a requisição é AJAX
     if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        response = APIResponse.error_response(error_message='Apenas requisições AJAX são permitidas')
+        error = APPError(
+            message='Apenas requisições AJAX são permitidas',
+            code='non_ajax_request',
+            status_code=400
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=400)
 
     try:
@@ -150,20 +163,30 @@ def training_ai(request: HttpRequest) -> JsonResponse:
         # Validar seleção de IAs
         selected_ais = request.POST.getlist('selected_ais', [])
         if not selected_ais:
-            response = APIResponse.error_response(error_message='Nenhuma IA selecionada')
+            error = APPError(
+                message='Nenhuma IA selecionada',
+                code='no_ai_selected',
+                status_code=400
+            )
+            response = APPResponse.create_failure(error)
             return JsonResponse(response.to_dict(), status=400)
 
         # Validar arquivo de treinamento
         file_id = request.POST.get('file_id')
         if not file_id:
             logger.warning(f"Tentativa de treinamento sem especificar arquivo por {user.email}")
-            response = APIResponse.error_response(error_message='Arquivo de treinamento não especificado')
+            error = APPError(
+                message='Arquivo de treinamento não especificado',
+                code='no_file_specified',
+                status_code=400
+            )
+            response = APPResponse.create_failure(error)
             return JsonResponse(response.to_dict(), status=400)
 
         # Verificar existência do arquivo e propriedade
         training_file = get_object_or_404(AITrainingFile, id=file_id, user=user)
 
-        # Obter dados estruturados do arquivo
+        # Obter dados estruturados do arquivo - CORREÇÃO AQUI
         training_file_data = training_file.to_data()
         logger.info(f"Iniciando treinamento com arquivo '{training_file.name}' (ID: {file_id}) para {len(selected_ais)} IAs")
 
@@ -171,7 +194,12 @@ def training_ai(request: HttpRequest) -> JsonResponse:
         ai_count = AIClientConfiguration.objects.filter(id__in=selected_ais, user=user).count()
         if ai_count != len(selected_ais):
             logger.warning(f"Tentativa de treinar IAs que não pertencem ao usuário {user.email}")
-            response = APIResponse.error_response(error_message='Algumas IAs selecionadas não pertencem ao seu usuário')
+            error = APPError(
+                message='Algumas IAs selecionadas não pertencem ao seu usuário',
+                code='unauthorized_ai_access',
+                status_code=403
+            )
+            response = APPResponse.create_failure(error)
             return JsonResponse(response.to_dict(), status=403)
 
         # Inicia o treinamento para cada IA selecionada
@@ -188,7 +216,7 @@ def training_ai(request: HttpRequest) -> JsonResponse:
                     if not getattr(client, 'can_train', False):
                         error_msg = "Esta IA não suporta treinamento"
                         logger.warning(f"{error_msg}: {ai_config.name} (ID: {ai_id})")
-                        failed_trainings.append({'ai_name': ai_config.name, 'error': error_msg, 'status': TrainingStatus.FAILED.value})
+                        failed_trainings.append({'ai_name': ai_config.name, 'error': error_msg, 'status': EntityStatus.FAILED.value})
                         continue
 
                     training_response = client.train(training_file_data)
@@ -206,7 +234,7 @@ def training_ai(request: HttpRequest) -> JsonResponse:
                         'training_id': training.id
                     }
                     results.append(result)
-                    if training_response.status == TrainingStatus.IN_PROGRESS:
+                    if training_response.status == EntityStatus.IN_PROGRESS:
                         successful_trainings.append(result)
                         logger.info(f"Treinamento iniciado com sucesso para IA '{ai_config.name}' (ID: {ai_id})")
                     else:
@@ -217,7 +245,7 @@ def training_ai(request: HttpRequest) -> JsonResponse:
                 failed_trainings.append({
                     'ai_name': getattr(ai_config, 'name', f'IA {ai_id}'),
                     'error': str(e),
-                    'status': TrainingStatus.FAILED.value
+                    'status': EntityStatus.FAILED.value
                 })
 
         # Preparar mensagens para retorno AJAX
@@ -230,23 +258,40 @@ def training_ai(request: HttpRequest) -> JsonResponse:
             fail_msg = f'Falha ao iniciar treinamento para {len(failed_trainings)} IAs: ' + '; '.join(f"{fail.get('ai_name', 'IA')}: {fail.get('error', 'Erro desconhecido')}" for fail in failed_trainings)
 
         if not successful_trainings and failed_trainings:
-            response = APIResponse.error_response(error_message=fail_msg)
+            error = APPError(
+                message=fail_msg,
+                code='training_failed',
+                status_code=500
+            )
+            response = APPResponse.create_failure(error)
             return JsonResponse(response.to_dict(), status=500)
 
-        response = APIResponse(success=bool(successful_trainings), data={
+        response_data = {
             'successful': successful_trainings,
             'failed': failed_trainings,
             'success_message': success_msg,
             'error_message': fail_msg
-        })
+        }
+        response = APPResponse.create_success(response_data)
         return JsonResponse(response.to_dict())
     except AITrainingFile.DoesNotExist:
         logger.warning(f"Tentativa de treinamento com arquivo inexistente: {file_id}")
-        response = APIResponse.error_response(error_message='Arquivo de treinamento não encontrado')
+        error = APPError(
+            message='Arquivo de treinamento não encontrado',
+            code='file_not_found',
+            status_code=404
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=404)
     except Exception as e:
         logger.exception(f"Erro inesperado no treinamento: {e}")
-        response = APIResponse.error_response(error_message=str(e))
+        error = APPError(
+            message=str(e),
+            code='training_error',
+            status_code=500,
+            error_id=str(uuid.uuid4())
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=500)
 
 
@@ -277,36 +322,17 @@ def training_monitor(request: HttpRequest) -> JsonResponse:
                 try:
                     config = AIClientConfiguration.objects.get(id=config_id, user=user)
                     try:
-                        client = config.create_api_client_instance()
-                        if not getattr(client, 'can_train', False):
-                            logger.warning(f"IA '{config.name}' não suporta treinamento")
-                            results.append({'job_id': job_id, 'config_id': config_id, 'error': 'IA não suporta treinamento'})
-                            continue
-
-                        training_response: AITrainingResponse = client.get_training_status(job_id)
-                        logger.debug(f"Status do job {job_id} para IA '{config.name}': {training_response.status.value}, progresso: {training_response.progress:.1%}")
-
-                        try:
-                            training = AITraining.objects.get(job_id=job_id, ai_config=config)
-                            if training.status != training_response.status.value or training.progress != training_response.progress:
-                                training.status = training_response.status.value
-                                training.progress = training_response.progress
-                                if training_response.model_name:
-                                    training.model_name = training_response.model_name
-                                if training_response.error:
-                                    training.error = training_response.error
-                                training.save()
-                        except AITraining.DoesNotExist:
-                            pass
-
+                        # Verifica se existe o registro de treinamento na base
+                        training = AITraining.objects.get(job_id=job_id, ai_config=config)
+                        
                         results.append({
                             'job_id': job_id,
                             'config_id': config_id,
-                            'completed': training_response.status in [TrainingStatus.COMPLETED, TrainingStatus.FAILED],
-                            'status': training_response.status.value,
-                            'progress': round(training_response.progress * 100, 2),
-                            'error': training_response.error,
-                            'model_name': training_response.model_name
+                            'completed': training.status in [EntityStatus.COMPLETED.value, EntityStatus.FAILED.value],
+                            'status': training.status,
+                            'progress': round(training.progress * 100, 2),
+                            'error': training.error,
+                            'model_name': training.model_name
                         })
                     except Exception as e:
                         logger.error(f"Erro ao obter status do job {job_id} para IA {config_id}: {e}", exc_info=True)
@@ -314,11 +340,19 @@ def training_monitor(request: HttpRequest) -> JsonResponse:
                 except AIClientConfiguration.DoesNotExist:
                     logger.warning(f"Configuração de IA não encontrada ou não pertence ao usuário: {config_id}")
                     results.append({'job_id': job_id, 'config_id': config_id, 'error': 'Configuração não encontrada'})
-            response = APIResponse.success_response(data={'results': results})
+            
+            response_data = {'results': results}
+            response = APPResponse.create_success(response_data)
             return JsonResponse(response.to_dict())
         except Exception as e:
             logger.exception(f"Erro ao monitorar progresso dos treinamentos: {e}")
-            response = APIResponse.error_response(error_message=str(e))
+            error = APPError(
+                message=str(e),
+                code='monitoring_error',
+                status_code=500,
+                error_id=str(uuid.uuid4())
+            )
+            response = APPResponse.create_failure(error)
             return JsonResponse(response.to_dict(), status=500)
     else:
         try:
@@ -327,12 +361,12 @@ def training_monitor(request: HttpRequest) -> JsonResponse:
             active_trainings = AITraining.objects.filter(ai_config__user=user).select_related('ai_config__ai_client', 'file').order_by('-created_at')
             logger.debug(f"Encontrados {active_trainings.count()} treinamentos para o usuário {user.email}")
             for training in active_trainings:
-                status = TrainingStatus(training.status)
-                if status == TrainingStatus.NOT_STARTED:
+                status = EntityStatus(training.status)
+                if status == EntityStatus.NOT_STARTED:
                     queue_status['queued'] += 1
-                elif status == TrainingStatus.IN_PROGRESS:
+                elif status == EntityStatus.IN_PROGRESS:
                     queue_status['started'] += 1
-                elif status in [TrainingStatus.COMPLETED, TrainingStatus.FAILED]:
+                elif status in [EntityStatus.COMPLETED, EntityStatus.FAILED]:
                     queue_status['finished'] += 1
                 trainings_data.append({
                     'id': str(training.id),
@@ -346,11 +380,19 @@ def training_monitor(request: HttpRequest) -> JsonResponse:
                     'created_at': training.created_at.isoformat() if training.created_at else None,
                     'updated_at': training.updated_at.isoformat() if training.updated_at else None,
                 })
-            response = APIResponse.success_response(data={'trainings': trainings_data, 'queue_status': queue_status})
+            
+            response_data = {'trainings': trainings_data, 'queue_status': queue_status}
+            response = APPResponse.create_success(response_data)
             return JsonResponse(response.to_dict())
         except Exception as e:
             logger.exception(f"Erro ao obter status dos treinamentos: {e}")
-            response = APIResponse(success=False, error=str(e), data={'trainings': [], 'queue_status': {'queued': 0, 'started': 0, 'finished': 0}})
+            error = APPError(
+                message=str(e),
+                code='status_retrieval_error',
+                status_code=500,
+                error_id=str(uuid.uuid4())
+            )
+            response = APPResponse.create_failure(error)
             return JsonResponse(response.to_dict(), status=500)
 
 
@@ -370,38 +412,70 @@ def training_cancel(request: HttpRequest, training_id: int) -> JsonResponse:
     """
     if not training_id:
         logger.warning(f"Tentativa de cancelar treinamento sem fornecer ID por {request.user.email}")
-        response = APIResponse.error_response(error_message='ID do treinamento não fornecido')
+        error = APPError(
+            message='ID do treinamento não fornecido',
+            code='missing_training_id',
+            status_code=400
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=400)
 
     try:
         training = get_object_or_404(AITraining, id=training_id, ai_config__user=request.user)
         logger.info(f"Tentativa de cancelar treinamento {training_id} da IA '{training.ai_config.name}' por {request.user.email}")
-        if training.status != TrainingStatus.IN_PROGRESS.value:
+        if training.status != EntityStatus.IN_PROGRESS.value:
             logger.warning(f"Tentativa de cancelar treinamento que não está em andamento: {training_id}")
-            response = APIResponse.error_response(error_message='Apenas treinamentos em andamento podem ser cancelados')
+            error = APPError(
+                message='Apenas treinamentos em andamento podem ser cancelados',
+                code='invalid_training_state',
+                status_code=400
+            )
+            response = APPResponse.create_failure(error)
             return JsonResponse(response.to_dict(), status=400)
         if training.cancel_training():
             logger.info(f"Treinamento {training_id} cancelado com sucesso")
             messages.success(request, 'Treinamento cancelado com sucesso')
-            training.status = TrainingStatus.CANCELLED.value
+            training.status = EntityStatus.CANCELLED.value
             training.save(update_fields=['status'])
-            response = APIResponse.success_response(data={'message': 'Treinamento cancelado com sucesso'})
+            response_data = {'message': 'Treinamento cancelado com sucesso'}
+            response = APPResponse.create_success(response_data)
             return JsonResponse(response.to_dict())
         else:
             logger.warning(f"Não foi possível cancelar treinamento {training_id}")
-            response = APIResponse.error_response(error_message='Não foi possível cancelar o treinamento. Aguarde sua finalização e exclua o modelo.')
+            error = APPError(
+                message='Não foi possível cancelar o treinamento. Aguarde sua finalização e exclua o modelo.',
+                code='cancel_failed',
+                status_code=400
+            )
+            response = APPResponse.create_failure(error)
             return JsonResponse(response.to_dict(), status=400)
     except AITraining.DoesNotExist:
         logger.warning(f"Tentativa de cancelar treinamento inexistente: {training_id}")
-        response = APIResponse.error_response(error_message='Treinamento não encontrado')
+        error = APPError(
+            message='Treinamento não encontrado',
+            code='training_not_found',
+            status_code=404
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=404)
     except PermissionDenied:
         logger.warning(f"Tentativa de cancelar treinamento sem permissão: {training_id}")
-        response = APIResponse.error_response(error_message='Você não tem permissão para cancelar este treinamento')
+        error = APPError(
+            message='Você não tem permissão para cancelar este treinamento',
+            code='permission_denied',
+            status_code=403
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=403)
     except Exception as e:
         logger.exception(f"Erro ao cancelar treinamento {training_id}: {e}")
-        response = APIResponse.error_response(error_message=str(e))
+        error = APPError(
+            message=str(e),
+            code='cancel_error',
+            status_code=500,
+            error_id=str(uuid.uuid4())
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=500)
 
 
@@ -421,7 +495,12 @@ def training_delete(request: HttpRequest, training_id: int) -> JsonResponse:
     """
     if not training_id:
         logger.warning(f"Tentativa de excluir treinamento sem fornecer ID por {request.user.email}")
-        response = APIResponse.error_response(error_message='ID do treinamento não fornecido')
+        error = APPError(
+            message='ID do treinamento não fornecido',
+            code='missing_training_id',
+            status_code=400
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=400)
 
     try:
@@ -433,19 +512,36 @@ def training_delete(request: HttpRequest, training_id: int) -> JsonResponse:
         with transaction.atomic():
             training.delete()
         logger.info(f"Treinamento {training_id} excluído com sucesso")
-        response = APIResponse.success_response(data={'message': 'Treinamento excluído com sucesso'})
+        response_data = {'message': 'Treinamento excluído com sucesso'}
+        response = APPResponse.create_success(response_data)
         return JsonResponse(response.to_dict())
     except AITraining.DoesNotExist:
         logger.warning(f"Tentativa de excluir treinamento inexistente: {training_id}")
-        response = APIResponse.error_response(error_message='Treinamento não encontrado')
+        error = APPError(
+            message='Treinamento não encontrado',
+            code='training_not_found',
+            status_code=404
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=404)
     except PermissionDenied:
         logger.warning(f"Tentativa de excluir treinamento sem permissão: {training_id}")
-        response = APIResponse.error_response(error_message='Você não tem permissão para excluir este treinamento')
+        error = APPError(
+            message='Você não tem permissão para excluir este treinamento',
+            code='permission_denied',
+            status_code=403
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=403)
     except Exception as e:
         logger.exception(f"Erro ao excluir treinamento {training_id}: {e}")
-        response = APIResponse.error_response(error_message=str(e))
+        error = APPError(
+            message=str(e),
+            code='delete_error',
+            status_code=500,
+            error_id=str(uuid.uuid4())
+        )
+        response = APPResponse.create_failure(error)
         return JsonResponse(response.to_dict(), status=500)
 
 

@@ -7,14 +7,13 @@ degradação controlada e recuperação automática.
 
 import logging
 import threading
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 
-from core.exceptions import CircuitOpenError, ApplicationError
+from api.exceptions import CircuitOpenException
+from core.exceptions import AppException
 from core.types.circuit_breaker import (
     CircuitState,
     CircuitBreakerConfig,
-    CircuitBreakerMetrics,
     CircuitBreaker
 )
 
@@ -58,7 +57,7 @@ def attempt_call(api_name: str) -> None:
     
     if not metrics.should_allow_request(circuit_breaker.config):
         metrics.record_rejection()
-        raise CircuitOpenError(f"Circuit breaker aberto para {api_name}")
+        raise CircuitOpenException(f"Circuit breaker aberto para {api_name}")
         
     logger.debug(f"Tentativa de chamada permitida para: {api_name}")
 
@@ -129,4 +128,4 @@ def reset_breaker(api_name: str) -> None:
             logger.warning(f"Tentativa de resetar circuit breaker inexistente: {api_name}")
     except Exception as e:
         logger.error(f"Erro ao resetar circuit breaker para {api_name}: {str(e)}")
-        raise ApplicationError(f"Erro ao resetar circuit breaker: {str(e)}")
+        raise AppException(f"Erro ao resetar circuit breaker: {str(e)}")

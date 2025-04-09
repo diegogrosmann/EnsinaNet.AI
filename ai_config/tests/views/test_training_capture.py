@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 
 from ai_config.models import TrainingCapture, AIClientConfiguration, AIClientGlobalConfiguration
 from accounts.models import UserToken
-from core.types import APPResponse
+from core1.types import APPResponse
 
 User = get_user_model()
 

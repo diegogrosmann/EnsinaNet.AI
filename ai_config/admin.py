@@ -5,7 +5,7 @@ configurações de clientes, arquivos de treinamento e modelos treinados.
 """
 
 import logging
-from typing import Any, Optional, Dict, List
+from typing import Any, Optional
 
 from django.http import JsonResponse
 from django.urls import path, reverse
@@ -14,12 +14,12 @@ from django.shortcuts import redirect, get_object_or_404
 from django.contrib import admin, messages
 from django.utils.html import format_html
 from django.db import transaction
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest
 
-from core.types.ai import AISuccess
-from core.types.base import Result
-from core.types.task import TaskStatus
-from core.exceptions import AIConfigError, TrainingError, ApplicationError
+from ai_config.exceptions.ai_exceptions import AIConfigException
+from core.types.app_response import APPResponse
+from core.types.errors import APPError
+from core.types.status import EntityStatus
 
 from .models import ( 
     AIClientGlobalConfiguration, 
@@ -106,7 +106,7 @@ class AIClientGlobalConfigAdmin(admin.ModelAdmin):
                 )
         except Exception as e:
             logger.exception(f"Erro ao salvar configuração global '{obj.name}': {e}")
-            raise AIConfigError(f"Erro ao salvar configuração: {str(e)}")
+            raise AIConfigException(f"Erro ao salvar configuração: {str(e)}")
 
 class AIClientConfigurationAdmin(admin.ModelAdmin):
     """Administração das configurações dos clientes de IA."""
@@ -344,18 +344,39 @@ class AITrainingAdmin(admin.ModelAdmin):
             JsonResponse: Resposta com status da operação
         """
         if request.method != 'POST':
-            return JsonResponse({'error': 'Método não permitido'}, status=405)
+            error = APPError(
+                message='Método não permitido', 
+                code='method_not_allowed',
+                status_code=405
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=405)
             
         ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id)
         try:
             if ai_config.ai_client.delete_training_file(file_id):
                 logger.info(f"Arquivo {file_id} excluído com sucesso por {request.user.username}")
-                return JsonResponse({'success': True})
+                response_data = {'message': 'Arquivo excluído com sucesso'}
+                response = APPResponse(success=True, data=response_data)
+                return JsonResponse(response.to_dict())
+            
             logger.warning(f"Falha ao excluir arquivo {file_id}")
-            return JsonResponse({'error': 'Não foi possível deletar o arquivo'}, status=400)
+            error = APPError(
+                message='Não foi possível deletar o arquivo',
+                code='file_deletion_failed',
+                status_code=400
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=400)
         except Exception as e:
             logger.error(f"Erro ao deletar arquivo {file_id}: {e}", exc_info=True)
-            return JsonResponse({'error': str(e)}, status=500)
+            error = APPError(
+                message=str(e),
+                code='file_deletion_error',
+                status_code=500
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=500)
     
     def delete_model_view(self, request, ai_config_id, model_name):
         """View para deletar um modelo treinado.
@@ -369,18 +390,39 @@ class AITrainingAdmin(admin.ModelAdmin):
             JsonResponse: Resposta com status da operação
         """
         if request.method != 'POST':
-            return JsonResponse({'error': 'Método não permitido'}, status=405)
+            error = APPError(
+                message='Método não permitido',
+                code='method_not_allowed',
+                status_code=405
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=405)
             
         ai_config = get_object_or_404(AIClientConfiguration, id=ai_config_id)
         try:
             if ai_config.ai_client.delete_trained_model(model_name):
                 logger.info(f"Modelo {model_name} excluído com sucesso por {request.user.username}")
-                return JsonResponse({'success': True})
+                response_data = {'message': 'Modelo excluído com sucesso'}
+                response = APPResponse(success=True, data=response_data)
+                return JsonResponse(response.to_dict())
+            
             logger.warning(f"Falha ao excluir modelo {model_name}")
-            return JsonResponse({'error': 'Não foi possível deletar o modelo'}, status=400)
+            error = APPError(
+                message='Não foi possível deletar o modelo',
+                code='model_deletion_failed',
+                status_code=400
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=400)
         except Exception as e:
             logger.error(f"Erro ao deletar modelo {model_name}: {e}", exc_info=True)
-            return JsonResponse({'error': str(e)}, status=500)
+            error = APPError(
+                message=str(e),
+                code='model_deletion_error',
+                status_code=500
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=500)
 
 class AIModelsAdmin(admin.ModelAdmin):
     """Interface administrativa para gerenciar modelos."""
@@ -513,13 +555,25 @@ class AIModelsAdmin(admin.ModelAdmin):
             JsonResponse: Resposta com status da operação
         """
         if request.method != 'POST':
-            return JsonResponse({'error': 'Método não permitido'}, status=405)
+            error = APPError(
+                message='Método não permitido',
+                code='method_not_allowed',
+                status_code=405
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=405)
         
         config_id = request.POST.get('ai_config')
         model_ids = request.POST.getlist('model_names[]')
         
         if not config_id or not model_ids:
-            return JsonResponse({'error': 'Parâmetros inválidos'}, status=400)
+            error = APPError(
+                message='Parâmetros inválidos',
+                code='invalid_parameters',
+                status_code=400
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=400)
         
         config = get_object_or_404(AIClientGlobalConfiguration, id=config_id)
         
@@ -532,7 +586,7 @@ class AIModelsAdmin(admin.ModelAdmin):
                     # Primeiro verifica se existe treinamento associado a este modelo
                     training = AITraining.objects.filter(model_name=model_id).first()
                     
-                    if training and training.status != TaskStatus.COMPLETED.value:
+                    if training and training.status != EntityStatus.COMPLETED.value:
                         errors.append(f"Não é possível excluir o modelo {model_id} porque o treinamento {training.id} ainda está em andamento.")
                         continue
                     
@@ -544,7 +598,7 @@ class AIModelsAdmin(admin.ModelAdmin):
                         except Exception as e:
                             logger.error(f"Erro ao deletar registro de treinamento {training.id}: {e}", exc_info=True)
                             errors.append(f'Erro ao deletar registro de treinamento {training.id}: {str(e)}')
-                            result = Result(success=False, error=str(e))
+                            result = APPResponse(success=False, error=APPError(message=str(e)))
                     else:
                         client = config.create_api_client_instance()
                         # Tenta excluir o modelo da API
@@ -565,13 +619,21 @@ class AIModelsAdmin(admin.ModelAdmin):
                     errors.append(f'Erro ao deletar modelo {model_id}: {str(e)}')
         except Exception as e:
             logger.error(f"Erro ao criar cliente de API: {e}", exc_info=True)
-            return JsonResponse({'error': f'Erro ao criar cliente de API: {str(e)}'}, status=500)
+            error = APPError(
+                message=f'Erro ao criar cliente de API: {str(e)}',
+                code='api_client_error',
+                status_code=500
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=500)
         
-        return JsonResponse({
-            'success': True,
+        response_data = {
             'deleted': success_count,
             'errors': errors
-        })
+        }
+        
+        response = APPResponse(success=True, data=response_data)
+        return JsonResponse(response.to_dict())
 
 class AIFilesAdmin(admin.ModelAdmin):
     """Interface administrativa para gerenciar arquivos de IA."""
@@ -686,13 +748,25 @@ class AIFilesAdmin(admin.ModelAdmin):
             JsonResponse: Resposta com status da operação
         """
         if request.method != 'POST':
-            return JsonResponse({'error': 'Método não permitido'}, status=405)
+            error = APPError(
+                message='Método não permitido',
+                code='method_not_allowed',
+                status_code=405
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=405)
         
         config_id = request.POST.get('ai_config')
         file_ids = request.POST.getlist('file_ids[]')
         
         if not config_id or not file_ids:
-            return JsonResponse({'error': 'Parâmetros inválidos'}, status=400)
+            error = APPError(
+                message='Parâmetros inválidos',
+                code='invalid_parameters',
+                status_code=400
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=400)
         
         config = get_object_or_404(AIClientGlobalConfiguration, id=config_id)
         
@@ -715,13 +789,21 @@ class AIFilesAdmin(admin.ModelAdmin):
                     errors.append(f'Erro ao deletar arquivo {file_id}: {str(e)}')
         except Exception as e:
             logger.error(f"Erro ao criar cliente de API: {e}", exc_info=True)
-            return JsonResponse({'error': f'Erro ao criar cliente de API: {str(e)}'}, status=500)
+            error = APPError(
+                message=f'Erro ao criar cliente de API: {str(e)}',
+                code='api_client_error',
+                status_code=500
+            )
+            response = APPResponse(success=False, error=error)
+            return JsonResponse(response.to_dict(), status=500)
         
-        return JsonResponse({
-            'success': True,
+        response_data = {
             'deleted': success_count,
             'errors': errors
-        })
+        }
+        
+        response = APPResponse(success=True, data=response_data)
+        return JsonResponse(response.to_dict())
 
 # Registra o admin
 admin.site.register(AIClientGlobalConfiguration, AIClientGlobalConfigAdmin)

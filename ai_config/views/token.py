@@ -18,7 +18,7 @@ from django.db import transaction
 from accounts.models import UserToken
 from ai_config.models import TokenAIConfiguration, AIClientConfiguration, AIClientTokenConfig
 from ai_config.forms import TokenAIConfigurationForm
-from core.types import APIResponse
+from core.types import APPResponse, APPError
 
 logger = logging.getLogger(__name__)
 
@@ -56,21 +56,22 @@ def prompt_config(request: HttpRequest, token_id: str) -> HttpResponse:
                             form.save()
                         logger.info(f"Configurações TokenAI atualizadas para token '{token.name}' (ID: {token_id})")
                         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                            response = APIResponse.success_response(data={'message': 'Configurações salvas com sucesso!'})
+                            response = APPResponse.create_success(data={'message': 'Configurações salvas com sucesso!'})
                             return JsonResponse(response.to_dict())
                         messages.success(request, 'Configurações TokenAI atualizadas com sucesso!')
                         return redirect('accounts:token_config', token_id=token.id)
                     except Exception as e:
                         logger.exception(f"Erro ao salvar TokenAIConfiguration para token {token_id}: {e}")
                         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                            response = APIResponse.error_response(error_message=f'Erro ao salvar as configurações: {str(e)}')
+                            error = APPError(message=f'Erro ao salvar as configurações: {str(e)}', status_code=500)
+                            response = APPResponse.create_failure(error=error)
                             return JsonResponse(response.to_dict(), status=500)
                         messages.error(request, f'Erro ao salvar as configurações TokenAI: {str(e)}')
             else:
                 logger.warning(f"Formulário TokenAI inválido para token {token_id}: {form.errors}")
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                     errors = {field: str(error) for field, error in form.errors.items()}
-                    response = APIResponse(success=False, error='Corrija os erros no formulário', data={'errors': errors})
+                    response = APPResponse.create_failure(data={'errors': errors}, error=APPError(message='Corrija os erros no formulário', status_code=400))
                     return JsonResponse(response.to_dict(), status=400)
                 else:
                     if 'prompt' in form.errors:
@@ -85,14 +86,16 @@ def prompt_config(request: HttpRequest, token_id: str) -> HttpResponse:
     except UserToken.DoesNotExist:
         logger.warning(f"Tentativa de acessar configuração TokenAI para token inexistente: {token_id}")
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            response = APIResponse.error_response(error_message='Token não encontrado')
+            error = APPError(message='Token não encontrado', status_code=404)
+            response = APPResponse.create_failure(error=error)
             return JsonResponse(response.to_dict(), status=404)
         messages.error(request, 'Token não encontrado.')
         return redirect('accounts:tokens_manage')
     except Exception as e:
         logger.exception(f"Erro ao acessar configuração TokenAI para token {token_id}: {e}")
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            response = APIResponse.error_response(error_message='Ocorreu um erro ao processar a requisição')
+            error = APPError(message='Ocorreu um erro ao processar a requisição', status_code=500)
+            response = APPResponse.create_failure(error=error)
             return JsonResponse(response.to_dict(), status=500)
         messages.error(request, 'Ocorreu um erro ao carregar a configuração. Tente novamente mais tarde.')
         return redirect('accounts:tokens_manage')
@@ -148,8 +151,10 @@ def token_ai_toggle(request: HttpRequest) -> JsonResponse:
 
     Recebe um payload JSON com a estrutura:
         {
-            'token_id1': {'ai_id1': True, 'ai_id2': False, ...},
-            'token_id2': {'ai_id1': True, 'ai_id2': False, ...}
+            'token_config': {
+                'token_id': 'uuid-do-token',
+                'ai_configs': {'ai_id1': True, 'ai_id2': False, ...}
+            }
         }
 
     Args:
@@ -160,19 +165,47 @@ def token_ai_toggle(request: HttpRequest) -> JsonResponse:
     """
     user = request.user
     if request.method != 'POST':
-        response = APIResponse.error_response(error_message='Método não permitido')
+        error = APPError(message='Método não permitido', status_code=405)
+        response = APPResponse.create_failure(error=error)
         return JsonResponse(response.to_dict(), status=405)
     try:
-        data = json.loads(request.body)
-        if not isinstance(data, dict):
-            raise ValueError("Formato de dados inválido. Esperado um objeto JSON.")
+        # Detectar formato dos dados: JSON ou form data
+        if request.content_type and 'application/json' in request.content_type and request.body:
+            try:
+                data = json.loads(request.body)
+            except json.JSONDecodeError:
+                logger.error("Erro ao decodificar JSON na requisição", exc_info=True)
+                error = APPError(message='Formato de dados inválido. JSON malformado.', status_code=400)
+                response = APPResponse.create_failure(error=error)
+                return JsonResponse(response.to_dict(), status=400)
+        else:
+            # Se não é JSON, obter dados do formulário
+            data = dict(request.POST.items())
+            
+        if not data:
+            error = APPError(message='Nenhum dado recebido', status_code=400)
+            response = APPResponse.create_failure(error=error)
+            return JsonResponse(response.to_dict(), status=400)
+        
         results = {}
         errors = []
+        
+        # NOVO: Processar o formato atualizado do payload
         with transaction.atomic():
-            for token_id, ai_configs in data.items():
+            if 'token_config' in data:
+                token_config = data['token_config']
+                token_id = token_config.get('token_id')
+                ai_configs = token_config.get('ai_configs', {})
+                
+                if not token_id or not ai_configs:
+                    error = APPError(message='Dados incompletos', status_code=400)
+                    response = APPResponse.create_failure(error=error)
+                    return JsonResponse(response.to_dict(), status=400)
+                
                 try:
                     token = get_object_or_404(UserToken, id=token_id, user=user)
                     token_results = {}
+                    
                     for ai_id, enable in ai_configs.items():
                         try:
                             ai_config = get_object_or_404(AIClientConfiguration, id=ai_id, user=user)
@@ -188,24 +221,63 @@ def token_ai_toggle(request: HttpRequest) -> JsonResponse:
                             token_results[ai_id] = False
                             logger.error(f"Erro ao configurar IA {ai_id} para token {token_id}: {ai_error}", exc_info=True)
                             errors.append(f"Erro ao configurar IA {ai_id} para token {token_id}: {str(ai_error)}")
+                    
                     results[token_id] = token_results
                 except Exception as token_error:
                     results[token_id] = False
                     logger.error(f"Erro ao processar token {token_id}: {token_error}", exc_info=True)
                     errors.append(f"Erro ao processar token {token_id}: {str(token_error)}")
+            else:
+                # Manter compatibilidade com o formato antigo
+                for token_id, ai_configs in data.items():
+                    # Converter string em dict se necessário (caso de form data)
+                    if isinstance(ai_configs, str):
+                        try:
+                            ai_configs = json.loads(ai_configs)
+                        except json.JSONDecodeError:
+                            logger.error(f"Erro ao decodificar configs para token {token_id}", exc_info=True)
+                            errors.append(f"Formato inválido para token {token_id}")
+                            continue
+                    
+                    try:
+                        token = get_object_or_404(UserToken, id=token_id, user=user)
+                        token_results = {}
+                        for ai_id, enable in ai_configs.items():
+                            try:
+                                ai_config = get_object_or_404(AIClientConfiguration, id=ai_id, user=user)
+                                config, created = AIClientTokenConfig.objects.update_or_create(
+                                    token=token,
+                                    ai_config=ai_config,
+                                    defaults={'enabled': enable}
+                                )
+                                action = "ativada" if enable else "desativada"
+                                logger.info(f"IA {ai_id} {action} para token '{token.name}' (ID: {token_id})")
+                                token_results[ai_id] = True
+                            except Exception as ai_error:
+                                token_results[ai_id] = False
+                                logger.error(f"Erro ao configurar IA {ai_id} para token {token_id}: {ai_error}", exc_info=True)
+                                errors.append(f"Erro ao configurar IA {ai_id} para token {token_id}: {str(ai_error)}")
+                        results[token_id] = token_results
+                    except Exception as token_error:
+                        results[token_id] = False
+                        logger.error(f"Erro ao processar token {token_id}: {token_error}", exc_info=True)
+                        errors.append(f"Erro ao processar token {token_id}: {str(token_error)}")
+        
         response_data = {'results': results}
         if errors:
-            response = APIResponse(success=False, data=response_data, error=errors[0] if errors else None)
+            response = APPResponse.create_failure(error=APPError(message=errors[0], status_code=207))
             return JsonResponse(response.to_dict(), status=207)
-        response = APIResponse.success_response(data=response_data)
+        response = APPResponse.create_success(data=response_data)
         return JsonResponse(response.to_dict())
     except json.JSONDecodeError:
         logger.error("Erro ao decodificar JSON na requisição", exc_info=True)
-        response = APIResponse.error_response(error_message='Formato de dados inválido. JSON malformado.')
+        error = APPError(message='Formato de dados inválido. JSON malformado.', status_code=400)
+        response = APPResponse.create_failure(error=error)
         return JsonResponse(response.to_dict(), status=400)
     except Exception as e:
         logger.exception(f"Erro ao processar configuração em massa: {e}")
-        response = APIResponse.error_response(error_message=f'Erro ao processar a requisição: {str(e)}')
+        error = APPError(message=f'Erro ao processar a requisição: {str(e)}', status_code=500)
+        response = APPResponse.create_failure(error=error)
         return JsonResponse(response.to_dict(), status=500)
 
 
@@ -229,11 +301,10 @@ def get_ai_models(request: HttpRequest, ai_client_id: int) -> JsonResponse:
         client_instance = ai_client.create_api_client_instance()
         if not hasattr(client_instance, 'api_list_models'):
             logger.warning(f"Cliente {ai_client.api_client_class} não suporta listagem de modelos")
-            return JsonResponse({
-                'success': False,
-                'error': 'Este cliente de IA não suporta listagem de modelos',
-                'models': []
-            })
+            error = APPError(message='Este cliente de IA não suporta listagem de modelos', status_code=400)
+            response = APPResponse.create_failure(error)
+            return JsonResponse(response.to_dict(), status=400)
+
         models = client_instance.api_list_models(list_trained_models=True, list_base_models=True)
         from ai_config.models import AITraining
         user_trained_models = set(AITraining.objects.filter(ai_config__user=request.user, status='completed').values_list('model_name', flat=True))
@@ -246,17 +317,10 @@ def get_ai_models(request: HttpRequest, ai_client_id: int) -> JsonResponse:
                     trained_models.append(model_data)
             else:
                 base_models.append(model_data)
-        return JsonResponse({
-            'success': True,
-            'models': {
-                'base': base_models,
-                'trained': trained_models
-            }
-        })
+        response = APPResponse.create_success(data={'models': {'base': base_models, 'trained': trained_models}})
+        return JsonResponse(response.to_dict())
     except Exception as e:
         logger.error(f"Erro ao listar modelos para cliente IA {ai_client_id}: {str(e)}", exc_info=True)
-        return JsonResponse({
-            'success': False,
-            'error': f'Erro ao carregar modelos: {str(e)}',
-            'models': []
-        }, status=500)
+        error = APPError(message=f'Erro ao carregar modelos: {str(e)}', status_code=500)
+        response = APPResponse.create_failure(error)
+        return JsonResponse(response.to_dict(), status=500)

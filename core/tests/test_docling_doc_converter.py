@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from django.test import TestCase
 from core.exceptions import FileProcessingError
-from api.utils.docling_doc_converter import (
+from core.utils.docling_doc_converter import (
     _convert_file_to_text,
     _process_bytes_with_temp_file,
     convert_pdf_file_to_text,

@@ -107,12 +107,54 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Suporte ao ctrl+s
+    // Suporte ao ctrl+s com submissão via AJAX
     document.addEventListener('keydown', function(e) {
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
             e.preventDefault();
-            document.getElementById('settingsForm').submit();
+            submitFormAjax();
         }
+    });
+
+    // Função para enviar o formulário via AJAX
+    function submitFormAjax() {
+        const form = document.getElementById('settingsForm');
+        const formData = new FormData(form);
+        
+        // Desabilitar botão de submit durante o processo
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Salvando...';
+        }
+        
+        // Chamada atualizada: método como segundo parâmetro e opções como quarto parâmetro
+        ajaxAPI(window.location.href, 'POST', formData, { contentType: false, processData: false })
+        .then(response => {
+            // Mostrar mensagem de sucesso
+            response.showMessage();
+            window.hasUnsavedChanges = false;
+        })
+        .catch(error => {
+            if (error instanceof APIResponse) {
+                error.showMessage();
+            } else {
+                showMessage('error', 'Erro ao salvar configurações');
+                console.error('Erro:', error);
+            }
+        })
+        .finally(() => {
+            // Restaurar botão
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-save me-2"></i>Salvar Alterações';
+            }
+        });
+    }
+    
+    // Trata o submit do formulário para usar AJAX quando apropriado
+    document.getElementById('settingsForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        submitFormAjax();
     });
 
     // Preserva a aba ativa após recarregar a página
@@ -130,6 +172,14 @@ document.addEventListener('DOMContentLoaded', function() {
     triggerTabList.forEach(function (triggerEl) {
         triggerEl.addEventListener('shown.bs.tab', function (e) {
             localStorage.setItem('activeSettingsTab', '#' + e.target.id);
+        });
+    });
+
+    // Marcar formulário como tendo alterações não salvas
+    const formInputs = document.querySelectorAll('#settingsForm input, #settingsForm select, #settingsForm textarea');
+    formInputs.forEach(input => {
+        input.addEventListener('change', function() {
+            window.hasUnsavedChanges = true;
         });
     });
 

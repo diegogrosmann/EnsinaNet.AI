@@ -142,28 +142,19 @@ document.addEventListener('DOMContentLoaded', function() {
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processando...';
             
-            const response = await fetch('{% url "ai_config:capture_toggle" %}', {
-                method: 'POST',
-                body: formData
+            // Substituindo fetch por ajaxAPI
+            const apiResponse = await ajaxAPI('{% url "ai_config:capture_toggle" %}', 'POST', formData, {
+                showLoading: false
+                // As opções contentType e processData são configuradas automaticamente para FormData
             });
-
-            if (!response.ok) {
-                throw new Error(`Erro de resposta: ${response.status} ${response.statusText}`);
-            }
-
-            const data = await response.json();
             
             // Restaurar botão
             submitBtn.disabled = false;
             submitBtn.innerHTML = originalBtnHtml;
             
-            if (!data.success) {
-                // Mostrar mensagem de erro
-                if (typeof showMessage === 'function') {
-                    showMessage('error', data.error || 'Erro ao ativar a captura');
-                } else {
-                    showError(data.error || 'Erro ao ativar a captura');
-                }
+            if (!apiResponse.isSuccess()) {
+                // Usar o método da APIResponse para mostrar mensagem de erro
+                apiResponse.showMessage();
                 
                 form.reset();
                 form.classList.remove('was-validated');
@@ -174,13 +165,17 @@ document.addEventListener('DOMContentLoaded', function() {
             // Esconder o modal
             bootstrap.Modal.getInstance(document.getElementById('captureModal')).hide();
             
-            // Atualizar a UI para mostrar que a captura está ativa
-            updateUICaptureActive(data.data);
-            
-            // Mostrar mensagem de sucesso
-            if (typeof showMessage === 'function') {
-                showMessage('success', 'Captura ativada com sucesso');
+            // Verificar se data é uma lista e pegar o primeiro item se necessário
+            let configData = apiResponse.getData();
+            if (Array.isArray(configData)) {
+                configData = configData[0];
             }
+            
+            // Atualizar a UI para mostrar que a captura está ativa
+            updateUICaptureActive(configData);
+            
+            // Mostrar mensagem de sucesso usando o método da APIResponse
+            apiResponse.showMessage();
             
         } catch (error) {
             console.error('Erro:', error);
@@ -190,12 +185,7 @@ document.addEventListener('DOMContentLoaded', function() {
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<i class="bi bi-play-circle me-2"></i>Iniciar Captura';
             
-            // Mostrar mensagem de erro
-            if (typeof showMessage === 'function') {
-                showMessage('error', 'Erro ao se comunicar com o servidor: ' + error.message);
-            } else {
-                showError('Erro ao se comunicar com o servidor: ' + error.message);
-            }
+            showMessage('error', 'Erro ao se comunicar com o servidor: ' + error.message);
             
             form.reset();
             form.classList.remove('was-validated');

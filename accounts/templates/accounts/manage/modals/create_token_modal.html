@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Manipular envio do formulário via AJAX - adaptado para APPResponse
+    // Manipular envio do formulário via ajaxAPI
     createTokenForm.addEventListener('submit', function(e) {
         e.preventDefault();
         
@@ -128,49 +128,34 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        // Mostrar estado de carregamento no botão
         createTokenButton.disabled = true;
         createTokenButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Criando...';
         
         const formData = new FormData(this);
         
-        fetch(this.action, {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            credentials: 'same-origin'
-        })
+        // Substituir fetch por ajaxAPI
+        ajaxAPI(this.action, 'POST', formData, { contentType: false, processData: false })
         .then(response => {
-            if (!response.ok) {
-                return response.json()
-                    .catch(() => {
-                        return response.text().then(text => {
-                            return { success: false, error: 'Erro no servidor' };
-                        });
-                    });
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (!data.success) {
-                // Processamento de erro padronizado usando APPResponse
-                if (data.data && data.data.errors) {
-                    showFormErrors(data.data.errors);
-                } else {
-                    showFormErrors(data.error || 'Erro ao criar token');
-                }
-                throw new Error(data.error || 'Erro ao criar token');
-            }
-            
-            // Sucesso - APPResponse contém success=true
+            // Sucesso - APIResponse contém success=true
             const modal = bootstrap.Modal.getInstance(document.getElementById('createTokenModal'));
             modal.hide();
             window.location.reload();
         })
         .catch(error => {
-            console.error('Erro durante processo:', error);
-            // Os erros já são exibidos no bloco then
+            // Tratar erros usando APIResponse
+            if (error instanceof APIResponse) {
+                // Verificar se há erros específicos do formulário nos dados da resposta
+                const errorData = error.getData();
+                if (errorData && errorData.errors) {
+                    showFormErrors(errorData.errors);
+                } else {
+                    error.showMessage();
+                }
+            } else {
+                showMessage('error', 'Ocorreu um erro ao processar sua solicitação');
+                console.error('Erro durante processo:', error);
+            }
         })
         .finally(() => {
             createTokenButton.disabled = false;

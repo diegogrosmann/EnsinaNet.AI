@@ -134,97 +134,21 @@ document.addEventListener('DOMContentLoaded', function() {
         // Mostrar estado de carregamento
         showButtonLoading(submitButton, 'Salvando...');
 
-        fetch(window.location.href, {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            }
-        })
+        ajaxAPI(window.location.href, "POST", formData, { contentType: false, processData: false })
         .then(response => {
-            // Melhor tratamento para verificar se a resposta é JSON
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                return response.json().then(data => {
-                    return { 
-                        ok: response.ok, 
-                        status: response.status,
-                        data: data
-                    };
-                });
-            } else {
-                // Se não for JSON, retorna um objeto de erro com o status
-                return {
-                    ok: false,
-                    status: response.status,
-                    data: {
-                        success: false,
-                        error: `Erro na resposta do servidor (${response.status})`
-                    }
-                };
+            // Indicar que não há alterações não salvas
+            if (window.hasUnsavedChanges !== undefined) {
+                window.hasUnsavedChanges = false;
             }
-        })
-        .then(result => {
-            if (result.ok && result.data.success) {
-                // Indicar que não há alterações não salvas
-                if (window.hasUnsavedChanges !== undefined) {
-                    window.hasUnsavedChanges = false;
-                }
-                
-                if (typeof showMessage === 'function') {
-                    showMessage('success', result.data.data?.message || 'Configurações salvas com sucesso!');
-                } else {
-                    // Fallback para alerta bootstrap nativo
-                    const alertHtml = `
-                        <div class="alert alert-dismissible alert-success">
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                            <strong>Sucesso!</strong> Configurações salvas com sucesso!
-                        </div>
-                    `;
-                    const container = document.querySelector('.container');
-                    container.insertAdjacentHTML('afterbegin', alertHtml);
-                    
-                    // Remover o alerta após 3 segundos
-                    setTimeout(() => {
-                        const alert = document.querySelector('.alert');
-                        if (alert) {
-                            const bsAlert = new bootstrap.Alert(alert);
-                            bsAlert.close();
-                        }
-                    }, 3000);
-                }
-            } else {
-                const errorMessage = result.data.error || 'Erro ao salvar configurações';
-                console.error('Erro na resposta:', errorMessage);
-                if (typeof showMessage === 'function') {
-                    showMessage('error', errorMessage);
-                } else {
-                    // Fallback para alerta bootstrap nativo de erro
-                    const alertHtml = `
-                        <div class="alert alert-dismissible alert-danger">
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                            <strong>Erro!</strong> ${errorMessage}
-                        </div>
-                    `;
-                    const container = document.querySelector('.container');
-                    container.insertAdjacentHTML('afterbegin', alertHtml);
-                }
-            }
+            
+            // Mostrar mensagem de sucesso usando o método da classe APIResponse
+            response.showMessage();
         })
         .catch(error => {
-            console.error('Erro de rede:', error);
-            if (typeof showMessage === 'function') {
-                showMessage('error', 'Erro de conexão ao salvar configurações');
+            if (error instanceof APIResponse) {
+                error.showMessage();
             } else {
-                const alertHtml = `
-                    <div class="alert alert-dismissible alert-danger">
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                        <strong>Erro!</strong> Erro de conexão ao salvar configurações
-                    </div>
-                `;
-                const container = document.querySelector('.container');
-                container.insertAdjacentHTML('afterbegin', alertHtml);
+                showMessage('error', 'Erro de conexão ao salvar configurações');
             }
         })
         .finally(() => {

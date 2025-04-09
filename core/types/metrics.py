@@ -5,11 +5,11 @@ Define estruturas de dados para representar métricas de uso,
 logs de API e dados estatísticos para análise de desempenho.
 """
 import logging
-from typing import Dict, Optional, List, TypedDict
+from typing import Dict, Optional, List, Type, TypedDict
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from .base import JSONDict
+from .base import BaseModelDict, JSONDict
 
 logger = logging.getLogger(__name__)
 
@@ -120,12 +120,12 @@ class TokenMetrics:
             
         return result
 
-TokenMetricsCollection = Dict[str, TokenMetrics]
-"""
-Mapeamento de IDs de tokens para suas respectivas métricas de uso.
-Geralmente usado para agregar dados de uso da API por token,
-facilitando o rastreamento e geração de relatórios de utilização.
-"""
+class TokenMetricsDict(BaseModelDict[TokenMetrics]):
+    """
+    Mapeamento de IDs de tokens para suas respectivas métricas de uso.
+    Geralmente usado para agregar dados de uso da API por token,
+    facilitando o rastreamento e geração de relatórios de utilização.
+    """
 
 @dataclass
 class APILog:

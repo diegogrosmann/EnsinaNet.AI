@@ -8,17 +8,15 @@ garantindo logs padronizados e respostas apropriadas ao usuário sem expor detal
 import logging
 import traceback
 import uuid
-from typing import Any, Callable
+
 
 from django.http import JsonResponse, HttpResponseRedirect, HttpRequest, HttpResponse
 from django.contrib import messages
-from django.core.exceptions import PermissionDenied, ValidationError
 from rest_framework import status
 from django.conf import settings
 
-from core.exceptions import ApplicationError
-from core.types.api_response import APIResponseDict
-from core.types.base import JSONDict
+from core.exceptions import AppException
+from core.types import JSONDict
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +51,7 @@ class GlobalExceptionMiddleware:
             'json' in (request.headers.get('Accept') or '').lower()
         ])
 
-    def _format_error_response(self, error: Exception, error_id: str, status_code: int = 500) -> JSONDict:
+    def _format_error_response(self, error: Exception, error_id: str, status_code: int = 500, detail: str = None) -> JSONDict:
         """Formata a resposta de erro de forma padronizada.
 
         Em modo DEBUG, inclui detalhes como traceback; caso contrário, retorna mensagem genérica para erros internos.
@@ -66,24 +64,29 @@ class GlobalExceptionMiddleware:
         Returns:
             JSONDict: Dicionário com a resposta formatada.
         """
+        error_message = str(error)
+        additional_data = {}
+        
         if settings.DEBUG:
-            # Em modo debug, fornecer mais informações
-            return {
-                'success': False,
-                'error': str(error),
-                'error_id': error_id,
-                'status_code': status_code,
-                'traceback': traceback.format_exc()
-            }
-        else:
+            additional_data['traceback'] = traceback.format_exc()
+        
+        if status_code >= 500 and not settings.DEBUG:
             # Em produção, esconder detalhes técnicos para erros de servidor
-            error_message = str(error) if status_code < 500 else f"Erro interno (ID: {error_id})"
-            return {
-                'success': False,
-                'error': error_message,
-                'error_id': error_id,
-                'status_code': status_code
-            }
+            error_message = f"Erro interno"
+        
+        error_detail = AppException(
+            message=error_message,
+            code=str(type(error)),
+            error_id=error_id,
+            status_code=status_code,
+            additional_data=additional_data
+        )
+        
+        return {
+            'success': False,
+            'error': error_detail.to_dict(),
+            'status_code': status_code
+        }
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
         """Processa a requisição e trata exceções de forma centralizada.
@@ -96,57 +99,30 @@ class GlobalExceptionMiddleware:
         """
         try:
             return self.get_response(request)
-        except (ApplicationError, PermissionDenied, ValidationError) as e:
-            # Gerar ID único para o erro (para rastreamento)
-            error_id = str(uuid.uuid4())
-            
-            # Determinar o status_code com base no tipo de erro
-            if isinstance(e, PermissionDenied):
-                status_code = status.HTTP_403_FORBIDDEN
-            elif isinstance(e, ValidationError):
-                status_code = status.HTTP_400_BAD_REQUEST
-            else:
-                status_code = getattr(e, 'status_code', status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
-            # Log do erro
-            logger.error(
-                f"Erro tratado: {type(e).__name__} - {str(e)} (ID: {error_id})",
-                exc_info=True
-            )
-            
-            # Determinar o tipo de resposta
-            if self._is_ajax(request):
-                # Retornar resposta JSON para APIs
-                error_response = self._format_error_response(e, error_id, status_code)
-                return JsonResponse(error_response, status=status_code)
-            else:
-                # Redirecionar com mensagem flash para interface web
-                messages.error(request, f"{str(e)} (ID: {error_id})")
-                referer = request.META.get('HTTP_REFERER', '/')
-                return HttpResponseRedirect(referer)
-                
         except Exception as e:
             # Gerar ID único para o erro (para rastreamento)
             error_id = str(uuid.uuid4())
-            
-            # Log do erro não tratado
-            logger.critical(
-                f"Erro não tratado: {type(e).__name__} - {str(e)} (ID: {error_id})",
+
+            # Determinar a mensagem de erro, status_code e detail
+            status_code = getattr(e, 'status_code', status.HTTP_500_INTERNAL_SERVER_ERROR)
+            detail = getattr(e, 'detail', str(e))
+            error_message = str(e)
+
+            # Log do erro
+            logger.error(
+                f"Erro tratado: {type(e).__name__} - {error_message} (ID: {error_id})",
                 exc_info=True
             )
-            
+
             # Determinar o tipo de resposta
             if self._is_ajax(request):
                 # Retornar resposta JSON para APIs
                 error_response = self._format_error_response(
-                    e, error_id, status.HTTP_500_INTERNAL_SERVER_ERROR
+                    e, error_id, status_code, detail
                 )
-                return JsonResponse(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return JsonResponse(error_response, status=status_code)
             else:
                 # Redirecionar com mensagem flash para interface web
-                messages.error(
-                    request, 
-                    f"Ocorreu um erro interno. Nossa equipe foi notificada. (ID: {error_id})"
-                )
+                messages.error(request, f"{error_message} (ID: {error_id})")
                 referer = request.META.get('HTTP_REFERER', '/')
                 return HttpResponseRedirect(referer)

@@ -5,32 +5,32 @@ Define estruturas de dados para representar tarefas executáveis
 em background e configurações de filas de processamento.
 """
 import logging
-from typing import Callable, List, Optional, Dict, Any, Tuple
+from typing import Callable, Optional, Any
 from dataclasses import dataclass, field
-from .base import Result
-from .task import TaskBase, QueueableTask, QueueableTaskCollection, QueueConfig
-from core.exceptions import ApplicationError
+
+from core.types.status import EntityStatus
+from .base import BaseModel
+from .task import QueueableTask, QueueConfig
+from core.exceptions import CoreTypeException
 
 logger = logging.getLogger(__name__)
 
-# -----------------------------------------------------------------------------
-# Tipos para gerenciamento de filas
-# -----------------------------------------------------------------------------
+
 @dataclass
-class QueueStats:
+class QueueStats(BaseModel):
     """Estatísticas de uma fila de processamento.
     
     Armazena métricas e informações sobre o estado atual
     e histórico de processamento de uma fila.
     
-    Args:
-        queue_name: Nome da fila.
-        pending_tasks: Número de tarefas aguardando processamento.
-        in_progress_tasks: Número de tarefas em processamento.
-        completed_tasks: Número de tarefas concluídas com sucesso.
-        failed_tasks: Número de tarefas que falharam.
-        retry_tasks: Número de tarefas aguardando nova tentativa.
-        avg_processing_time: Tempo médio de processamento em segundos.
+    Attributes:
+        queue_name (str): Nome da fila.
+        pending_tasks (int): Número de tarefas aguardando processamento.
+        in_progress_tasks (int): Número de tarefas em processamento.
+        completed_tasks (int): Número de tarefas concluídas com sucesso.
+        failed_tasks (int): Número de tarefas que falharam.
+        retry_tasks (int): Número de tarefas aguardando nova tentativa.
+        avg_processing_time (float): Tempo médio de processamento em segundos.
     """
     queue_name: str
     pending_tasks: int = 0
@@ -42,6 +42,27 @@ class QueueStats:
     
     def __post_init__(self):
         """Valida os valores após inicialização."""
+        if not isinstance(self.queue_name, str):
+            raise CoreTypeException("queue_name deve ser uma string")
+        
+        if not isinstance(self.pending_tasks, int):
+            raise CoreTypeException("pending_tasks deve ser um inteiro")
+        
+        if not isinstance(self.in_progress_tasks, int):
+            raise CoreTypeException("in_progress_tasks deve ser um inteiro")
+        
+        if not isinstance(self.completed_tasks, int):
+            raise CoreTypeException("completed_tasks deve ser um inteiro")
+            
+        if not isinstance(self.failed_tasks, int):
+            raise CoreTypeException("failed_tasks deve ser um inteiro")
+            
+        if not isinstance(self.retry_tasks, int):
+            raise CoreTypeException("retry_tasks deve ser um inteiro")
+        
+        if not isinstance(self.avg_processing_time, (int, float)):
+            raise CoreTypeException("avg_processing_time deve ser um número")
+        
         logger.debug(f"Estatísticas para fila '{self.queue_name}' criadas")
     
     @property
@@ -64,69 +85,58 @@ class QueueStats:
         if processed == 0:
             return 1.0
         return self.completed_tasks / processed
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Converte as estatísticas para um dicionário.
-        
-        Returns:
-            Dict: Dicionário com as estatísticas.
-        """
-        return {
-            "queue_name": self.queue_name,
-            "pending_tasks": self.pending_tasks,
-            "in_progress_tasks": self.in_progress_tasks,
-            "completed_tasks": self.completed_tasks,
-            "failed_tasks": self.failed_tasks,
-            "retry_tasks": self.retry_tasks,
-            "avg_processing_time": self.avg_processing_time,
-            "total_tasks": self.total_tasks,
-            "success_rate": self.success_rate
-        }
+
+# -----------------------------------------------------------------------------
+# Tipos para gerenciamento de filas
+# -----------------------------------------------------------------------------
 
 @dataclass
-class QueueProcessor:
+class QueueProcessor(BaseModel):
     """Processador de uma fila.
     
     Define o comportamento para processamento de tarefas em uma fila,
     incluindo callbacks para processamento e tratamento de erros.
     
-    Args:
-        queue_name: Nome da fila a ser processada.
-        processor_func: Função que processa uma tarefa da fila.
-        error_handler: Função para tratamento de erros (opcional).
-        config: Configurações da fila.
-        stats: Estatísticas da fila.
+    Attributes:
+        queue_name (str): Nome da fila a ser processada.
+        processor_func (Callable[[QueueableTask], QueueableTask]): Função que processa uma tarefa da fila.
+        error_handler (Optional[Callable[[Exception, QueueableTask], None]]): Função para tratamento de erros (opcional).
+        config (QueueConfig): Configurações da fila.
+        stats (QueueStats): Estatísticas da fila.
     """
     queue_name: str
-    processor_func: Callable[[QueueableTask], Result[Any]]
+    processor_func: Callable[[QueueableTask], QueueableTask]
     error_handler: Optional[Callable[[Exception, QueueableTask], None]] = None
-    config: QueueConfig = None
-    stats: QueueStats = None
+    config: QueueConfig = field(default_factory=lambda: QueueConfig(name="default"))
+    stats: QueueStats = field(default_factory=lambda: QueueStats(queue_name="default"))
     
     def __post_init__(self):
         """Inicializa valores padrão se necessário."""
+        if not isinstance(self.queue_name, str):
+            raise ValueError("queue_name deve ser uma string")
+        
         if not callable(self.processor_func):
             raise ValueError("processor_func deve ser uma função chamável")
             
         if self.error_handler is not None and not callable(self.error_handler):
             raise ValueError("error_handler deve ser uma função chamável")
             
-        if self.config is None:
-            self.config = QueueConfig(name=self.queue_name)
+        if not isinstance(self.config, QueueConfig):
+            raise ValueError("config deve ser uma instância de QueueConfig")
             
-        if self.stats is None:
-            self.stats = QueueStats(queue_name=self.queue_name)
+        if not isinstance(self.stats, QueueStats):
+            raise ValueError("stats deve ser uma instância de QueueStats")
             
         logger.info(f"QueueProcessor criado para fila '{self.queue_name}'")
     
-    def process(self, task: QueueableTask) -> Result[Any]:
+    def process(self, task: QueueableTask) -> QueueableTask:
         """Processa uma tarefa da fila.
         
         Args:
-            task: Tarefa a ser processada.
+            task (QueueableTask): Tarefa a ser processada.
             
         Returns:
-            Result: Resultado da operação.
+            QueueableTask: A tarefa processada (atualizada).
         """
         logger.info(f"Processando tarefa {task.task_id} na fila '{self.queue_name}'")
         
@@ -134,13 +144,19 @@ class QueueProcessor:
         self.stats.in_progress_tasks += 1
         
         try:
-            result = self.processor_func(task)
+            # Processa a tarefa e obtém a versão atualizada
+            updated_task = self.processor_func(task)
             
             # Atualiza estatísticas após processamento
             self.stats.in_progress_tasks -= 1
-            self.stats.completed_tasks += 1
             
-            return result
+            # Se a tarefa foi concluída com sucesso
+            if updated_task.status == EntityStatus.COMPLETED:
+                self.stats.completed_tasks += 1
+            elif updated_task.status == EntityStatus.FAILED:
+                self.stats.failed_tasks += 1
+            
+            return updated_task
             
         except Exception as e:
             # Atualiza estatísticas após falha
@@ -149,6 +165,9 @@ class QueueProcessor:
             
             logger.error(f"Erro ao processar tarefa {task.task_id}: {str(e)}", exc_info=True)
             
+            # Marca a tarefa como falha
+            task.set_failure(str(e))
+            
             # Chama o handler de erro se existir
             if self.error_handler:
                 try:
@@ -156,4 +175,5 @@ class QueueProcessor:
                 except Exception as handler_error:
                     logger.error(f"Erro no error_handler: {str(handler_error)}", exc_info=True)
             
-            return Result.failure(str(e))
+            return task
+
