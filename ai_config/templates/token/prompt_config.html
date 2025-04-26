@@ -3,6 +3,7 @@
 
 {% block content %}
 <div class="container py-4">
+<<<<<<< HEAD
     <!-- Card com estilo nativo do Bootswatch -->
     <div class="card border-primary mb-3">
         <!-- Header do Card em estilo Bootswatch -->
@@ -11,6 +12,13 @@
                 <i class="bi bi-chat-left-text me-2"></i>Configurações de Prompt para "{{ token.name }}"
             </h4>
             <a href="{% url 'accounts:token_config' token.id %}" class="btn btn-outline-light">
+=======
+    <div class="card shadow-sm">
+        <!-- Header do Card -->
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h2 class="h4 mb-0">Configurações de Prompt para "{{ token.name }}"</h2>
+            <a href="{% url 'accounts:token_config' token.id %}" class="btn btn-outline-secondary btn-sm">
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
                 <i class="bi bi-arrow-left"></i> Voltar
             </a>
         </div>
@@ -22,6 +30,7 @@
                 
                 <!-- Instrução Base -->
                 <div class="mb-4">
+<<<<<<< HEAD
                     <div class="card border-light">
                         <div class="card-header bg-light d-flex justify-content-between align-items-center" role="button" data-bs-toggle="collapse" data-bs-target="#baseInstructionCollapse">
                             <h5 class="mb-0">
@@ -38,11 +47,26 @@
                                 </div>
                             </div>
                         </div>
+=======
+                    <div class="d-flex justify-content-between align-items-center mb-2 collapse-header" role="button" data-bs-toggle="collapse" data-bs-target="#baseInstructionCollapse">
+                        <label for="id_base_instruction" class="form-label mb-0">
+                            <i class="bi bi-book-fill text-primary me-2"></i>
+                            Instrução Base
+                        </label>
+                        <i class="bi bi-chevron-down"></i>
+                    </div>
+                    <div class="collapse show" id="baseInstructionCollapse">
+                        {{ form.base_instruction }}
+                        <small class="text-muted">
+                            Instruções gerais que serão aplicadas em todas as comparações.
+                        </small>
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
                     </div>
                 </div>
 
                 <!-- Prompt -->
                 <div class="mb-4">
+<<<<<<< HEAD
                     <div class="card border-light">
                         <div class="card-header bg-light d-flex justify-content-between align-items-center" role="button" data-bs-toggle="collapse" data-bs-target="#promptCollapse">
                             <h5 class="mb-0">
@@ -62,11 +86,29 @@
                                 </div>
                             </div>
                         </div>
+=======
+                    <div class="d-flex justify-content-between align-items-center mb-2 collapse-header" role="button" data-bs-toggle="collapse" data-bs-target="#promptCollapse">
+                        <label for="id_prompt" class="form-label mb-0">
+                            <i class="bi bi-chat-left-text-fill text-success me-2"></i>
+                            Prompt <span class="text-danger">*</span>
+                        </label>
+                        <i class="bi bi-chevron-down"></i>
+                    </div>
+                    <div class="collapse show" id="promptCollapse">
+                        {{ form.prompt }}
+                        <div class="invalid-feedback" id="promptFeedback">
+                            Este campo é obrigatório.
+                        </div>
+                        <small class="text-muted">
+                            Prompt específico para cada comparação.
+                        </small>
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
                     </div>
                 </div>
 
                 <!-- Respostas -->
                 <div class="mb-4">
+<<<<<<< HEAD
                     <div class="card border-light">
                         <div class="card-header bg-light d-flex justify-content-between align-items-center" role="button" data-bs-toggle="collapse" data-bs-target="#responsesCollapse">
                             <h5 class="mb-0">
@@ -83,10 +125,25 @@
                                 </div>
                             </div>
                         </div>
+=======
+                    <div class="d-flex justify-content-between align-items-center mb-2 collapse-header" role="button" data-bs-toggle="collapse" data-bs-target="#responsesCollapse">
+                        <label for="id_responses" class="form-label mb-0">
+                            <i class="bi bi-reply-all-fill text-warning me-2"></i>
+                            Formato de Respostas
+                        </label>
+                        <i class="bi bi-chevron-down"></i>
+                    </div>
+                    <div class="collapse show" id="responsesCollapse">
+                        {{ form.responses }}
+                        <small class="text-muted">
+                            Respostas padrão que serão utilizadas nas comparações.
+                        </small>
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
                     </div>
                 </div>
 
                 <!-- Botão de Salvar -->
+<<<<<<< HEAD
                 <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-save me-2"></i>Salvar Configurações
@@ -103,6 +160,111 @@
     </div>
 </div>
 
+=======
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save"></i> Salvar Configurações
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Editor e Preview lado a lado */
+.markdownx {
+    display: flex;
+    gap: 1rem;
+}
+
+/* Editor de markdown */
+.markdownx-editor {
+    flex: 1;
+    min-height: 200px;
+    padding: 1rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    font-family: monospace;
+    resize: vertical;
+}
+
+/* Preview do markdown (apenas para o preview nativo do markdownx) */
+.markdownx-preview {
+    flex: 1;
+    min-height: 200px;
+    padding: 1rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    background-color: #f8f9fa;
+    overflow-y: auto;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    .markdownx {
+        flex-direction: column;
+    }
+    
+    .markdownx-editor,
+    .markdownx-preview {
+        width: 100%;
+    }
+}
+
+/* Feedback visual */
+.form-control:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* Animações */
+.btn {
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11);
+}
+
+/* Estilo para os cabeçalhos colapsáveis */
+.collapse-header {
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 0.375rem;
+    transition: background-color 0.2s ease;
+}
+
+.collapse-header:hover {
+    background-color: rgba(0,0,0,0.05);
+}
+
+/* Animação para o ícone de chevron */
+.collapse.show + .btn-link .bi-chevron-down {
+    transform: rotate(180deg);
+}
+
+.bi-chevron-down {
+    transition: transform 0.3s ease;
+}
+
+/* Estilos para feedback de validação */
+.invalid-feedback {
+    display: none;
+    color: #dc3545;
+    font-size: 0.875em;
+    margin-top: 0.25rem;
+}
+
+.is-invalid {
+    border-color: #dc3545 !important;
+}
+
+.is-invalid:focus {
+    box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25) !important;
+}
+</style>
+
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Função para validar o formulário
@@ -121,12 +283,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Função para salvar o formulário via AJAX
     function saveForm() {
+<<<<<<< HEAD
         console.log('Função saveForm() chamada - tentativa de salvamento');
+=======
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
         if (!validateForm()) {
             return;
         }
         const form = document.getElementById('tokenConfigForm');
         const formData = new FormData(form);
+<<<<<<< HEAD
         
         // Encontrar botão de submit ou criar referência para feedback
         const submitButton = form.querySelector('button[type="submit"]');
@@ -153,12 +319,47 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .finally(() => {
             hideButtonLoading(submitButton);
+=======
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                // Criar elemento de mensagem no estilo do base.html
+                const messageContainer = document.createElement('div');
+                messageContainer.className = 'container mt-3';
+                messageContainer.innerHTML = `
+                    <div class="alert alert-success alert-dismissible fade show" role="alert">
+                        Configurações salvas com sucesso!
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+                    </div>
+                `;
+                
+                // Inserir a mensagem logo após a navbar
+                const navbar = document.querySelector('nav');
+                navbar.parentNode.insertBefore(messageContainer, navbar.nextSibling);
+
+                // Remover a mensagem após 3 segundos
+                setTimeout(() => {
+                    const alert = messageContainer.querySelector('.alert');
+                    const bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                    setTimeout(() => messageContainer.remove(), 150);
+                }, 3000);
+            }
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
         });
     }
 
     // Adiciona validação em tempo real ao campo prompt
     document.querySelector('#id_prompt').addEventListener('input', function() {
         validateForm();
+<<<<<<< HEAD
         // Marcar que há alterações não salvas quando o usuário edita o campo
         if (window.hasUnsavedChanges !== undefined) {
             window.hasUnsavedChanges = true;
@@ -184,16 +385,35 @@ document.addEventListener('DOMContentLoaded', function() {
         if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
             e.preventDefault();
             console.log('Ctrl+S pressionado - salvamento manual');
+=======
+    });
+
+    // Atualiza o evento de submit do formulário
+    document.getElementById('tokenConfigForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (validateForm()) {
+            this.submit();
+        }
+    });
+
+    // Suporte ao ctrl+s
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 's') {
+            e.preventDefault();
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
             saveForm();
         }
     });
 
+<<<<<<< HEAD
     // Monitorar envio tradicional do formulário também
     document.getElementById('tokenConfigForm').addEventListener('submit', function(e) {
         e.preventDefault(); // Prevenir envio tradicional
         saveForm();        // Usar nosso método AJAX
     });
 
+=======
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     // Monitora mudanças no estado de colapso
     document.querySelectorAll('.collapse').forEach(collapse => {
         collapse.addEventListener('show.bs.collapse', function() {

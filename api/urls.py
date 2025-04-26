@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """URLs da API.
 
 Define os padrões de URL para endpoints de API e monitoramento,
@@ -30,6 +31,22 @@ monitoring_patterns: List[Union[URLPattern, URLResolver]] = [
     path('stats/', monitoring_stats, name='monitoring_stats'),
     path('requests/', monitoring_requests, name='monitoring_requests'),
     path('requests/<int:request_id>/', monitoring_request_details, name='monitoring_request_details'),
+=======
+"""URLs do aplicativo api."""
+from django.urls import path, include
+from api.views.monitoring import monitoring_dashboard, monitoring_data
+
+app_name = 'api'
+
+urlpatterns = [
+    # Monitoring
+    path('monitoring/', include([
+        path('', monitoring_dashboard, name='monitoring_dashboard'),
+        path('data/', monitoring_data, name='monitoring_data'),
+    ])),
+    # API Versions
+    path('v1/', include(('api.v1.urls', 'api.v1'), namespace='api_v1')),
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 ]
 
 # Todas as URLs da aplicação

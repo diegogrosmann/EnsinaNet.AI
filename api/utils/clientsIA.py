@@ -82,7 +82,25 @@ class APIClient:
     Atributos:
         name (str): Nome identificador do cliente.
         can_train (bool): Indica se o cliente suporta treinamento.
+<<<<<<< HEAD
         supports_system_message (bool): Indica se o cliente aceita mensagem do sistema.
+=======
+        supports_system_message (bool): Indica se a API suporta envio de System Message.
+        api_key (str): Chave de API para autenticação.
+        model_name (str): Nome do modelo de IA a ser usado.
+        configurations (dict): Configurações específicas do cliente.
+        base_instruction (str): Instrução base (opcional).
+        prompt (str): Prompt personalizado (opcional).
+        responses (str): Respostas personalizadas (opcional).
+        api_url (str): URL da API (opcional).
+        use_system_message (bool): Se deve usar "system message" (caso suportado).
+
+    NOTA:
+        Esta classe é virtual e não está persistida no banco de dados. Ela serve
+        para documentar a relação um para muitos com AIClientGlobalConfiguration.
+        A relação indica que uma API pode estar associada a múltiplas configurações 
+        globais de cliente, mas cada configuração global pertence a apenas uma API.
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     """
 
     name = ''

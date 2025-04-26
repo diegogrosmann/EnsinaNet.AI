@@ -10,11 +10,21 @@ import logging
 import os
 from typing import Any, Optional
 import uuid
+<<<<<<< HEAD
+=======
+import os
+
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 from django.db import models
 from django.contrib.auth import get_user_model
+<<<<<<< HEAD
 from django.core.exceptions import ValidationError
 from django.conf import settings
 from django.dispatch import receiver
+=======
+from django.utils import timezone
+from django.conf import settings
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
 from accounts.models import UserToken
 from api.utils.clientsIA import AI_CLIENT_MAPPING, APIClient
@@ -34,10 +44,25 @@ class AIClientGlobalConfiguration(models.Model):
     Define parâmetros globais para interação com APIs de IA.
 
     Attributes:
+<<<<<<< HEAD
         name (str): Nome amigável da configuração.
         api_client_class (str): Classe do cliente de API a ser utilizada.
         api_url (str): URL base da API (opcional).
         api_key (str): Chave de autenticação da API.
+=======
+        name (str): Nome do cliente.
+        api_client_class (str): Classe da API cliente.
+        api_url (str): URL da API (opcional).
+        api_key (str): Chave de acesso à API.
+
+    NOTA:
+        A api_client_class relaciona-se com a classe APIClient do módulo api_client.
+        Como a APIClient é uma classe abstrata, e não é persistida no BD, a api_client_class é uma string.
+        A relação entre a api_client_class e a classe APIClient um para muitos.
+        A relação indica que uma API pode estar associada a múltiplas configurações 
+        globais de cliente, mas cada configuração global pertence a apenas uma API.
+        Essa relação deve ser exibida no Diagrama de Classes.
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     """
     name = models.CharField(max_length=255)
     api_client_class = models.CharField(max_length=255)
@@ -306,6 +331,7 @@ class AITrainingFile(models.Model):
     file_path = models.CharField(max_length=255, editable=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+<<<<<<< HEAD
     # Atributo privado para cache dos dados do arquivo
     _file_data_cache = None
 
@@ -396,6 +422,28 @@ class AITrainingFile(models.Model):
             raise
 
     def __str__(self) -> str:
+=======
+    def file_exists(self):
+        """Verifica se o arquivo físico existe.
+        
+        Returns:
+            bool: True se o arquivo existir, False caso contrário
+        """
+        return self.file and self.file.storage.exists(self.file.name)
+
+    def get_file_size(self):
+        """Retorna o tamanho do arquivo se ele existir.
+        
+        Returns:
+            int: Tamanho do arquivo em bytes ou 0 se não existir
+        """
+        try:
+            return self.file.size if self.file_exists() else 0
+        except Exception:
+            return 0
+
+    def __str__(self):
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
         """Retorna a representação em string do arquivo de treinamento.
 
         Returns:
@@ -459,8 +507,18 @@ class TokenAIConfiguration(models.Model):
         """
         return f"Configuração de IA para {self.token.name}"
 
+<<<<<<< HEAD
     def clean(self) -> None:
         """Realiza a validação dos dados da configuração.
+=======
+    def clean(self):
+        if not self.prompt or not self.prompt.strip():
+            raise ValidationError({'prompt': 'O campo Prompt é obrigatório.'})
+        super().clean()
+
+class AIClientTraining(models.Model):
+    """Parâmetros de treinamento e nome do modelo treinado para uma configuração de IA.
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
         Raises:
             ValidationError: Se o campo prompt estiver vazio.
@@ -486,13 +544,19 @@ class TrainingCapture(models.Model):
     """Captura de treinamento contendo informações temporárias.
 
     Attributes:
+<<<<<<< HEAD
         token (UserToken): Token associado à captura.
         ai_client_config (AIClientConfiguration): Configuração de IA associada.
+=======
+        token: Token associado.
+        ai_client_config: Configuração de IA.
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
         is_active (bool): Indica se a captura está ativa.
         temp_file (str): Caminho para o arquivo temporário.
         create_at (datetime): Data de criação da captura.
         last_activity (datetime): Última atividade registrada.
     """
+<<<<<<< HEAD
     def _generate_file_path(self) -> str:
         """Gera um caminho único para o arquivo temporário da captura.
 
@@ -534,6 +598,23 @@ class TrainingCapture(models.Model):
     ai_client_config = models.ForeignKey('AIClientConfiguration', on_delete=models.CASCADE)
     is_active = models.BooleanField(default=False)
     temp_file = models.CharField(max_length=255, editable=False)
+=======
+    def _generate_temp_filename(instance, filename):
+        """Gera um nome único para o arquivo temporário."""
+        ext = filename.split('.')[-1] if '.' in filename else 'tmp'
+        filename = f"{uuid.uuid4()}.{ext}"
+        return os.path.join('training_captures', filename)
+
+    token = models.ForeignKey(UserToken, related_name='training_captures', on_delete=models.CASCADE)
+    ai_client_config = models.ForeignKey('AIClientConfiguration', on_delete=models.CASCADE) 
+    is_active = models.BooleanField(default=False)
+    temp_file = models.FileField(
+        upload_to=_generate_temp_filename,
+        null=True,
+        blank=True,
+        storage=OverwriteStorage()
+    )
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     create_at = models.DateTimeField(auto_now_add=True)
     last_activity = models.DateTimeField(auto_now=True)
 
@@ -670,6 +751,7 @@ class TrainingCapture(models.Model):
         Returns:
             str: Status da captura e informações do token e configuração de IA.
         """
+<<<<<<< HEAD
         status_str = "Ativa" if self.is_active else "Inativa"
         return f"Captura {status_str} para {self.ai_client_config} do Token {self.token.name}"
 
@@ -686,6 +768,28 @@ def delete_temp_file_on_delete(sender: Any, instance: 'TrainingCapture', **kwarg
             except Exception as e:
                 logger.error(f"Erro ao deletar arquivo temporário: {e}", exc_info=True)
 
+=======
+        status = "Ativa" if self.is_active else "Inativa"
+        return f"Captura {status} para {self.ai_client_config} do Token {self.token.name}"
+
+    def save(self, *args, **kwargs):
+        """Garante que um arquivo temporário seja criado se não existir."""
+        if not self.temp_file:
+            temp_filename = self._generate_temp_filename("capture.tmp")
+            # Cria um arquivo vazio
+            with open(os.path.join(settings.MEDIA_ROOT, temp_filename), 'w') as f:
+                f.write('')
+            self.temp_file.name = temp_filename
+        super().save(*args, **kwargs)
+
+@receiver(post_delete, sender=TrainingCapture)
+def delete_temp_file_on_delete(sender, instance, **kwargs):
+    """Remove o arquivo temporário quando a captura for deletada."""
+    if instance.temp_file:
+        if instance.temp_file.storage.exists(instance.temp_file.name):
+            instance.temp_file.delete(save=False)
+            logger.debug(f"Arquivo temporário deletado: {instance.temp_file.name}")
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
 class DoclingConfiguration(models.Model):
     """Configuração específica para o Docling.

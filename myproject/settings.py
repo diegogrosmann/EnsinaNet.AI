@@ -65,6 +65,10 @@ ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_USERNAME_REQUIRED = False
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
+<<<<<<< HEAD
+=======
+ACCOUNT_EMAIL_CONFIRMATION_HTML_TEMPLATE = "accounts/registration/email_confirmation_message.html"
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
 # REST_FRAMEWORK = {
 #     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -79,6 +83,7 @@ ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 #     'ALLOWED_VERSIONS': ['v1'],  # Defina aqui todas as versões que sua API suportará
 # }
 
+<<<<<<< HEAD
 # Ajustar redirecionamentos
 # LOGIN_REDIRECT_URL = 'accounts:tokens'
 # LOGOUT_REDIRECT_URL = 'accounts:login'
@@ -88,6 +93,30 @@ ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 # URLs de redirecionamento após confirmação de email
 # ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = 'accounts:login'
 # ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = 'accounts:login'
+=======
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'accounts.authentication.CustomTokenAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'EXCEPTION_HANDLER': 'api.exception_handlers.custom_exception_handler',
+    'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.URLPathVersioning',
+    'DEFAULT_VERSION': 'v1',
+    'ALLOWED_VERSIONS': ['v1'],  # Defina aqui todas as versões que sua API suportará
+}
+
+# Ajustar redirecionamentos
+LOGIN_REDIRECT_URL = 'accounts:tokens'
+LOGOUT_REDIRECT_URL = 'accounts:login'
+LOGIN_URL = 'accounts:login'
+LOGOUT_URL = 'accounts:logout'
+
+# URLs de redirecionamento após confirmação de email
+ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = 'accounts:login'
+ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = 'accounts:login'
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
 # Use a confirmação de email via GET
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True
@@ -286,6 +315,7 @@ LOGGING = {
             'maxBytes': 1024*1024*5,  # 5 MB
             'backupCount': 5,
         },
+<<<<<<< HEAD
         'tasks_file': {
             'level': 'DEBUG' if DEBUG else 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
@@ -294,6 +324,8 @@ LOGGING = {
             'maxBytes': 1024*1024*5,  # 5 MB
             'backupCount': 5,
         },
+=======
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     },
     'loggers': {
         '': {  # Root logger
@@ -331,11 +363,14 @@ LOGGING = {
             'level': 'DEBUG' if DEBUG else 'INFO',
             'propagate': False,
         },
+<<<<<<< HEAD
         'ai_config.tasks': {
             'handlers': ['tasks_file'],
             'level': 'DEBUG' if DEBUG else 'INFO',
             'propagate': False,
         },
+=======
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     }
 }
 
@@ -347,7 +382,10 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+<<<<<<< HEAD
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 
 # Log final da inicialização
 logger.info("Configurações do projeto carregadas com sucesso")
+=======
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)

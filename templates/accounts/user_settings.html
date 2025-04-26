@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="settings-header text-center mb-4">
+                <h2><i class="bi bi-gear-fill me-2"></i>Configurações</h2>
+                <p class="text-muted">Gerencie suas informações pessoais e preferências do sistema</p>
+            </div>
+
+            <div class="card settings-card">
+                <div class="card-body p-4">
+                    <!-- Abas de navegação -->
+                    <ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="personal-tab" data-bs-toggle="tab" data-bs-target="#personal" type="button" role="tab">
+                                <i class="bi bi-person-fill me-2"></i>Informações Pessoais
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#system" type="button" role="tab">
+                                <i class="bi bi-sliders me-2"></i>Configurações do Sistema
+                            </button>
+                        </li>
+                    </ul>
+
+                    <form method="post" id="settingsForm">
+                        {% csrf_token %}
+                        
+                        <!-- Conteúdo das abas -->
+                        <div class="tab-content" id="settingsTabsContent">
+                            <!-- Aba de Informações Pessoais -->
+                            <div class="tab-pane fade show active" id="personal" role="tabpanel">
+                                <div class="settings-section">
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <div class="form-floating mb-3">
+                                                {{ form.first_name }}
+                                                <label for="id_first_name">Nome</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-floating mb-3">
+                                                {{ form.last_name }}
+                                                <label for="id_last_name">Sobrenome</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="form-floating mb-3">
+                                        {{ form.email }}
+                                        <label for="id_email">Email</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Aba de Configurações do Sistema -->
+                            <div class="tab-pane fade" id="system" role="tabpanel">
+                                <div class="settings-section">
+                                    <div class="form-floating mb-3">
+                                        {{ form.capture_inactivity_timeout }}
+                                        <label for="id_capture_inactivity_timeout">Tempo de Inatividade de Captura (minutos)</label>
+                                        <small class="form-text text-muted">
+                                            Define por quanto tempo a captura continuará mesmo sem atividade.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="text-end mt-4">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-save me-2"></i>Salvar Alterações
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.settings-card {
+    border: none;
+    border-radius: 15px;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    transition: transform 0.3s ease;
+}
+
+.settings-card:hover {
+    transform: translateY(-5px);
+}
+
+.settings-section {
+    background-color: #f8f9fa;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.settings-section-title {
+    color: #0d6efd;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e9ecef;
+}
+
+.form-floating {
+    position: relative;
+}
+
+.form-floating > .form-control,
+.form-floating > .form-select {
+    height: 3.5rem;
+    line-height: 1.25;
+    padding: 1rem 0.75rem;
+}
+
+.form-floating > label {
+    padding: 1rem 0.75rem;
+}
+
+.btn-primary {
+    padding: 0.8rem 1.5rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Adiciona ícone de informação com tooltip */
+.form-floating .info-icon {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6c757d;
+    cursor: help;
+}
+
+/* Animação para mensagens de feedback */
+.alert {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Estilização das abas */
+.nav-tabs {
+    border-bottom: 2px solid #dee2e6;
+}
+
+.nav-tabs .nav-link {
+    border: none;
+    color: #6c757d;
+    padding: 1rem 1.5rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.nav-tabs .nav-link:hover {
+    border: none;
+    color: #0d6efd;
+}
+
+.nav-tabs .nav-link.active {
+    border: none;
+    color: #0d6efd;
+    position: relative;
+}
+
+.nav-tabs .nav-link.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: #0d6efd;
+}
+
+/* Animação suave para transição entre abas */
+.tab-pane {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+</style>
+
+<script>
+// Inicializa todos os tooltips
+var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+    return new bootstrap.Tooltip(tooltipTriggerEl)
+});
+
+// Adiciona classes do Bootstrap aos campos do formulário
+document.addEventListener('DOMContentLoaded', function() {
+    const inputs = document.querySelectorAll('input');
+    inputs.forEach(input => {
+        input.classList.add('form-control');
+    });
+
+    // Suporte ao ctrl+s
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            document.getElementById('settingsForm').submit();
+        }
+    });
+
+    // Preserva a aba ativa após recarregar a página
+    const activeTab = localStorage.getItem('activeSettingsTab');
+    if (activeTab) {
+        const tab = new bootstrap.Tab(document.querySelector(activeTab));
+        tab.show();
+    }
+
+    // Salva a aba ativa quando mudar
+    const triggerTabList = [].slice.call(document.querySelectorAll('#settingsTabs button'));
+    triggerTabList.forEach(function (triggerEl) {
+        triggerEl.addEventListener('shown.bs.tab', function (e) {
+            localStorage.setItem('activeSettingsTab', '#' + e.target.id);
+        });
+    });
+});
+</script>
+{% endblock %}

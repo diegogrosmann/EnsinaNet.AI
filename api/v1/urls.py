@@ -14,11 +14,17 @@ logger = logging.getLogger(__name__)
 
 app_name = 'v1'
 
+app_name = 'v1'
+
 urlpatterns = [
+<<<<<<< HEAD
     path('compare/', compare, name='compare'),
     path('compare/async/', compare_async, name='compare_async'),
     path('operations/<str:operation_id>/', operation_status, name='operation_status'),
     path('operations/', operations_list, name='operations_list'),
+=======
+    path('compare/', views.compare, name='compare'),
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 ]
 
 def get_api_endpoints() -> list:

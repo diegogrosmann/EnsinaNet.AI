@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <div class="modal" id="createTokenModal" tabindex="-1" aria-labelledby="createTokenModalLabel" aria-hidden="true">
   <div class="modal-dialog" role="document">
     <div class="modal-content">
@@ -170,6 +171,142 @@ document.addEventListener('DOMContentLoaded', function() {
         tokenNameError.style.display = 'none';
         tokenFormErrors.classList.add('d-none');
         tokenFormErrors.textContent = '';
+=======
+<div class="modal fade" id="createTokenModal" tabindex="-1" aria-labelledby="createTokenModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createTokenModalLabel">
+                    <i class="bi bi-key-fill text-primary me-2"></i>
+                    Criar Novo Token
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            
+            <form method="post" action="{% url 'accounts:token_create' %}" id="createTokenForm">
+                {% csrf_token %}
+                <input type="hidden" name="create_token" value="true">
+                
+                <div class="modal-body">
+                    <!-- Nome do Token -->
+                    <div class="mb-3">
+                        <label for="id_name" class="form-label">Nome do Token</label>
+                        <div class="input-group">
+                            <span class="input-group-text">
+                                <i class="bi bi-tag"></i>
+                            </span>
+                            <input type="text" name="name" id="id_name" 
+                                   class="form-control {% if form.name.errors %}is-invalid{% endif %}"
+                                   required placeholder="Ex: Meu Token"
+                                   pattern="[A-Za-z0-9 _\-]+"
+                                   title="Apenas letras, números, espaços, _ e -">
+                            {% if form.name.errors %}
+                                <div class="invalid-feedback">{{ form.name.errors|join:", " }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="form-text">
+                            Use um nome descritivo e único para identificar este token.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-lg me-1"></i>Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Criar Token
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Função para verificar o nome do token em tempo real
+document.getElementById('id_name').addEventListener('input', function() {
+    const name = this.value;
+    // Procura um feedback já existente
+    let feedback = this.parentNode.querySelector('.invalid-feedback');
+
+    // Se não houver feedback, cria um novo, senão, utiliza o já existente
+    if (!feedback) {
+        feedback = document.createElement('div');
+        feedback.className = 'invalid-feedback';
+        this.parentNode.appendChild(feedback);
+    }
+
+    // Validação: caracteres permitidos
+    if (!/^[A-Za-z0-9 _-]+$/.test(name)) {
+        this.classList.add('is-invalid');
+        feedback.textContent = 'Use apenas letras, números, espaços, _ e -';
+        return;
+    }
+
+    // Validação: tamanho mínimo
+    if (name.length < 3) {
+        this.classList.add('is-invalid');
+        feedback.textContent = 'O nome deve ter pelo menos 3 caracteres';
+        return;
+    }
+    
+    // Se não houver erros, remove a classe de erro e o feedback
+    this.classList.remove('is-invalid');
+    feedback.remove();
+});
+
+// Função para limpar o formulário ao fechar o modal
+document.getElementById('createTokenModal').addEventListener('hidden.bs.modal', function() {
+    document.getElementById('createTokenForm').reset();
+    const invalidInputs = this.querySelectorAll('.is-invalid');
+    invalidInputs.forEach(input => input.classList.remove('is-invalid'));
+    const feedbacks = this.querySelectorAll('.invalid-feedback');
+    feedbacks.forEach(feedback => feedback.remove());
+});
+
+// Suporte a ctrl+enter para enviar
+document.getElementById('createTokenForm').addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        this.submit();
+    }
+});
+
+// Aqui é onde precisamos corrigir o endpoint da requisição
+document.querySelector('#createTokenModal form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const form = this;
+    const formData = new FormData(form);
+    
+    fetch("{% url 'accounts:token_create' %}", {  // Aqui está a correção principal
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            // Se a resposta for bem sucedida, recarrega a página
+            window.location.reload();
+            return;
+        }
+        // Se houver erros, atualiza o modal com os erros
+        return response.text().then(html => {
+            const modalBody = form.querySelector('.modal-body');
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            const newModalBody = tempDiv.querySelector('.modal-body');
+            if (newModalBody) {
+                modalBody.innerHTML = newModalBody.innerHTML;
+            }
+        });
+    })
+    .catch(error => {
+        console.error('Erro:', error);
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     });
 });
 </script>

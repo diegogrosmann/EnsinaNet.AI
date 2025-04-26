@@ -17,11 +17,17 @@ logger = logging.getLogger(__name__)
 class Profile(models.Model):
     """Modelo que representa o perfil de um usuário.
 
+<<<<<<< HEAD
     Estende o modelo User padrão do Django com campos adicionais específicos.
 
     Attributes:
         user (User): Usuário associado (relacionamento 1:1).
         is_approved (bool): Indica se o perfil está aprovado pelo administrador.
+=======
+    Atributos:
+        user (User): Usuário associado.
+        is_approved (bool): Indica se o perfil está aprovado.
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
         capture_inactivity_timeout (int): Tempo de inatividade de captura em minutos.
     """
     user = models.OneToOneField(User, on_delete=models.CASCADE)

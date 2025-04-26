@@ -13,7 +13,11 @@ logger = logging.getLogger(__name__)
 
 app_name = 'public'
 
+<<<<<<< HEAD
 urlpatterns: List[URLPattern] = [
+=======
+urlpatterns = [
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     path('', views.index, name='index'),
 ]
 

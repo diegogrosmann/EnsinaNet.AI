@@ -122,7 +122,7 @@ class AIClientGlobalConfigForm(forms.ModelForm):
     def clean_api_key(self) -> str:
         """Processa o campo 'api_key' para retornar o valor correto.
 
-        Retorna a chave original se o valor não tiver sido alterado.
+        Retorna a chave original se o valor not tiver sido alterado.
 
         Returns:
             str: API key válida.
@@ -216,6 +216,7 @@ class AIClientConfigurationForm(forms.ModelForm):
         try:
             super().__init__(*args, **kwargs)
 
+<<<<<<< HEAD
             # Inicializa campos de configuração como strings vazias por padrão
             self.initial['configurations'] = ""
             self.initial['training_configurations'] = ""
@@ -268,6 +269,20 @@ class AIClientConfigurationForm(forms.ModelForm):
 
     def clean_name(self) -> str:
         """Valida que o campo 'name' não esteja vazio nem contenha espaços em excesso.
+=======
+    def clean(self):
+        """Valida o formulário garantindo consistência com a classe da API."""
+        cleaned_data = super().clean()
+        ai_client = cleaned_data.get('ai_client')
+        if ai_client:
+            client_class = AI_CLIENT_MAPPING.get(ai_client.api_client_class)
+            if client_class and not getattr(client_class, "supports_system_message", False):
+                cleaned_data['use_system_message'] = False
+        return cleaned_data
+    
+    def clean_name(self):
+        """Valida que o campo 'name' not esteja vazio nem contenha espaços em excesso.
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
         Returns:
             str: Nome validado.
@@ -275,6 +290,7 @@ class AIClientConfigurationForm(forms.ModelForm):
         Raises:
             forms.ValidationError: Se o nome estiver vazio.
         """
+<<<<<<< HEAD
         try:
             name = self.cleaned_data.get('name', '').strip()
             if not name:
@@ -285,6 +301,12 @@ class AIClientConfigurationForm(forms.ModelForm):
         except Exception as e:
             logger.error(f"Erro ao validar nome: {e}", exc_info=True)
             raise ValidationError(f"Erro ao validar nome: {e}")
+=======
+        name = self.cleaned_data.get('name', '').strip()
+        if not name:
+            raise forms.ValidationError("Nome not pode ser vazio.")
+        return name
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
     def _convert_dictionary(self, field_name: str) -> Dict[str, Any]:
         """Converte um campo de texto para dicionário.
@@ -302,6 +324,7 @@ class AIClientConfigurationForm(forms.ModelForm):
             data = self.data.get(field_name) or ''
             data = data.strip()
 
+<<<<<<< HEAD
             if data:
                 config_dict = {}
                 for line_number, line in enumerate(data.splitlines(), start=1):
@@ -324,6 +347,29 @@ class AIClientConfigurationForm(forms.ModelForm):
                         raise forms.ValidationError(
                             f"Linha {line_number}: Valor vazio para a chave '{key}'."
                         )
+=======
+        if data:
+            for line_number, line in enumerate(data.splitlines(), start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                if '=' not in line:
+                    raise forms.ValidationError(
+                        f"Linha {line_number}: '{line}' not está no formato chave=valor."
+                    )
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                if not key:
+                    raise forms.ValidationError(
+                        f"Linha {line_number}: Chave vazia."
+                    )
+                if not value:
+                    raise forms.ValidationError(
+                        f"Linha {line_number}: Valor vazio para a chave '{key}'."
+                    )
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
                     # Verificar se o valor parece ser um objeto JSON
                     if value.startswith('{') and value.endswith('}'):
@@ -437,6 +483,7 @@ class TokenAIConfigurationForm(forms.ModelForm):
         fields = ['base_instruction', 'prompt', 'responses']
 
     def __init__(self, *args, **kwargs):
+<<<<<<< HEAD
         """Inicializa o formulário definindo o queryset do campo 'training_file' conforme o usuário.
         
         Args:
@@ -450,6 +497,12 @@ class TokenAIConfigurationForm(forms.ModelForm):
         except Exception as e:
             logger.error(f"Erro ao inicializar formulário de configuração de token: {e}", exc_info=True)
             raise AIConfigException(f"Erro ao preparar formulário de token: {e}")
+=======
+        """Inicializa o formulário definindo o queryset do campo 'training_file' conforme o usuário."""
+        user = kwargs.pop('user', None)
+        super(TokenAIConfigurationForm, self).__init__(*args, **kwargs)
+        self.user = user
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
     def clean_base_instruction(self) -> str:
         """Limpa e sanitiza o campo 'base_instruction'.
@@ -505,12 +558,15 @@ class TrainingCaptureForm(forms.ModelForm):
     token = ModelChoiceField(
         queryset=UserToken.objects.none(),
         empty_label="Selecione um token",
+<<<<<<< HEAD
         required=True
     )
     
     ai_client_config = forms.ModelChoiceField(
         queryset=AIClientConfiguration.objects.none(),
         empty_label="Selecione um cliente de IA",
+=======
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
         required=True
     )
 
@@ -519,6 +575,7 @@ class TrainingCaptureForm(forms.ModelForm):
         fields = ['token', 'ai_client_config']
 
     def __init__(self, *args, **kwargs):
+<<<<<<< HEAD
         """Inicializa o formulário filtrando os querysets por usuário.
         
         Args:
@@ -534,6 +591,12 @@ class TrainingCaptureForm(forms.ModelForm):
         except Exception as e:
             logger.error(f"Erro ao inicializar formulário de captura de treinamento: {e}", exc_info=True)
             raise AIConfigException(f"Erro ao preparar formulário de captura: {e}")
+=======
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+        if user:
+            self.fields['token'].queryset = UserToken.objects.filter(user=user)
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
 class AITrainingFileForm(forms.ModelForm):
     """Formulário para upload de arquivo de treinamento."""
@@ -549,6 +612,7 @@ class AITrainingFileForm(forms.ModelForm):
 
         Returns:
             Arquivo validado.
+<<<<<<< HEAD
             
         Raises:
             ValidationError: Se o arquivo for inválido.
@@ -559,6 +623,103 @@ class AITrainingFileForm(forms.ModelForm):
         except Exception as e:
             logger.error(f"Erro ao validar arquivo: {e}", exc_info=True)
             raise FileProcessingException(f"Erro ao processar arquivo: {e}")
+=======
+        """
+        file = self.cleaned_data.get('file')
+        return file
+    
+class AIClientTrainingForm(forms.ModelForm):
+    """Formulário para configuração de treinamento de um cliente de IA.
+
+    Converte os parâmetros de treinamento para o formato 'key=value'.
+    """
+    training_parameters = forms.CharField(
+        label='Parâmetros de Treinamento',
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 5,
+            'placeholder': 'Exemplo:\nparam1=valor1\nparam2=valor2'
+        }),
+        help_text='Insira os parâmetros no formato chave=valor, um por linha.',
+        required=False
+    )
+
+    trained_model_name = forms.CharField(
+        label='Nome do Modelo Treinado',
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'readonly': 'readonly',
+        }),
+    )
+
+    class Meta:
+        model = AIClientTraining
+        fields = ['training_parameters']
+
+    def __init__(self, *args, **kwargs):
+        """Inicializa o formulário e converte o JSON para texto multiline."""
+        super(AIClientTrainingForm, self).__init__(*args, **kwargs)
+        if self.instance and self.instance.training_parameters:
+            training_lines = [f"{key}={value}" for key, value in self.instance.training_parameters.items()]
+            self.initial['training_parameters'] = "\n".join(training_lines)
+        else:
+            self.initial['training_parameters'] = ""
+        self.fields['trained_model_name'].initial = self.instance.trained_model_name
+        self.fields['trained_model_name'].widget.attrs['readonly'] = True
+
+    def clean_trained_model_name(self):
+        """Garante que o nome do modelo treinado not seja modificado.
+
+        Returns:
+            str: Nome do modelo treinado.
+        """
+        return self.initial.get('trained_model_name', self.instance.trained_model_name)
+
+    def save(self, commit=True):
+        """Salva o formulário garantido que o 'trained_model_name' permaneça inalterado."""
+        self.instance.trained_model_name = self.initial.get('trained_model_name', self.instance.trained_model_name)
+        return super().save(commit=commit)
+
+    def clean_training_parameters(self):
+        """Valida e converte os parâmetros de treinamento para um dicionário.
+
+        Returns:
+            dict: Configurações de treinamento.
+        
+        Raises:
+            forms.ValidationError: Se alguma linha not estiver no formato válido.
+        """
+        configurations_text = self.cleaned_data.get('training_parameters', '').strip()
+        configurations_dict = {}
+        
+        if configurations_text:
+            for line_number, line in enumerate(configurations_text.splitlines(), start=1):
+                if not line.strip():
+                    continue
+                if '=' not in line:
+                    raise forms.ValidationError(f"Linha {line_number}: '{line}' not está no formato chave=valor.")
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                if not key:
+                    raise forms.ValidationError(f"Linha {line_number}: Chave vazia.")
+                if not value:
+                    raise forms.ValidationError(f"Linha {line_number}: Valor vazio para a chave '{key}'.")
+                
+                try:
+                    if '.' in value:
+                        value = float(value)
+                    else:
+                        value = int(value)
+                except ValueError:
+                    pass
+                
+                configurations_dict[key] = value
+        
+        return configurations_dict
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
 class UserAITrainingFileForm(forms.ModelForm):
     """Formulário para upload de arquivo de treinamento vinculado ao usuário."""

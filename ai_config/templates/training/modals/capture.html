@@ -1,6 +1,7 @@
 <div class="modal fade" id="captureModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
+<<<<<<< HEAD
             <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title">
                     <i class="bi bi-record-circle me-2"></i>
@@ -18,24 +19,44 @@
                             <span class="error-message"></span>
                         </div>
                     </div>
+=======
+            <div class="modal-header">
+                <h5 class="modal-title">Iniciar Captura de Treinamento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Div única para exibir erros -->
+                <div id="captureError" class="alert alert-danger d-none">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <span class="error-message"></span>
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
                 </div>
 
                 <form id="captureForm" method="post" class="needs-validation" novalidate>
                     {% csrf_token %}
+<<<<<<< HEAD
                     <input type="hidden" name="action" value="activate">
                     <div class="form-floating mb-3">
+=======
+                    <div class="mb-3">
+                        <label for="id_token" class="form-label">Token</label>
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
                         <select class="form-select" id="id_token" name="token" required>
                             <option value="">Selecione um token</option>
                             {% for token in capture_form.fields.token.queryset %}
                                 <option value="{{ token.id }}">{{ token.name }}</option>
                             {% endfor %}
                         </select>
+<<<<<<< HEAD
                         <label for="id_token">Token</label>
+=======
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
                         <div class="invalid-feedback">
                             Por favor selecione um token
                         </div>
                     </div>
 
+<<<<<<< HEAD
                     <div class="form-floating mb-3">
                         <select class="form-select" id="id_ai_client_config" name="ai_client_config" required>
                             <option value="">Selecione um cliente de IA</option>
@@ -44,14 +65,28 @@
                             {% endfor %}
                         </select>
                         <label for="id_ai_client_config">Cliente de IA</label>
+=======
+                    <div class="mb-3">
+                        <label for="id_ai_client_config" class="form-label">Cliente de IA</label>
+                        <select class="form-select" id="id_ai_client_config" name="ai_client_config" required disabled>
+                            <option value="">Primeiro selecione um token</option>
+                        </select>
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
                         <div class="invalid-feedback">
                             Por favor selecione um cliente de IA
                         </div>
                     </div>
+<<<<<<< HEAD
                     <div class="d-flex justify-content-end gap-2">
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
                         <button type="submit" class="btn btn-primary">
                             <i class="bi bi-play-circle me-2"></i>
+=======
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-play-circle"></i>
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
                             Iniciar Captura
                         </button>
                     </div>
@@ -61,6 +96,7 @@
     </div>
 </div>
 
+<<<<<<< HEAD
 <!-- Modal de Confirmação para Salvar -->
 <div class="modal fade" id="saveConfirmModal" tabindex="-1">
     <div class="modal-dialog">
@@ -97,6 +133,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const errorDiv = document.getElementById('captureError');
     const tokenSelect = document.getElementById('id_token');
     
+=======
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('captureForm');
+    const errorDiv = document.getElementById('captureError');
+    const tokenSelect = document.getElementById('id_token');
+    const aiClientSelect = document.getElementById('id_ai_client_config');
+    
+    // Verifica se os elementos foram encontrados antes de prosseguir
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     if (!form || !errorDiv) {
         console.error('Elementos do formulário não encontrados');
         return;
@@ -114,14 +160,20 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function hideError() {
+<<<<<<< HEAD
         errorDiv.classList.add('d-none');
         errorMessage.textContent = '';
+=======
+        errorMessage.textContent = '';
+        errorDiv.classList.add('d-none');
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     }
     
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
         hideError();
         
+<<<<<<< HEAD
         if (!form.checkValidity()) {
             e.stopPropagation();
             form.classList.add('was-validated');
@@ -129,11 +181,24 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (!tokenSelect.value || !document.getElementById('id_ai_client_config').value) {
+=======
+        // Validação do formulário
+        if (!form.checkValidity()) {
+            e.stopPropagation();
+            form.classList.add('was-validated');
+            showError('Por favor, preencha todos os campos obrigatórios.');
+            return;
+        }
+
+        // Validação adicional para garantir que Token e IA estão selecionados
+        if (!tokenSelect.value || !aiClientSelect.value) {
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
             showError('Por favor, selecione um Token e uma IA.');
             return;
         }
 
         const formData = new FormData(form);
+<<<<<<< HEAD
 
         try {
             // Mostrar indicador de carregamento
@@ -193,12 +258,44 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+=======
+        formData.append('action', 'activate');
+
+        try {
+            const response = await fetch('{% url "ai_config:capture_toggle" %}', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            });
+
+            const data = await response.json();
+            
+            if (!response.ok) {
+                showError(data.error || 'Erro ao ativar a captura');
+                return;
+            }
+
+            // Se deu sucesso, fecha o modal e atualiza a interface
+            const modal = bootstrap.Modal.getInstance(document.getElementById('captureModal'));
+            modal.hide();
+            window.location.reload();
+
+        } catch (error) {
+            showError('Erro ao se comunicar com o servidor');
+        }
+    });
+
+    // Limpa erros e validação quando o modal é fechado
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     document.getElementById('captureModal').addEventListener('hidden.bs.modal', function() {
         form.reset();
         form.classList.remove('was-validated');
         hideError();
     });
 
+<<<<<<< HEAD
     form.querySelectorAll('select').forEach(select => {
         select.addEventListener('change', hideError);
     });
@@ -271,3 +368,78 @@ document.addEventListener('DOMContentLoaded', function() {
     window.updateUICaptureActive = updateUICaptureActive;
 });
 </script>
+=======
+    // Limpa erro quando usuário começa a interagir novamente
+    form.querySelectorAll('select').forEach(select => {
+        select.addEventListener('change', hideError);
+    });
+
+    // Atualiza lista de IAs quando o token é selecionado
+    tokenSelect.addEventListener('change', function() {
+        const tokenId = this.value;
+        aiClientSelect.disabled = !tokenId;
+        
+        if (!tokenId) {
+            aiClientSelect.innerHTML = '<option value="">Primeiro selecione um token</option>';
+            return;
+        }
+
+        // Busca as configurações de IA disponíveis para o token
+        fetch(buildUrl("{% url 'ai_config:token_get_ais' 'ffffffff-ffff-ffff-ffff-ffffffffffff' %}", "ffffffff-ffff-ffff-ffff-ffffffffffff", tokenId))
+            .then(response => response.json())
+            .then(data => {
+                aiClientSelect.innerHTML = '<option value="">Selecione um cliente de IA</option>';
+                data.ai_configs.forEach(config => {
+                    const option = document.createElement('option');
+                    option.value = config.id;
+                    option.textContent = `${config.name} (${config.ai_client})`;
+                    aiClientSelect.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Erro ao carregar IAs:', error);
+                aiClientSelect.innerHTML = '<option value="">Erro ao carregar IAs</option>';
+            });
+    });
+});
+</script>
+
+<style>
+.alert {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 1rem;
+    border: 1px solid transparent;
+    border-radius: 0.375rem;
+    transition: opacity 0.15s linear;
+}
+
+.alert-danger {
+    color: #842029;
+    background-color: #f8d7da;
+    border-color: #f5c2c7;
+}
+
+.alert .bi {
+    font-size: 1.1em;
+}
+
+.invalid-feedback {
+    display: none;
+    width: 100%;
+    margin-top: 0.25rem;
+    font-size: 0.875em;
+    color: #dc3545;
+}
+
+.was-validated .form-select:invalid:not(:focus) {
+    border-color: #dc3545;
+}
+
+.was-validated .form-select:invalid:focus {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25);
+}
+</style>
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)

@@ -335,8 +335,10 @@ O resultado ficará em `docs/_build/html/`.
 
 ### Diagrama de Classes
 
+
 ```mermaid
 classDiagram
+<<<<<<< HEAD
 
 %% =========================
 %% ENTIDADES DE ACCOUNTS
@@ -532,6 +534,184 @@ AITrainingFile "1" -- "0..*" AITraining : file
 ```
 
 ---
+=======
+    class User {
+	    +id: UUID
+	    +username: str
+	    +email: str
+	    +password: str
+	    +is_active: bool
+	    -- Demais atributos Django
+    }
+
+    class AIClientGlobalConfiguration {
+	    +name: CharField
+	    +api_client_class: CharField
+	    +api_url: URLField
+	    +api_key: CharField
+    }
+
+    class APIClient {
+	    +name: str
+	    +can_train: bool
+	    +supports_system_message: bool
+	    +api_key: str
+	    +model_name: str
+	    +configurations: dict
+	    +base_instruction: str
+	    +prompt: str
+	    +responses: str
+	    +api_url: str
+	    +use_system_message: bool
+	    +compare()
+	    +train()
+	    +_call_api()
+	    +_prepare_prompts()
+	    +_prepare_train()
+	    +_render_template()
+    }
+
+    class OpenAiClient {
+	    +__init__()
+	    +_call_api()
+	    +train()
+    }
+
+    class GeminiClient {
+	    +__init__()
+	    +_call_api()
+	    +train()
+    }
+
+    class AnthropicClient {
+	    +__init__()
+	    +_call_api()
+    }
+
+    class PerplexityClient {
+	    +__init__()
+	    +_call_api()
+    }
+
+    class LlamaClient {
+	    +__init__()
+	    +_call_api()
+    }
+
+    class AzureOpenAIClient {
+	    +__init__()
+    }
+
+    class AzureClient {
+	    +__init__()
+	    +_call_api()
+    }
+
+    class UserToken {
+	    +id: UUIDField
+	    +user: ForeignKey to User
+	    +name: CharField
+	    +key: CharField
+	    +created: DateTimeField
+	    +save()
+	    +generate_unique_key()
+	    +__str__()
+    }
+
+    class AIClientConfiguration {
+	    +token: ForeignKey to UserToken
+	    +ai_client: ForeignKey to AIClientGlobalConfiguration
+	    +name: CharField
+	    +enabled: BooleanField
+	    +model_name: CharField
+	    +configurations: JSONField
+	    +use_system_message: BooleanField
+    }
+
+    class AIClientTraining {
+	    +ai_client_configuration: OneToOneField to AIClientConfiguration
+	    +training_parameters: JSONField
+	    +trained_model_name: CharField
+    }
+
+    class AITrainingFile {
+	    +user: ForeignKey to User
+	    +name: CharField
+	    +file: FileField
+	    +uploaded_at: DateTimeField
+	    +file_exists()
+	    +get_file_size()
+	    +__str__()
+    }
+
+    class TokenAIConfiguration {
+	    +token: OneToOneField to UserToken
+	    +base_instruction: TextField
+	    +prompt: TextField
+	    +responses: TextField
+	    +clean()
+    }
+
+    class TrainingCapture {
+	    +token: ForeignKey to UserToken
+	    +ai_client_config: ForeignKey to AIClientConfiguration
+	    +is_active: BooleanField
+	    +temp_file: FileField
+	    +create_at: DateTimeField
+	    +last_activity: DateTimeField
+    }
+
+    class DoclingConfiguration {
+	    +do_ocr: BooleanField
+	    +do_table_structure: BooleanField
+	    +do_cell_matching: BooleanField
+	    +accelerator_device: CharField
+	    +custom_options: JSONField
+    }
+
+    class Profile {
+	    +user: OneToOneField to User
+	    +is_approved: BooleanField
+    }
+
+    class APILog {
+	    +user: ForeignKey to User
+	    +user_token: ForeignKey to UserToken
+	    +path: CharField
+	    +method: CharField
+	    +status_code: IntegerField
+	    +execution_time: FloatField
+	    +timestamp: DateTimeField
+    }
+
+    
+    User "1" -- "1" Profile : user
+    User "1" <-- "0..*" APILog : user
+    User "1" <-- "0..*" AITrainingFile : user
+    User "1" <-- "0..*" UserToken : user
+
+    UserToken "1" -- "1" TokenAIConfiguration : token
+    UserToken "1" <-- "0..*" TrainingCapture : token 
+    UserToken "1" <-- "0..*" AIClientConfiguration : token
+    UserToken "1" <-- "0..*" APILog : user_token
+    
+    AIClientGlobalConfiguration "1" <-- "0..*" AIClientConfiguration : ai_client 
+    AIClientGlobalConfiguration ..> APIClient : api_client_class
+
+    AIClientConfiguration "1" -- "1" AIClientTraining : ai_client_configuration 
+    AIClientConfiguration "1" <-- "0..*" TrainingCapture : ai_client_config
+
+    <<abstract>> APIClient
+    
+    APIClient <|-- OpenAiClient
+    APIClient <|-- GeminiClient
+    APIClient <|-- AnthropicClient
+    APIClient <|-- PerplexityClient
+    APIClient <|-- LlamaClient
+    APIClient <|-- AzureClient
+    OpenAiClient <|-- AzureOpenAIClient
+```
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
 ### Diagramas de Sequência
 
@@ -692,7 +872,43 @@ sequenceDiagram
     end
 ```
 
+<<<<<<< HEAD
 ---
+=======
+##### 2.4. Exclusão de Token
+```mermaid
+sequenceDiagram
+    actor U as Usuário
+    participant N as Navegador
+    participant D as Django
+    participant DB as Banco de Dados
+    participant FS as Sistema de Arquivos
+    participant FS as Sistema de Arquivos
+
+    U->>N: Seleciona arquivo
+    N->>D: POST /upload-training-file/
+    D->>D: Valida formato do arquivo
+    D->>FS: Salva arquivo
+    D->>DB: Cria AITrainingFile
+    D->>DB: Vincula ao TokenAIConfiguration
+    D-->>N: Confirma upload
+    
+    alt Arquivo existente
+        D->>FS: Remove arquivo antigo
+        D->>FS: Salva novo arquivo
+        D->>DB: Atualiza referência
+    end
+```
+
+##### 2.4. Exclusão de Token
+```mermaid
+sequenceDiagram
+    actor U as Usuário
+    participant N as Navegador
+    participant D as Django
+    participant DB as Banco de Dados
+    participant FS as Sistema de Arquivos
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 
 ### 3. Configuração de IA
 

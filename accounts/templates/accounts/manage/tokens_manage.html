@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+<<<<<<< HEAD
 
 {% block content %}
 <div class="container py-4">
@@ -169,16 +170,101 @@
                             </div>
                         </div>
                     {% endif %}
+=======
+{% load custom_tags %}
+{% load ai_config_tags %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col">
+            <h2 class="text-center">Gerenciador de Tokens</h2>
+        </div>
+    </div>
+
+    {% if not is_approved %}
+        <div class="alert alert-warning" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <strong>Aguardando aprovação!</strong> Você ainda não pode criar tokens porque sua conta está aguardando aprovação. Por favor, aguarde ou entre em contato com o administrador.
+        </div>
+    {% else %}
+    <div class="card-body">
+        <div class="tab-content" id="manageTabsContent">
+            <!-- Tokens Tab -->
+            <div class="tab-pane fade show active" id="tokens" role="tabpanel" aria-labelledby="tokens-tab">
+                <div class="d-flex justify-content-end mb-3">
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTokenModal" {% if not is_approved %}disabled{% endif %}>
+                        <i class="bi bi-plus-circle"></i> Novo Token
+                    </button>
+                </div>
+
+                {% if tokens %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Nome</th>
+                                    <th>Token</th>
+                                    <th>Criado em</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for token in tokens %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'accounts:token_config' token.id %}">{{ token.name }}</a>
+                                    </td>
+                                    <td>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control form-control-sm" value="{{ token.key }}" readonly>
+                                            <button class="btn btn-outline-secondary btn-sm copy-btn" type="button" data-clipboard-text="{{ token.key }}" data-bs-toggle="tooltip" title="Copiar">
+                                                <i class="bi bi-clipboard"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td>{{ token.created|date:"d/m/Y H:i" }}</td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{% url 'accounts:token_config' token.id %}" class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-gear"></i>
+                                            </a>
+                                            <!-- Botão que abre o modal de deleção -->
+                                            <button 
+                                                class="btn btn-sm btn-outline-danger" 
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#deleteTokenModal" 
+                                                data-token-id="{{ token.id }}"
+                                            >
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        Você ainda não possui tokens. Crie um novo token para começar.
+                    </div>
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
                 {% endif %}
             </div>
         </div>
     </div>
+<<<<<<< HEAD
+=======
+    {% endif %}
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
 </div>
 
 <!-- Modais -->
 {% include "accounts/manage/modals/create_token_modal.html" %}
 {% include "accounts/manage/modals/delete_confirmation_modal.html" %}
 
+<<<<<<< HEAD
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Initialize clipboard.js
@@ -509,6 +595,98 @@
         }
         
         restoreUserPreferences();
+=======
+<script src="https://cdnjs.cloudflare.com/ajax/libs/clipboard.js/2.0.8/clipboard.min.js"></script>
+<script>
+    // Initialize clipboard.js
+    new ClipboardJS('.copy-btn');
+
+    // Show tooltip on copy
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const tooltip = new bootstrap.Tooltip(btn, {
+                title: 'Copiado!',
+                trigger: 'manual'
+            });
+            tooltip.show();
+            setTimeout(() => tooltip.dispose(), 1000);
+        });
+    });
+
+    // Previne o fechamento do modal se houver erros no formulário de criação de token
+    document.querySelector('#createTokenModal form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const form = this;
+        const formData = new FormData(form);
+        
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+        })
+        .then(response => response.text())
+        .then(html => {
+            if (html.includes('invalid-feedback')) {
+                // Se houver erros, atualiza o conteúdo do modal
+                const modalBody = form.querySelector('.modal-body');
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = html;
+                const newModalBody = tempDiv.querySelector('.modal-body');
+                modalBody.innerHTML = newModalBody.innerHTML;
+            } else {
+                // Se não houver erros, fecha o modal e recarrega a página
+                const modal = bootstrap.Modal.getInstance(document.getElementById('createTokenModal'));
+                modal.hide();
+                window.location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+        });
+    });
+
+    // Lógica para deleção de token via modal teste
+    const deleteTokenModal = document.getElementById('deleteTokenModal');
+    deleteTokenModal.addEventListener('show.bs.modal', function (event) {
+        const button = event.relatedTarget; // Botão que acionou o modal
+        const tokenId = button.getAttribute('data-token-id'); 
+        document.getElementById('delete_token_id').value = tokenId;
+    });
+
+    const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+    confirmDeleteBtn.addEventListener('click', function() {
+        const form = document.getElementById('deleteTokenForm');
+        const formData = new FormData(form);
+        const tokenId = formData.get('token_id');
+        const url = `/accounts/tokens/${tokenId}/delete/`;
+
+        fetch(url, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Erro ao deletar token');
+            }
+            return response.json().catch(() => ({})); 
+        })
+        .then(data => {
+            if (data.success === false && data.error) {
+                console.error('Erro do servidor:', data.error);
+            } else {
+                window.location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Erro ao deletar token:', error);
+        });
+>>>>>>> 8a343d3 (Adiciona namespace às URLs da API e corrige redirecionamento na view de índice; remove arquivos JSON temporários e atualiza templates para usar URLs nomeadas com namespace.)
     });
 </script>
 {% endblock %}
